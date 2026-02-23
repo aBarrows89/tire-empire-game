@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
+import { API_BASE, headers } from '../../api/client.js';
 
 export default function ProfilePanel() {
   const { state } = useGame();
@@ -8,7 +9,7 @@ export default function ProfilePanel() {
 
   useEffect(() => {
     if (!g?.id) return;
-    fetch(`/api/profile/${g.id}`)
+    fetch(`${API_BASE}/profile/${g.id}`, { headers })
       .then(r => r.json())
       .then(data => setProfile(data))
       .catch(() => {});

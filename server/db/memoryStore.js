@@ -1,6 +1,7 @@
 const players = new Map();
 const games = new Map();
 const leaderboard = new Map();
+const playerListings = [];
 
 export function createMemoryStore() {
   return {
@@ -88,6 +89,30 @@ export function createMemoryStore() {
         week,
         updated_at: new Date().toISOString(),
       });
+    },
+
+    // Player marketplace listings
+    async getPlayerListings(filter = {}) {
+      let results = [...playerListings];
+      if (filter.status) results = results.filter(l => l.status === filter.status);
+      if (filter.sellerId) results = results.filter(l => l.sellerId === filter.sellerId);
+      return results;
+    },
+
+    async addPlayerListing(listing) {
+      playerListings.push(listing);
+      return listing;
+    },
+
+    async updatePlayerListing(id, updates) {
+      const idx = playerListings.findIndex(l => l.id === id);
+      if (idx === -1) return null;
+      Object.assign(playerListings[idx], updates);
+      return playerListings[idx];
+    },
+
+    async getPlayerListingById(id) {
+      return playerListings.find(l => l.id === id) || null;
     },
   };
 }

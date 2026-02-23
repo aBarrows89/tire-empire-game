@@ -21,15 +21,58 @@ export default function SourcePanel() {
     setBusy(null);
   };
 
+  const setAutoSource = async (sourceId) => {
+    setBusy('auto');
+    await postAction('setAutoSource', { sourceId: sourceId || null });
+    refreshState();
+    setBusy(null);
+  };
+
+  // Sources the player can auto-source from (unlocked only)
+  const unlockedSources = Object.entries(SOURCES).filter(([, src]) => {
+    return !src.rr || g.reputation >= src.rr;
+  });
+
   // Only show sources the player has unlocked or can see
   const visibleSources = Object.entries(SOURCES).filter(([, src]) => {
-    if (!src.rr) return true; // no rep requirement = always visible
-    // Show if close to unlocking (within 10 rep) or already unlocked
+    if (!src.rr) return true;
     return g.reputation >= src.rr - 10;
   });
 
   return (
     <>
+      {/* Auto-Source Card — prominent at top */}
+      <div className="card" style={{ borderColor: g.autoSource ? 'var(--green)' : 'var(--border)' }}>
+        <div className="row-between mb-4">
+          <div className="card-title" style={{ marginBottom: 0 }}>Auto Source</div>
+          {g.autoSource && (
+            <span className="text-xs font-bold text-green">ACTIVE</span>
+          )}
+        </div>
+        <div className="text-xs text-dim mb-4">
+          Automatically buy tires every week so you stay stocked even while offline.
+        </div>
+        <select
+          className="autoprice-select"
+          style={{ width: '100%', marginBottom: 4 }}
+          value={g.autoSource || ''}
+          onChange={(e) => setAutoSource(e.target.value)}
+          disabled={busy === 'auto'}
+        >
+          <option value="">Off — Manual only</option>
+          {unlockedSources.map(([id, src]) => (
+            <option key={id} value={id}>
+              {src.ic} {src.n} — ${src.c}/wk ({src.min}-{src.max} tires)
+            </option>
+          ))}
+        </select>
+        {g.autoSource && SOURCES[g.autoSource] && (
+          <div className="text-xs text-green" style={{ marginTop: 4 }}>
+            Spending ${SOURCES[g.autoSource].c}/week on {SOURCES[g.autoSource].n}. Stops if you run out of cash or space.
+          </div>
+        )}
+      </div>
+
       <div className="card">
         <div className="card-title">Source Used Tires</div>
         <div className="text-sm text-dim mb-4">

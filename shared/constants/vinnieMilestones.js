@@ -1,0 +1,118 @@
+/**
+ * Vinnie milestone pop-ups — triggered once as the player progresses.
+ * Each milestone fires when check(g) returns true AND the id is NOT in g.vinnieSeen.
+ * Evaluated in order — first match wins.
+ */
+export const VINNIE_MILESTONES = [
+  {
+    id: 'welcome_back',
+    check: g => g.tutorialDone && g.week <= 3,
+    title: "Let's Get to Work!",
+    message: "Alright kid, tutorial's done. First thing — go to Source and grab some tires. Can't sell air!",
+    emotion: 'smirk',
+    hint: 'Go to Source',
+    panel: 'source',
+  },
+  {
+    id: 'first_source',
+    check: g => Object.values(g.inventory || {}).reduce((a, b) => a + b, 0) > 0,
+    title: 'Nice Haul!',
+    message: "You got tires! Now head to Pricing and set your prices. Don't go too high on used rubber — customers know what's up.",
+    emotion: 'point',
+    hint: 'Go to Pricing',
+    panel: 'pricing',
+  },
+  {
+    id: 'first_sale',
+    check: g => (g.totalSold || 0) > 0,
+    title: 'Ka-Ching!',
+    message: "Your first sale! That's the feeling, kid. Keep sourcing, keep selling. The grind is real but it pays.",
+    emotion: 'excited',
+  },
+  {
+    id: 'cash_1k',
+    check: g => g.cash >= 1000,
+    title: 'Stacking Paper',
+    message: "A grand in the bank! You're doing something right. Think about upgrading your storage so you can carry more product.",
+    emotion: 'money',
+    hint: 'Check Storage',
+    panel: 'storage',
+  },
+  {
+    id: 'rep_5',
+    check: g => g.reputation >= 5,
+    title: 'Building a Name',
+    message: "People are starting to know your name. Higher rep means better sources and eventually... your own shop.",
+    emotion: 'thumbsup',
+  },
+  {
+    id: 'storage_upgrade',
+    check: g => (g.storage || []).length > 1,
+    title: 'More Room to Grow',
+    message: "Smart move upgrading storage. More inventory = more sales potential. Fill it up!",
+    emotion: 'point',
+    hint: 'Go Source',
+    panel: 'source',
+  },
+  {
+    id: 'loan_taken',
+    check: g => (g.loans || []).length > 0,
+    title: 'Leverage',
+    message: "Smart use of leverage. Just remember — those payments come every week whether you sell or not. Don't over-borrow.",
+    emotion: 'serious',
+  },
+  {
+    id: 'first_shop',
+    check: g => (g.locations || []).length > 0,
+    title: "You're in the Game Now!",
+    message: "Your first shop! This changes everything. Hire some techs in the Staff tab — they'll handle installs and keep customers happy.",
+    emotion: 'excited',
+    hint: 'Go to Staff',
+    panel: 'staff',
+  },
+  {
+    id: 'first_hire',
+    check: g => Object.values(g.staff || {}).reduce((a, v) => a + v, 0) > 0,
+    title: 'Your First Employee',
+    message: "You got your first hire! Staff costs money every week, but they make you way more than they cost. Trust the process.",
+    emotion: 'thumbsup',
+  },
+  {
+    id: 'rep_15',
+    check: g => g.reputation >= 15,
+    title: 'The Name Is Known',
+    message: "Rep 15! You're unlocking the good stuff now — better cities, better sources. Time to think about expanding.",
+    emotion: 'excited',
+    hint: 'Browse Cities',
+    panel: 'shop',
+  },
+  {
+    id: 'multi_shop',
+    check: g => (g.locations || []).length >= 2,
+    title: 'Empire Building',
+    message: "Two shops! Now you're thinking like a mogul. Keep an eye on per-shop inventory — transfer tires where they sell best.",
+    emotion: 'money',
+    hint: 'Check Storage',
+    panel: 'storage',
+  },
+  {
+    id: 'cash_low_warning',
+    check: g => g.cash < 50 && g.week > 5,
+    title: 'Watch Your Cash!',
+    message: "Whoa, you're running dry! Sell tires at a discount, take a small loan, or cut costs. Don't go broke on me, kid.",
+    emotion: 'serious',
+    hint: 'Check Bank',
+    panel: 'bank',
+  },
+];
+
+export const VINNIE_EMOTIONS = {
+  smirk: '\u{1F60F}',
+  point: '\u{1F449}',
+  think: '\u{1F914}',
+  shrug: '\u{1F937}',
+  serious: '\u{1F9D4}',
+  money: '\u{1F4B0}',
+  excited: '\u{1F929}',
+  thumbsup: '\u{1F44D}',
+};

@@ -35,6 +35,7 @@ export function init(playerName = "Player") {
     locations: [],
     staff: { techs: 0, sales: 0, managers: 0, drivers: 0, pricingAnalyst: 0 },
     autoPrice: {},
+    autoSource: null,  // source ID to auto-buy each week (e.g. 'scrapYard')
     servicePrices: { flatRepair: 25, balance: 20, install: 35, nitrogen: 10 },
     weekServiceRev: 0,
     weekServiceJobs: 0,
@@ -42,6 +43,9 @@ export function init(playerName = "Player") {
     whStaff: {},
     corpStaff: {},
     loans: [],
+    warehouseInventory: {},  // central storage inventory (keys = tire types)
+    hasWarehouse: false,     // unlocked when player buys smallWH+
+    disposalFee: 3,          // $ charged to customers for tire disposal
     bankBalance: 0,
     bankRate: 0.042,       // annual rate, fluctuates each tick
     bankInterestEarned: 0, // interest earned this week
@@ -73,6 +77,7 @@ export function init(playerName = "Player") {
     tireCoins: 0,
     tutorialStep: 0,
     tutorialDone: false,
+    vinnieSeen: [],
     companyName: '',
     aiShops: [],
     _events: [],

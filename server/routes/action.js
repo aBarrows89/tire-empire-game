@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getPlayer, savePlayerState } from '../db/queries.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { uid } from '../../shared/helpers/random.js';
-import { getCap, getInv, addA } from '../../shared/helpers/inventory.js';
+import { getCap, getInv, getLocInv, getLocCap, getStorageCap, rebuildGlobalInv, addA } from '../../shared/helpers/inventory.js';
 import { canOpenInCity } from '../../shared/helpers/market.js';
 import { TIRES } from '../../shared/constants/tires.js';
 import { STORAGE } from '../../shared/constants/storage.js';
@@ -47,12 +47,26 @@ router.post('/', authMiddleware, async (req, res) => {
         g.cash -= src.c;
         const rawQty = R(src.min, src.max);
         const qty = Math.min(rawQty, freeSpace);
-        // Distribute across used tire grades
+        // Target: warehouse inventory (van/garage/warehouse storage), or first location
+        if (!g.warehouseInventory) g.warehouseInventory = {};
+        const whFree = getStorageCap(g) - Object.values(g.warehouseInventory).reduce((a, b) => a + b, 0);
         const usedTypes = Object.keys(TIRES).filter(k => TIRES[k].used);
+        let added = 0;
         for (let i = 0; i < qty; i++) {
           const k = usedTypes[R(0, usedTypes.length - 1)];
-          g.inventory[k] = (g.inventory[k] || 0) + 1;
+          if (added < whFree) {
+            g.warehouseInventory[k] = (g.warehouseInventory[k] || 0) + 1;
+          } else if (g.locations.length > 0) {
+            // Overflow to first location with space
+            const loc = g.locations.find(l => getLocInv(l) < getLocCap(l)) || g.locations[0];
+            if (!loc.inventory) loc.inventory = {};
+            loc.inventory[k] = (loc.inventory[k] || 0) + 1;
+          } else {
+            g.warehouseInventory[k] = (g.warehouseInventory[k] || 0) + 1;
+          }
+          added++;
         }
+        rebuildGlobalInv(g);
         g.log.push(`Sourced ${qty} tires from ${src.n}${qty < rawQty ? ` (${rawQty - qty} didn't fit)` : ''}`);
         break;
       }
@@ -64,6 +78,11 @@ router.post('/', authMiddleware, async (req, res) => {
         if (g.cash < st.c) return res.status(400).json({ error: 'Not enough cash' });
         g.cash -= st.c;
         g.storage.push({ type, id: uid() });
+        // Unlock warehouse feature when buying warehouse-class storage
+        if (['smallWH', 'warehouse', 'distCenter'].includes(type)) {
+          g.hasWarehouse = true;
+          if (!g.warehouseInventory) g.warehouseInventory = {};
+        }
         break;
       }
 
@@ -76,7 +95,7 @@ router.post('/', authMiddleware, async (req, res) => {
         const check = canOpenInCity(g, cityId);
         if (!check.ok) return res.status(400).json({ error: check.reason });
         g.cash -= cost;
-        g.locations.push({ cityId, id: uid(), locStorage: 0 });
+        g.locations.push({ cityId, id: uid(), locStorage: 0, inventory: {} });
         break;
       }
 
@@ -111,11 +130,25 @@ router.post('/', authMiddleware, async (req, res) => {
         if (!t) return res.status(400).json({ error: 'Invalid tire type' });
         const sup = SUPPLIERS[supplierIndex];
         if (!sup) return res.status(400).json({ error: 'Invalid supplier' });
-        const cost = qty * t.bMin * (1 - sup.disc);
-        if (g.cash < cost) return res.status(400).json({ error: 'Not enough cash' });
+        const orderCost = qty * t.bMin * (1 - sup.disc);
+        if (g.cash < orderCost) return res.status(400).json({ error: 'Not enough cash' });
         if (getInv(g) + qty > getCap(g)) return res.status(400).json({ error: 'Not enough storage' });
-        g.cash -= cost;
-        g.inventory[tire] = (g.inventory[tire] || 0) + qty;
+        g.cash -= orderCost;
+        // Add to warehouse storage first, overflow to first location
+        if (!g.warehouseInventory) g.warehouseInventory = {};
+        const whInv = Object.values(g.warehouseInventory).reduce((a, b) => a + b, 0);
+        const whCap = getStorageCap(g);
+        const toWh = Math.min(qty, whCap - whInv);
+        if (toWh > 0) g.warehouseInventory[tire] = (g.warehouseInventory[tire] || 0) + toWh;
+        const overflow = qty - toWh;
+        if (overflow > 0 && g.locations.length > 0) {
+          const loc = g.locations.find(l => getLocInv(l) < getLocCap(l)) || g.locations[0];
+          if (!loc.inventory) loc.inventory = {};
+          loc.inventory[tire] = (loc.inventory[tire] || 0) + overflow;
+        } else if (overflow > 0) {
+          g.warehouseInventory[tire] = (g.warehouseInventory[tire] || 0) + overflow;
+        }
+        rebuildGlobalInv(g);
         g.monthlyPurchaseVol = (g.monthlyPurchaseVol || 0) + qty;
         break;
       }
@@ -168,6 +201,14 @@ router.post('/', authMiddleware, async (req, res) => {
         break;
       }
 
+      case 'dismissVinnie': {
+        const { id } = params;
+        if (!id) return res.status(400).json({ error: 'Missing milestone id' });
+        if (!g.vinnieSeen) g.vinnieSeen = [];
+        if (!g.vinnieSeen.includes(id)) g.vinnieSeen.push(id);
+        break;
+      }
+
       case 'setAutoPrice': {
         const { tire, strategy, offset } = params;
         if (!TIRES[tire]) return res.status(400).json({ error: 'Invalid tire type' });
@@ -191,12 +232,66 @@ router.post('/', authMiddleware, async (req, res) => {
         break;
       }
 
+      case 'transferTires': {
+        const { from, to, tire, qty: txQty } = params;
+        if (!TIRES[tire]) return res.status(400).json({ error: 'Invalid tire type' });
+        const transferQty = Math.floor(Number(txQty));
+        if (!transferQty || transferQty <= 0) return res.status(400).json({ error: 'Invalid quantity' });
+        if (!g.warehouseInventory) g.warehouseInventory = {};
+
+        // Resolve source
+        let srcInv;
+        if (from === 'warehouse') {
+          srcInv = g.warehouseInventory;
+        } else {
+          const srcLoc = g.locations.find(l => l.id === from);
+          if (!srcLoc) return res.status(400).json({ error: 'Invalid source location' });
+          if (!srcLoc.inventory) srcLoc.inventory = {};
+          srcInv = srcLoc.inventory;
+        }
+        if ((srcInv[tire] || 0) < transferQty) return res.status(400).json({ error: 'Not enough tires at source' });
+
+        // Resolve destination
+        let dstInv, dstCap, dstUsed;
+        if (to === 'warehouse') {
+          dstInv = g.warehouseInventory;
+          dstCap = getStorageCap(g);
+          dstUsed = Object.values(g.warehouseInventory).reduce((a, b) => a + b, 0);
+        } else {
+          const dstLoc = g.locations.find(l => l.id === to);
+          if (!dstLoc) return res.status(400).json({ error: 'Invalid destination location' });
+          if (!dstLoc.inventory) dstLoc.inventory = {};
+          dstInv = dstLoc.inventory;
+          dstCap = getLocCap(dstLoc);
+          dstUsed = getLocInv(dstLoc);
+        }
+        if (dstUsed + transferQty > dstCap) return res.status(400).json({ error: 'Not enough space at destination' });
+
+        srcInv[tire] -= transferQty;
+        dstInv[tire] = (dstInv[tire] || 0) + transferQty;
+        rebuildGlobalInv(g);
+        break;
+      }
+
+      case 'setDisposalFee': {
+        const fee = Math.max(0, Math.min(15, Math.floor(Number(params.fee))));
+        g.disposalFee = fee;
+        break;
+      }
+
       case 'resetGame': {
         const { init: initFn } = await import('../engine/init.js');
         const fresh = initFn(g.name || 'Player');
         fresh.id = g.id || req.playerId;
         // Preserve identity but reset everything else
         g = fresh;
+        break;
+      }
+
+      case 'setAutoSource': {
+        const { sourceId } = params;
+        if (sourceId && !SOURCES[sourceId]) return res.status(400).json({ error: 'Invalid source' });
+        g.autoSource = sourceId || null;
         break;
       }
 

@@ -1,6 +1,6 @@
 import { R, Rf, C } from '../../shared/helpers/format.js';
 import { getSeason, getSI } from '../../shared/helpers/season.js';
-import { getCap, getInv } from '../../shared/helpers/inventory.js';
+import { getCap, getInv, getLocInv, getLocCap, rebuildGlobalInv } from '../../shared/helpers/inventory.js';
 import { getWealth } from '../../shared/helpers/wealth.js';
 import { getVolTier, getWsVolBonus, getWsMargin, getWsAvailSpace } from '../../shared/helpers/wholesale.js';
 import { getEcomTier } from '../../shared/helpers/ecommerce.js';
@@ -37,8 +37,54 @@ import { EVENT_HANDLERS } from './events.js';
  * The structure below covers all major revenue/cost streams.
  * Once the full ~700-line simWeek is available, replace section by section.
  */
+/**
+ * Pull qty of a tire from warehouse first, then largest location.
+ * Returns actual qty pulled. Mutates inventories in place.
+ */
+function pullFromStock(s, tire, qty) {
+  let pulled = 0;
+  // Try warehouse first
+  const wh = s.warehouseInventory || {};
+  if (wh[tire] > 0) {
+    const take = Math.min(wh[tire], qty);
+    wh[tire] -= take;
+    pulled += take;
+  }
+  // Then pull from locations (largest first)
+  if (pulled < qty) {
+    const sorted = [...s.locations].sort((a, b) => (b.inventory?.[tire] || 0) - (a.inventory?.[tire] || 0));
+    for (const loc of sorted) {
+      if (pulled >= qty) break;
+      if (!loc.inventory || !loc.inventory[tire]) continue;
+      const take = Math.min(loc.inventory[tire], qty - pulled);
+      loc.inventory[tire] -= take;
+      pulled += take;
+    }
+  }
+  return pulled;
+}
+
 export function simWeek(g, shared = {}) {
   let s = { ...g, week: g.week + 1, weekRev: 0, weekProfit: 0, weekSold: 0, log: [], _events: [] };
+
+  // Deep-clone mutable nested objects
+  s.locations = s.locations.map(l => ({ ...l, inventory: { ...(l.inventory || {}) } }));
+  s.warehouseInventory = { ...(s.warehouseInventory || {}) };
+
+  // Migration: ensure per-location inventory is populated
+  // If old save where all inventory was in global g.inventory, distribute it
+  const globalInv = Object.values(s.inventory).reduce((a, b) => a + b, 0);
+  const whInvTotal = Object.values(s.warehouseInventory).reduce((a, b) => a + b, 0);
+  const anyLocHasInv = s.locations.some(l => Object.values(l.inventory).some(v => v > 0));
+  if (globalInv > 0 && whInvTotal === 0 && !anyLocHasInv) {
+    // First migration: move global inventory into warehouseInventory (or first location)
+    const target = s.locations.length > 0 && !s.hasWarehouse
+      ? s.locations[0].inventory
+      : s.warehouseInventory;
+    for (const [k, v] of Object.entries(s.inventory)) {
+      if (v > 0) target[k] = (target[k] || 0) + v;
+    }
+  }
 
   const season = getSeason(s.week);
   const si = getSI(s.week);
@@ -74,25 +120,30 @@ export function simWeek(g, shared = {}) {
     }
   }
 
-  // ── RETAIL SALES ──
+  // ── RETAIL SALES (per-location inventory) ──
+  let newTiresSold = 0; // track for customer take-offs
+  const locTakeOffSources = {}; // track per-location take-off sources
   if (s.locations.length > 0) {
     const staffCap = (s.staff.techs * 8 + s.staff.sales * 5) * (1 + s.staff.managers * .15);
     const demandMult = sDem * (1 + s.reputation * .01) * (s._tB || 1);
     const whPenalty = 1 - getWhShortage(s) * .08;
 
     for (const loc of s.locations) {
+      if (!loc.inventory) loc.inventory = {};
       const city = (shared.cities || []).find(c => c.id === loc.cityId) || { dem: 50, cost: 1, win: 0 };
       let locDemand = Math.floor(city.dem * .15 * demandMult * whPenalty);
+      let locNewSold = 0;
 
       for (const [k, t] of Object.entries(TIRES)) {
-        if (s.inventory[k] <= 0) continue;
+        const locStock = loc.inventory[k] || 0;
+        if (locStock <= 0) continue;
         const price = s.prices[k] || t.def;
         const isSeasonal = t.seas && season === "Winter";
         const winterMult = isSeasonal ? (city.win || 1) : 1;
         const agMult = t.ag ? (city.agPct || 0) : 1;
 
         let qty = Math.min(
-          s.inventory[k],
+          locStock,
           Math.floor(locDemand * (.08 + Math.random() * .04) * winterMult * agMult)
         );
         qty = Math.min(qty, Math.ceil(staffCap));
@@ -100,13 +151,18 @@ export function simWeek(g, shared = {}) {
 
         const rev = qty * price;
         const cost = qty * (t.bMin + t.bMax) / 2;
-        s.inventory[k] -= qty;
+        loc.inventory[k] -= qty;
         s.cash += rev;
         s.weekRev += rev;
         s.weekProfit += rev - cost;
         s.weekSold += qty;
+        if (!t.used) {
+          newTiresSold += qty;
+          locNewSold += qty;
+        }
         locDemand -= qty;
       }
+      locTakeOffSources[loc.id] = locNewSold;
     }
   }
 
@@ -139,27 +195,89 @@ export function simWeek(g, shared = {}) {
       s.weekProfit += rev; // services are pure labor profit
       s.weekServiceRev += rev;
       s.weekServiceJobs += jobs;
+      if (svcKey === 'install') s._installJobs = (s._installJobs || 0) + jobs;
       s.reputation = C(s.reputation + jobs * svc.repBoost, 0, 100);
       capLeft -= jobs * svc.time;
     }
     s.totalServiceRev = (s.totalServiceRev || 0) + s.weekServiceRev;
   }
 
-  // ── VAN SALES (bootstrap, no shop) ──
-  if (s.locations.length === 0 && getInv(s) > 0) {
-    const vanDemand = Math.floor((3 + s.reputation * .3) * sDem * (s._tB || 1));
-    let sold = 0;
-    for (const [k, t] of Object.entries(TIRES)) {
-      if (!t.used || s.inventory[k] <= 0) continue;
-      const qty = Math.min(s.inventory[k], R(0, Math.min(vanDemand - sold, 4)));
-      if (qty <= 0) continue;
-      const price = s.prices[k] || t.def;
-      s.inventory[k] -= qty;
-      s.cash += qty * price;
-      s.weekRev += qty * price;
-      s.weekProfit += qty * (price - (t.bMin + t.bMax) / 2);
-      s.weekSold += qty;
-      sold += qty;
+  // ── CUSTOMER TAKE-OFFS (per-location, disposal fee mechanics) ──
+  const installJobs = s._installJobs || 0;
+  const disposalFee = s.disposalFee ?? 3;
+  // Take-off rate: high fee = fewer leave tires, low/free = more
+  const takeOffRate = Math.max(0.1, Math.min(0.95, 0.9 - disposalFee * 0.06));
+  let totalTakeOffs = 0;
+  let totalDisposalRev = 0;
+
+  if (s.locations.length > 0) {
+    for (const loc of s.locations) {
+      if (!loc.inventory) loc.inventory = {};
+      const locSources = (locTakeOffSources[loc.id] || 0);
+      // Also attribute install jobs proportionally across locations
+      const locInstalls = s.locations.length > 0 ? Math.floor(installJobs / s.locations.length) : 0;
+      const sources = locSources + locInstalls;
+      if (sources <= 0) continue;
+
+      const takeOffs = Math.floor(sources * (takeOffRate - 0.1 + Math.random() * 0.2));
+      const locFree = getLocCap(loc) - getLocInv(loc);
+      const toAdd = Math.min(takeOffs, Math.max(0, locFree));
+      if (toAdd > 0) {
+        const grades = [
+          ['used_junk', .30], ['used_poor', .35], ['used_good', .25], ['used_premium', .10],
+        ];
+        let remaining = toAdd;
+        for (const [grade, pct] of grades) {
+          const qty = grade === 'used_premium' ? remaining : Math.min(remaining, Math.round(toAdd * pct));
+          loc.inventory[grade] = (loc.inventory[grade] || 0) + qty;
+          remaining -= qty;
+        }
+        totalTakeOffs += toAdd;
+      }
+      // Disposal revenue: each take-off pays the fee
+      if (takeOffs > 0 && disposalFee > 0) {
+        const dRev = takeOffs * disposalFee;
+        s.cash += dRev;
+        s.weekRev += dRev;
+        s.weekProfit += dRev;
+        totalDisposalRev += dRev;
+      }
+    }
+  }
+  if (totalTakeOffs > 0) {
+    s.log.push(`\u267B\uFE0F ${totalTakeOffs} take-off${totalTakeOffs !== 1 ? 's' : ''} added${totalDisposalRev > 0 ? ` (+$${totalDisposalRev} disposal fees)` : ''}`);
+  }
+  // Disposal fee rep effects
+  if (totalTakeOffs > 0) {
+    if (disposalFee > 3) {
+      const repPen = (disposalFee - 3) * 0.01 * totalTakeOffs;
+      s.reputation = C(s.reputation - repPen, 0, 100);
+    } else if (disposalFee < 2) {
+      const repBoost = (2 - disposalFee) * 0.005 * totalTakeOffs;
+      s.reputation = C(s.reputation + repBoost, 0, 100);
+    }
+  }
+  delete s._installJobs;
+
+  // ── VAN SALES (bootstrap, no shop — tires live in warehouseInventory) ──
+  if (s.locations.length === 0) {
+    const wh = s.warehouseInventory || {};
+    const whTotal = Object.values(wh).reduce((a, b) => a + b, 0);
+    if (whTotal > 0) {
+      const vanDemand = Math.floor((3 + s.reputation * .3) * sDem * (s._tB || 1));
+      let sold = 0;
+      for (const [k, t] of Object.entries(TIRES)) {
+        if (!t.used || (wh[k] || 0) <= 0) continue;
+        const qty = Math.min(wh[k], R(0, Math.min(vanDemand - sold, 4)));
+        if (qty <= 0) continue;
+        const price = s.prices[k] || t.def;
+        wh[k] -= qty;
+        s.cash += qty * price;
+        s.weekRev += qty * price;
+        s.weekProfit += qty * (price - (t.bMin + t.bMax) / 2);
+        s.weekSold += qty;
+        sold += qty;
+      }
     }
   }
 
@@ -169,18 +287,23 @@ export function simWeek(g, shared = {}) {
       const qty = R(client.minOrder || 5, client.maxOrder || 20);
       const tire = client.preferredTire || "allSeason";
       const t = TIRES[tire];
-      if (!t || s.inventory[tire] < qty) continue;
+      // Check aggregate stock
+      const totalStock = (s.warehouseInventory?.[tire] || 0) +
+        s.locations.reduce((a, l) => a + (l.inventory?.[tire] || 0), 0);
+      if (!t || totalStock < qty) continue;
+
+      const pulled = pullFromStock(s, tire, qty);
+      if (pulled <= 0) continue;
 
       const margin = getWsMargin(s, client);
       const price = Math.round(t.def * (1 - margin));
-      const rev = qty * price;
-      const deliveryCost = qty * Rf(WS_DELIVERY_COST.min, WS_DELIVERY_COST.max);
+      const rev = pulled * price;
+      const deliveryCost = pulled * Rf(WS_DELIVERY_COST.min, WS_DELIVERY_COST.max);
 
-      s.inventory[tire] -= qty;
       s.cash += rev - deliveryCost;
       s.weekRev += rev;
       s.weekProfit += rev - deliveryCost;
-      s.weekSold += qty;
+      s.weekSold += pulled;
     }
   }
 
@@ -210,7 +333,13 @@ export function simWeek(g, shared = {}) {
     let ecomRev = 0, ecomSold = 0;
 
     for (let i = 0; i < orders; i++) {
-      const tireKeys = Object.keys(TIRES).filter(k => !TIRES[k].used && s.inventory[k] > 0);
+      // Check aggregate stock for non-used tires
+      const tireKeys = Object.keys(TIRES).filter(k => {
+        if (TIRES[k].used) return false;
+        const total = (s.warehouseInventory?.[k] || 0) +
+          s.locations.reduce((a, l) => a + (l.inventory?.[k] || 0), 0);
+        return total > 0;
+      });
       if (tireKeys.length === 0) break;
       const k = tireKeys[R(0, tireKeys.length - 1)];
       const t = TIRES[k];
@@ -218,7 +347,7 @@ export function simWeek(g, shared = {}) {
       const ship = Rf(ECOM_SHIP_COST_RANGE[0], ECOM_SHIP_COST_RANGE[1]);
       const fee = price * ECOM_PAYMENT_FEE;
 
-      s.inventory[k]--;
+      pullFromStock(s, k, 1);
       const net = price - ship - fee;
       s.cash += net;
       ecomRev += price;
@@ -246,16 +375,19 @@ export function simWeek(g, shared = {}) {
     if (!mp) continue;
     const demand = Math.floor(MARKETPLACE_WEEKLY_DEMAND * mp.trafficMult * sDem);
     const qty = Math.min(demand, R(2, 8));
-    const tireKeys = Object.keys(TIRES).filter(k => !TIRES[k].used && s.inventory[k] > 0);
-    if (tireKeys.length === 0) break;
 
     for (let i = 0; i < qty; i++) {
+      const tireKeys = Object.keys(TIRES).filter(k => {
+        if (TIRES[k].used) return false;
+        const total = (s.warehouseInventory?.[k] || 0) +
+          s.locations.reduce((a, l) => a + (l.inventory?.[k] || 0), 0);
+        return total > 0;
+      });
       if (tireKeys.length === 0) break;
       const k = tireKeys[R(0, tireKeys.length - 1)];
-      if (s.inventory[k] <= 0) continue;
       const price = s.prices[k] || TIRES[k].def;
       const fee = price * mp.fee;
-      s.inventory[k]--;
+      pullFromStock(s, k, 1);
       s.cash += price - fee;
       s.weekRev += price;
       s.weekSold++;
@@ -281,9 +413,11 @@ export function simWeek(g, shared = {}) {
     const t = TIRES[gc.tire];
     if (!t) continue;
     const target = gc.weeklyTarget;
-    const canDeliver = Math.min(target, s.inventory[gc.tire] || 0);
+    const totalStock = (s.warehouseInventory?.[gc.tire] || 0) +
+      s.locations.reduce((a, l) => a + (l.inventory?.[gc.tire] || 0), 0);
+    const canDeliver = Math.min(target, totalStock);
     if (canDeliver > 0) {
-      s.inventory[gc.tire] -= canDeliver;
+      pullFromStock(s, gc.tire, canDeliver);
       const rev = canDeliver * gc.pricePerTire;
       s.cash += rev;
       s.weekRev += rev;
@@ -438,6 +572,9 @@ export function simWeek(g, shared = {}) {
   delete s._cM;
   delete s._vR;
   delete s._fO;
+
+  // Rebuild aggregate inventory from all locations + warehouse
+  rebuildGlobalInv(s);
 
   return s;
 }

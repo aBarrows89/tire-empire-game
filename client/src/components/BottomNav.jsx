@@ -11,6 +11,7 @@ const TABS = [
   { id: 'shop', icon: '\u{1F3EA}', label: 'Shops' },
   { id: 'staff', icon: '\u{1F465}', label: 'Staff' },
   { id: 'supplier', icon: '\u{1F69A}', label: 'Supply' },
+  { id: 'marketplace', icon: '\u{1F4E2}', label: 'Market' },
   { id: 'profile', icon: '\u{1F464}', label: 'Profile' },
   { id: 'log', icon: '\u{1F4CB}', label: 'Log' },
 ];
@@ -38,6 +39,9 @@ function getUnlockedTabs(g) {
 
   // Supplier (new tires): once you have rep and some cash
   if (g.reputation >= 8 || g.unlockedSuppliers.length > 0) unlocked.add('supplier');
+
+  // Marketplace: once you have a shop
+  if (g.locations.length > 0) unlocked.add('marketplace');
 
   return unlocked;
 }

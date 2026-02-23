@@ -4,6 +4,7 @@ import WelcomeScreen from './components/WelcomeScreen.jsx';
 import TutorialOverlay from './components/TutorialOverlay.jsx';
 import Header from './components/Header.jsx';
 import BottomNav from './components/BottomNav.jsx';
+import VinniePopup from './components/VinniePopup.jsx';
 import DashboardPanel from './components/panels/DashboardPanel.jsx';
 import SourcePanel from './components/panels/SourcePanel.jsx';
 import PricingPanel from './components/panels/PricingPanel.jsx';
@@ -14,6 +15,7 @@ import BankPanel from './components/panels/BankPanel.jsx';
 import SupplierPanel from './components/panels/SupplierPanel.jsx';
 import WeeklyLogPanel from './components/panels/WeeklyLogPanel.jsx';
 import ProfilePanel from './components/panels/ProfilePanel.jsx';
+import MarketplacePanel from './components/panels/MarketplacePanel.jsx';
 
 const PANELS = {
   dashboard: DashboardPanel,
@@ -24,6 +26,7 @@ const PANELS = {
   staff: StaffPanel,
   bank: BankPanel,
   supplier: SupplierPanel,
+  marketplace: MarketplacePanel,
   log: WeeklyLogPanel,
   profile: ProfilePanel,
 };
@@ -51,6 +54,7 @@ function GameLayout() {
         <Panel />
       </div>
       <BottomNav />
+      <VinniePopup />
     </>
   );
 }
