@@ -1,0 +1,18 @@
+{
+  "name": "tire-empire-server",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Tire Empire game server",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "pg": "^8.13.1",
+    "ws": "^8.18.0"
+  }
+}
