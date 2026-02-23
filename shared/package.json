@@ -1,0 +1,10 @@
+{
+  "name": "tire-empire-shared",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Shared constants and helpers for Tire Empire",
+  "exports": {
+    "./constants": "./constants/index.js",
+    "./helpers": "./helpers/index.js"
+  }
+}
