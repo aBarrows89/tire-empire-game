@@ -144,3 +144,79 @@ input[type="range"]::-webkit-slider-thumb {
   border-bottom: 1px solid var(--border);
 }
 .log-week { color: var(--text-dim); font-size: 10px; }
+
+/* Welcome Screen */
+.welcome-screen {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; padding: 16px;
+}
+.welcome-inner {
+  width: 100%; max-width: 400px; text-align: center;
+}
+.welcome-vinnie { font-size: 64px; margin-bottom: 8px; }
+.welcome-title {
+  font-size: 28px; font-weight: 800; color: var(--gold);
+  margin-bottom: 8px; letter-spacing: 1px;
+}
+.welcome-sub {
+  font-size: 13px; color: var(--text-dim); line-height: 1.5;
+  margin-bottom: 20px;
+}
+.welcome-form {
+  display: flex; flex-direction: column; gap: 12px;
+  text-align: left;
+}
+.welcome-label {
+  font-size: 12px; font-weight: 600; color: var(--text-dim);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.welcome-input {
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); font-size: 15px;
+  min-height: 44px; outline: none;
+}
+.welcome-input:focus { border-color: var(--accent); }
+.welcome-error { color: var(--red); font-size: 12px; }
+.welcome-hint {
+  font-size: 11px; color: var(--text-dim);
+  margin-top: 16px; line-height: 1.4;
+}
+
+/* Tutorial Overlay */
+.tutorial-overlay {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; padding: 16px;
+}
+.tutorial-card {
+  width: 100%; max-width: 400px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 14px; padding: 24px 20px; text-align: center;
+}
+.tutorial-vinnie { font-size: 56px; margin-bottom: 4px; }
+.tutorial-step-count {
+  font-size: 11px; color: var(--text-dim); margin-bottom: 8px;
+}
+.tutorial-title {
+  font-size: 18px; font-weight: 700; color: var(--gold);
+  margin-bottom: 10px;
+}
+.tutorial-text {
+  font-size: 13px; line-height: 1.6; color: var(--text);
+  margin-bottom: 16px;
+}
+.tutorial-hint {
+  font-size: 11px; color: var(--text-dim); margin-bottom: 12px;
+}
+.tutorial-actions {
+  display: flex; flex-direction: column;
+}
+
+/* Vinnie Tip Banner */
+.vinnie-tip {
+  background: var(--surface); border: 1px solid var(--gold);
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 8px;
+  display: flex; align-items: flex-start; gap: 8px;
+}
+.vinnie-tip-icon { font-size: 24px; flex-shrink: 0; }
+.vinnie-tip-text { font-size: 12px; color: var(--text); line-height: 1.4; }

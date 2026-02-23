@@ -14,6 +14,16 @@ export async function getState() {
   return res.json();
 }
 
+export async function registerPlayer(playerName, companyName) {
+  const res = await fetch(`${API_BASE}/state/register`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ playerName, companyName }),
+  });
+  if (!res.ok) throw new Error(`POST /api/state/register failed: ${res.status}`);
+  return res.json();
+}
+
 export async function postAction(action, params = {}) {
   const res = await fetch(`${API_BASE}/action`, {
     method: 'POST',

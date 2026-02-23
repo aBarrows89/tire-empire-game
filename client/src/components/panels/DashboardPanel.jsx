@@ -4,6 +4,7 @@ import { fmt } from '@shared/helpers/format.js';
 import { TIRES } from '@shared/constants/tires.js';
 import { getWealth } from '@shared/helpers/wealth.js';
 import { getInv, getCap } from '@shared/helpers/inventory.js';
+import VinnieTip from '../VinnieTip.jsx';
 
 export default function DashboardPanel() {
   const { state } = useGame();
@@ -15,6 +16,7 @@ export default function DashboardPanel() {
 
   return (
     <>
+      <VinnieTip />
       <div className="card">
         <div className="card-title">This Week</div>
         <div className="row-between mb-4">

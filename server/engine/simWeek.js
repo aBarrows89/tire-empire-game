@@ -36,8 +36,6 @@ import { EVENT_HANDLERS } from './events.js';
  * Once the full ~700-line simWeek is available, replace section by section.
  */
 export function simWeek(g, shared = {}) {
-  if (g.paused) return g;
-
   let s = { ...g, week: g.week + 1, weekRev: 0, weekProfit: 0, weekSold: 0, log: [], _events: [] };
 
   const season = getSeason(s.week);
@@ -305,6 +303,28 @@ export function simWeek(g, shared = {}) {
   }
   s.loans = (s.loans || []).filter(l => l.remaining > 0);
 
+  // ── BANK DEPOSITS (interest + rate fluctuation) ──
+  if (s.bankBalance > 0) {
+    const weeklyRate = (s.bankRate || 0.042) / 52;
+    const interest = Math.round(s.bankBalance * weeklyRate * 100) / 100;
+    s.bankBalance += interest;
+    s.bankInterestEarned = interest;
+    s.bankTotalInterest = (s.bankTotalInterest || 0) + interest;
+    s.cash += 0; // interest stays in savings, not auto-deposited to cash
+    if (interest >= 1) {
+      s.log.push(`\u{1F3E6} Bank paid $${Math.floor(interest)} interest`);
+    }
+  } else {
+    s.bankInterestEarned = 0;
+  }
+  // Fluctuate the savings rate — base ~4.2% annual, shifted by season + noise
+  // Higher rates in fall/winter (tighter money), lower in spring/summer
+  const rateSeasonMult = { Spring: 0.92, Summer: 0.88, Fall: 1.08, Winter: 1.12 }[season] || 1;
+  const rateNoise = 1 + (Math.random() - 0.5) * 0.10; // +/- 5%
+  s.bankRate = Math.round(0.042 * rateSeasonMult * rateNoise * 10000) / 10000;
+  // Clamp between 1.5% and 6.5%
+  s.bankRate = Math.max(0.015, Math.min(0.065, s.bankRate));
+
   // ── REPUTATION ──
   if (s.weekSold > 0) {
     const repGain = Math.min(.5, s.weekSold * .01 + s.locations.length * .02);
@@ -315,6 +335,39 @@ export function simWeek(g, shared = {}) {
   s.totalRev += s.weekRev;
   s.totalProfit += s.weekProfit;
   s.totalSold += s.weekSold;
+
+  // ── MARKET PRICE FLUCTUATION ──
+  // Blends: base price + seasonal shift + live player avg + live AI avg + noise
+  const mktPrices = { ...(s.marketPrices || {}) };
+  const playerAvg = shared.playerPriceAvg || {};
+  const aiAvg = shared.aiPriceAvg || {};
+
+  for (const [k, t] of Object.entries(TIRES)) {
+    // Season multiplier
+    let seasonMult = sDem;
+    if (t.seas && season === "Winter") seasonMult *= 1.15;
+    if (t.ag) seasonMult *= (season === "Spring" || season === "Fall") ? 1.1 : 0.95;
+
+    // Base component: default price * season
+    const seasonalBase = t.def * seasonMult;
+
+    // Live player price component (if available)
+    const livePlayer = playerAvg[k] || t.def;
+
+    // AI price component (if available)
+    const liveAI = aiAvg[k] || t.def;
+
+    // Weighted blend: 35% seasonal base, 30% player avg, 25% AI avg, 10% noise
+    const blended = seasonalBase * 0.35 + livePlayer * 0.30 + liveAI * 0.25 + t.def * 0.10;
+
+    // Add random noise: +/- 5%
+    const noise = 1 + (Math.random() - 0.5) * 0.10;
+    const newPrice = Math.round(blended * noise);
+
+    // Clamp to valid range
+    mktPrices[k] = Math.max(t.lo, Math.min(t.hi, newPrice));
+  }
+  s.marketPrices = mktPrices;
 
   // ── TIRE COINS ──
   s.tireCoins = (s.tireCoins || 0) + 5; // weekSurvived reward

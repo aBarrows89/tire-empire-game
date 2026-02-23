@@ -39,15 +39,19 @@ router.post('/', authMiddleware, async (req, res) => {
         if (g.cash < src.c) return res.status(400).json({ error: 'Not enough cash' });
         if (src.rr && g.reputation < src.rr) return res.status(400).json({ error: 'Not enough reputation' });
 
+        const freeSpace = getCap(g) - getInv(g);
+        if (freeSpace <= 0) return res.status(400).json({ error: 'No storage space' });
+
         g.cash -= src.c;
-        const qty = R(src.min, src.max);
+        const rawQty = R(src.min, src.max);
+        const qty = Math.min(rawQty, freeSpace);
         // Distribute across used tire grades
         const usedTypes = Object.keys(TIRES).filter(k => TIRES[k].used);
         for (let i = 0; i < qty; i++) {
           const k = usedTypes[R(0, usedTypes.length - 1)];
           g.inventory[k] = (g.inventory[k] || 0) + 1;
         }
-        g.log.push(`Sourced ${qty} tires from ${src.n}`);
+        g.log.push(`Sourced ${qty} tires from ${src.n}${qty < rawQty ? ` (${rawQty - qty} didn't fit)` : ''}`);
         break;
       }
 
@@ -128,8 +132,33 @@ router.post('/', authMiddleware, async (req, res) => {
         break;
       }
 
-      case 'pause': {
-        g.paused = !g.paused;
+      case 'bankDeposit': {
+        const depAmt = Math.floor(Number(params.amount));
+        if (!depAmt || depAmt <= 0) return res.status(400).json({ error: 'Invalid amount' });
+        if (g.cash < depAmt) return res.status(400).json({ error: 'Not enough cash' });
+        g.cash -= depAmt;
+        g.bankBalance = (g.bankBalance || 0) + depAmt;
+        g.log.push(`Deposited $${depAmt.toLocaleString()} to savings`);
+        break;
+      }
+
+      case 'bankWithdraw': {
+        const wdAmt = Math.floor(Number(params.amount));
+        if (!wdAmt || wdAmt <= 0) return res.status(400).json({ error: 'Invalid amount' });
+        if ((g.bankBalance || 0) < wdAmt) return res.status(400).json({ error: 'Insufficient balance' });
+        g.bankBalance -= wdAmt;
+        g.cash += wdAmt;
+        g.log.push(`Withdrew $${wdAmt.toLocaleString()} from savings`);
+        break;
+      }
+
+      case 'tutorialAdvance': {
+        g.tutorialStep = (g.tutorialStep || 0) + 1;
+        break;
+      }
+
+      case 'tutorialDone': {
+        g.tutorialDone = true;
         break;
       }
 

@@ -8,9 +8,12 @@ import { TIRES } from '../../shared/constants/tires.js';
 export function init(playerName = "Player") {
   const inventory = {};
   const prices = {};
+  const marketPrices = {};
   for (const k of Object.keys(TIRES)) {
     inventory[k] = 0;
     prices[k] = TIRES[k].def;
+    // Market average = midpoint of lo-hi range with some noise
+    marketPrices[k] = TIRES[k].def;
   }
 
   return {
@@ -27,12 +30,17 @@ export function init(playerName = "Player") {
     weekSold: 0,
     inventory,
     prices,
+    marketPrices,
     storage: [{ type: "van", id: uid() }],
     locations: [],
     staff: { techs: 0, sales: 0, managers: 0, drivers: 0 },
     whStaff: {},
     corpStaff: {},
     loans: [],
+    bankBalance: 0,
+    bankRate: 0.042,       // annual rate, fluctuates each tick
+    bankInterestEarned: 0, // interest earned this week
+    bankTotalInterest: 0,  // lifetime interest earned
     unlockedSources: ["scrapYard", "garageCleanout"],
     unlockedSuppliers: [],
     unlockedMfgs: [],
@@ -60,7 +68,7 @@ export function init(playerName = "Player") {
     tireCoins: 0,
     tutorialStep: 0,
     tutorialDone: false,
-    paused: false,
+    companyName: '',
     aiShops: [],
     _events: [],
   };

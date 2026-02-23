@@ -3,9 +3,64 @@ import { getAllActivePlayers, savePlayerState, getGame, saveGame, upsertLeaderbo
 import { simWeek } from '../engine/simWeek.js';
 import { getWealth } from '../../shared/helpers/wealth.js';
 import { CITIES } from '../../shared/constants/cities.js';
+import { TIRES } from '../../shared/constants/tires.js';
 import { broadcast } from './broadcast.js';
 
 let tickInterval = null;
+
+/**
+ * Aggregate player prices across all active players into per-tire averages.
+ * Returns { tireKey: avgPrice, ... }
+ */
+function aggregatePlayerPrices(players) {
+  const sums = {};
+  const counts = {};
+  for (const k of Object.keys(TIRES)) {
+    sums[k] = 0;
+    counts[k] = 0;
+  }
+  for (const player of players) {
+    const g = player.game_state;
+    if (!g || !g.prices) continue;
+    for (const [k, price] of Object.entries(g.prices)) {
+      if (TIRES[k]) {
+        sums[k] += price;
+        counts[k]++;
+      }
+    }
+  }
+  const avg = {};
+  for (const k of Object.keys(TIRES)) {
+    avg[k] = counts[k] > 0 ? Math.round(sums[k] / counts[k]) : TIRES[k].def;
+  }
+  return avg;
+}
+
+/**
+ * Aggregate AI shop prices into per-tire averages.
+ */
+function aggregateAIPrices(aiShops) {
+  const sums = {};
+  const counts = {};
+  for (const k of Object.keys(TIRES)) {
+    sums[k] = 0;
+    counts[k] = 0;
+  }
+  for (const shop of aiShops) {
+    if (!shop.prices) continue;
+    for (const [k, price] of Object.entries(shop.prices)) {
+      if (TIRES[k]) {
+        sums[k] += price;
+        counts[k]++;
+      }
+    }
+  }
+  const avg = {};
+  for (const k of Object.keys(TIRES)) {
+    avg[k] = counts[k] > 0 ? Math.round(sums[k] / counts[k]) : TIRES[k].def;
+  }
+  return avg;
+}
 
 /**
  * Run one tick: advance all active players by one week.
@@ -19,10 +74,16 @@ export async function runTick(clients) {
     const players = await getAllActivePlayers();
     const week = (game.week || 0) + 1;
 
+    // Aggregate live pricing data from all players and AI shops
+    const playerPriceAvg = aggregatePlayerPrices(players);
+    const aiPriceAvg = aggregateAIPrices(game.ai_shops || []);
+
     const shared = {
       cities: CITIES,
       aiShops: game.ai_shops || [],
       liquidation: game.liquidation || [],
+      playerPriceAvg,
+      aiPriceAvg,
     };
 
     for (const player of players) {

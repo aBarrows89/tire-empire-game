@@ -4,21 +4,15 @@ import { fmt } from '@shared/helpers/format.js';
 import { getSeason } from '@shared/helpers/season.js';
 import { SC } from '@shared/constants/seasons.js';
 import { getCap, getInv } from '@shared/helpers/inventory.js';
-import { postAction } from '../api/client.js';
 
 export default function Header() {
-  const { state, refreshState } = useGame();
+  const { state } = useGame();
   const g = state.game;
   if (!g) return null;
 
   const season = getSeason(g.week);
   const inv = getInv(g);
   const cap = getCap(g);
-
-  const togglePause = async () => {
-    await postAction('pause');
-    refreshState();
-  };
 
   return (
     <div className="header">
@@ -44,13 +38,11 @@ export default function Header() {
         <span className="stat-label">Inv</span>
         <span className="stat-val">{inv}/{cap}</span>
       </div>
-      <button
-        className="btn btn-sm btn-outline"
-        onClick={togglePause}
-        style={{ marginLeft: 'auto' }}
-      >
-        {g.paused ? '▶ Play' : '⏸ Pause'}
-      </button>
+      {g.companyName && (
+        <div className="stat" style={{ marginLeft: 'auto' }}>
+          <span className="stat-label" style={{ fontSize: 10 }}>{g.companyName}</span>
+        </div>
+      )}
     </div>
   );
 }

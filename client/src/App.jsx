@@ -1,5 +1,7 @@
 import React from 'react';
 import { GameProvider, useGame } from './context/GameContext.jsx';
+import WelcomeScreen from './components/WelcomeScreen.jsx';
+import TutorialOverlay from './components/TutorialOverlay.jsx';
 import Header from './components/Header.jsx';
 import BottomNav from './components/BottomNav.jsx';
 import DashboardPanel from './components/panels/DashboardPanel.jsx';
@@ -29,6 +31,14 @@ function GameLayout() {
 
   if (state.loading) return <div className="loading">Loading Tire Empire...</div>;
   if (state.error) return <div className="loading">Error: {state.error}</div>;
+
+  const g = state.game;
+
+  // Show welcome screen if no company name set
+  if (!g.companyName) return <WelcomeScreen />;
+
+  // Show tutorial if not completed
+  if (!g.tutorialDone) return <TutorialOverlay />;
 
   const Panel = PANELS[state.activePanel] || DashboardPanel;
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { CITIES } from '@shared/constants/cities.js';
 import { SHOP_BASE, SHOP_MO } from '@shared/constants/shop.js';
@@ -10,6 +10,15 @@ export default function ShopPanel() {
   const g = state.game;
   const [busy, setBusy] = useState(null);
   const [stateFilter, setStateFilter] = useState('');
+  const [aiCounts, setAiCounts] = useState({});
+
+  // Fetch AI shop counts per city on mount
+  useEffect(() => {
+    fetch('/api/market/cities')
+      .then(r => r.json())
+      .then(data => setAiCounts(data))
+      .catch(() => {});
+  }, [g.week]);
 
   const open = async (cityId) => {
     setBusy(cityId);
@@ -30,10 +39,16 @@ export default function ShopPanel() {
           <div className="card-title">Your Shops ({g.locations.length})</div>
           {g.locations.map((loc, i) => {
             const city = CITIES.find(c => c.id === loc.cityId);
+            const competitors = aiCounts[loc.cityId] || 0;
             return (
-              <div key={i} className="row-between text-sm mb-4">
-                <span>{city?.name}, {city?.state}</span>
-                <span className="text-dim">Dem: {city?.dem}</span>
+              <div key={i} className="mb-4">
+                <div className="row-between text-sm">
+                  <span className="font-bold">{city?.name}, {city?.state}</span>
+                  <span className="text-dim text-xs">Dem: {city?.dem}</span>
+                </div>
+                <div className="text-xs text-dim">
+                  {competitors} competitor{competitors !== 1 ? 's' : ''} in market
+                </div>
               </div>
             );
           })}
@@ -43,7 +58,8 @@ export default function ShopPanel() {
       <div className="card">
         <div className="card-title">Open a Shop</div>
         <div className="text-sm text-dim mb-4">
-          Cost: ${fmt(SHOP_BASE)} + ${fmt(SHOP_MO)}/mo · Need Rep 15+
+          Cost: ${fmt(SHOP_BASE)} + ${fmt(SHOP_MO)}/mo rent.
+          Pick a city with good demand and fewer competitors.
         </div>
         <select
           value={stateFilter}
@@ -63,6 +79,9 @@ export default function ShopPanel() {
         const cantAfford = g.cash < SHOP_BASE;
         const lowRep = g.reputation < 15;
         const hasShop = g.locations.some(l => l.cityId === city.id);
+        const competitors = aiCounts[city.id] || 0;
+        const satPct = city.mx > 0 ? Math.round((competitors / city.mx) * 100) : 0;
+        const satColor = satPct > 80 ? 'text-red' : satPct > 50 ? 'text-gold' : 'text-green';
 
         return (
           <div key={city.id} className="card">
@@ -70,21 +89,30 @@ export default function ShopPanel() {
               <span className="font-bold text-sm">{city.name}, {city.state}</span>
               <span className="text-xs text-dim">{city.size}</span>
             </div>
-            <div className="row gap-8 text-xs text-dim mb-4">
+            <div className="row gap-8 text-xs text-dim mb-4" style={{ flexWrap: 'wrap' }}>
               <span>Pop: {city.pop}K</span>
               <span>Dem: {city.dem}</span>
               <span>Cost: {city.cost}x</span>
-              <span>Win: {city.win}x</span>
+              {city.win > 0.5 && <span>Win: {city.win}x</span>}
+              {city.agPct && <span>AG: {Math.round(city.agPct * 100)}%</span>}
+            </div>
+            <div className="row-between text-xs mb-4">
+              <span className="text-dim">
+                Shops: {competitors}/{city.mx}
+              </span>
+              <span className={`font-bold ${satColor}`}>
+                {satPct}% saturated
+              </span>
             </div>
             {hasShop ? (
-              <div className="text-sm text-green">You have a shop here</div>
+              <div className="text-sm text-green font-bold">You have a shop here</div>
             ) : (
               <button
                 className="btn btn-full btn-sm btn-green"
                 disabled={cantAfford || lowRep || busy === city.id}
                 onClick={() => open(city.id)}
               >
-                {lowRep ? 'Need Rep 15' : cantAfford ? `Need $${fmt(SHOP_BASE)}` : `Open Shop ($${fmt(SHOP_BASE)})`}
+                {lowRep ? `Need Rep 15 (yours: ${g.reputation.toFixed(1)})` : cantAfford ? `Need $${fmt(SHOP_BASE)}` : `Open Shop ($${fmt(SHOP_BASE)})`}
               </button>
             )}
           </div>

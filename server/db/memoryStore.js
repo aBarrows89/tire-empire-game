@@ -31,9 +31,7 @@ export function createMemoryStore() {
     async getAllActivePlayers() {
       const results = [];
       for (const p of players.values()) {
-        if (!p.game_state?.paused) {
-          results.push({ id: p.id, game_state: p.game_state });
-        }
+        results.push({ id: p.id, game_state: p.game_state });
       }
       return results;
     },
