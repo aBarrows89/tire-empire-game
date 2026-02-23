@@ -2,6 +2,7 @@ import { TICK_MS } from '../config.js';
 import { getAllActivePlayers, savePlayerState, getGame, saveGame, upsertLeaderboard } from '../db/queries.js';
 import { simWeek } from '../engine/simWeek.js';
 import { getWealth } from '../../shared/helpers/wealth.js';
+import { CITIES } from '../../shared/constants/cities.js';
 import { broadcast } from './broadcast.js';
 
 let tickInterval = null;
@@ -19,7 +20,7 @@ export async function runTick(clients) {
     const week = (game.week || 0) + 1;
 
     const shared = {
-      cities: [], // TODO: pass CITIES from shared constants if needed by simWeek
+      cities: CITIES,
       aiShops: game.ai_shops || [],
       liquidation: game.liquidation || [],
     };
