@@ -220,3 +220,114 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .vinnie-tip-icon { font-size: 24px; flex-shrink: 0; }
 .vinnie-tip-text { font-size: 12px; color: var(--text); line-height: 1.4; }
+
+/* State Tile Map */
+.state-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  grid-template-rows: repeat(8, 1fr);
+  gap: 2px;
+  margin-bottom: 8px;
+}
+.state-tile {
+  aspect-ratio: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: border-color .15s, transform .1s;
+}
+.state-tile:hover { transform: scale(1.1); z-index: 1; }
+.state-tile-active {
+  border-color: var(--accent);
+  border-width: 2px;
+  box-shadow: 0 0 6px var(--accent);
+}
+.state-tile-owned { border-color: var(--gold); border-width: 2px; }
+.state-tile-owned.state-tile-active { border-color: var(--accent); }
+
+/* Profile Card */
+.profile-card {
+  text-align: center;
+  padding: 20px 12px;
+}
+.profile-avatar {
+  font-size: 48px;
+  margin-bottom: 8px;
+}
+.profile-name {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--gold);
+  margin-bottom: 4px;
+}
+.profile-company {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 16px;
+}
+.profile-stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.profile-stat {
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 10px;
+}
+.profile-stat-val {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--accent);
+}
+.profile-stat-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+/* Auto-pricing */
+.auto-badge {
+  font-size: 9px;
+  background: var(--green);
+  color: #111;
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-left: 6px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+.autoprice-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.autoprice-select {
+  flex: 1;
+  min-height: 36px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+.autoprice-offset {
+  width: 64px;
+  min-height: 36px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  text-align: center;
+}

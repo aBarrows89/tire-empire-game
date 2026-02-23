@@ -33,6 +33,20 @@ export default function DashboardPanel() {
           <span className="text-sm text-dim">Tires Sold</span>
           <span className="font-bold">{g.weekSold}</span>
         </div>
+        <div className="row-between mb-4">
+          <span className="text-sm text-dim">Margin</span>
+          <span className={`font-bold ${g.weekProfit >= 0 ? 'text-green' : 'text-red'}`}>
+            {g.weekRev > 0 ? (g.weekProfit / g.weekRev * 100).toFixed(1) : '0.0'}%
+          </span>
+        </div>
+        {(g.weekServiceJobs || 0) > 0 && (
+          <div className="row-between mb-4">
+            <span className="text-sm text-dim">Services</span>
+            <span className="font-bold text-green">
+              {g.weekServiceJobs} jobs &middot; ${fmt(g.weekServiceRev)}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="card">
@@ -52,6 +66,12 @@ export default function DashboardPanel() {
         <div className="row-between mb-4">
           <span className="text-sm text-dim">TireCoins</span>
           <span className="font-bold text-gold">{g.tireCoins || 0}</span>
+        </div>
+        <div className="row-between mb-4">
+          <span className="text-sm text-dim">Avg Margin</span>
+          <span className={`font-bold ${g.totalProfit >= 0 ? 'text-green' : 'text-red'}`}>
+            {g.totalRev > 0 ? (g.totalProfit / g.totalRev * 100).toFixed(1) : '0.0'}%
+          </span>
         </div>
       </div>
 

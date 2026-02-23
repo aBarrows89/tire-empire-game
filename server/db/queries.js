@@ -15,6 +15,7 @@ if (STORAGE_TYPE === 'postgres') {
 export const getPlayer = (...args) => impl.getPlayer(...args);
 export const createPlayer = (...args) => impl.createPlayer(...args);
 export const savePlayerState = (...args) => impl.savePlayerState(...args);
+export const isCompanyNameTaken = (...args) => impl.isCompanyNameTaken(...args);
 export const getAllActivePlayers = (...args) => impl.getAllActivePlayers(...args);
 export const getGame = (...args) => impl.getGame(...args);
 export const saveGame = (...args) => impl.saveGame(...args);

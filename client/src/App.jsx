@@ -13,6 +13,7 @@ import StaffPanel from './components/panels/StaffPanel.jsx';
 import BankPanel from './components/panels/BankPanel.jsx';
 import SupplierPanel from './components/panels/SupplierPanel.jsx';
 import WeeklyLogPanel from './components/panels/WeeklyLogPanel.jsx';
+import ProfilePanel from './components/panels/ProfilePanel.jsx';
 
 const PANELS = {
   dashboard: DashboardPanel,
@@ -24,6 +25,7 @@ const PANELS = {
   bank: BankPanel,
   supplier: SupplierPanel,
   log: WeeklyLogPanel,
+  profile: ProfilePanel,
 };
 
 function GameLayout() {

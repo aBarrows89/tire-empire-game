@@ -11,6 +11,7 @@ const TABS = [
   { id: 'shop', icon: '\u{1F3EA}', label: 'Shops' },
   { id: 'staff', icon: '\u{1F465}', label: 'Staff' },
   { id: 'supplier', icon: '\u{1F69A}', label: 'Supply' },
+  { id: 'profile', icon: '\u{1F464}', label: 'Profile' },
   { id: 'log', icon: '\u{1F4CB}', label: 'Log' },
 ];
 
@@ -21,7 +22,7 @@ const TABS = [
  */
 function getUnlockedTabs(g) {
   const inv = getInv(g);
-  const unlocked = new Set(['dashboard', 'source', 'pricing', 'log']);
+  const unlocked = new Set(['dashboard', 'source', 'pricing', 'log', 'profile']);
 
   // Storage: once you have > 12 tires or bought any storage beyond van
   if (inv > 12 || g.storage.length > 1) unlocked.add('storage');

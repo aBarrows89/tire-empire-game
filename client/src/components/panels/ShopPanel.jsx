@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { CITIES } from '@shared/constants/cities.js';
-import { SHOP_BASE, SHOP_MO } from '@shared/constants/shop.js';
+import { shopCost } from '@shared/constants/shop.js';
+import { STATE_GRID, GRID_ROWS, GRID_COLS } from '@shared/constants/stateGrid.js';
+import { SERVICES } from '@shared/constants/services.js';
 import { fmt } from '@shared/helpers/format.js';
 import { postAction } from '../../api/client.js';
 
@@ -9,16 +11,30 @@ export default function ShopPanel() {
   const { state, refreshState } = useGame();
   const g = state.game;
   const [busy, setBusy] = useState(null);
-  const [stateFilter, setStateFilter] = useState('');
+  const [selectedState, setSelectedState] = useState(null);
   const [aiCounts, setAiCounts] = useState({});
 
-  // Fetch AI shop counts per city on mount
   useEffect(() => {
     fetch('/api/market/cities')
       .then(r => r.json())
       .then(data => setAiCounts(data))
       .catch(() => {});
   }, [g.week]);
+
+  // Pre-compute per-state stats
+  const stateStats = useMemo(() => {
+    const stats = {};
+    for (const city of CITIES) {
+      if (!stats[city.state]) stats[city.state] = { cities: 0, totalDem: 0, totalSat: 0, totalMx: 0, hasShop: false };
+      const s = stats[city.state];
+      s.cities++;
+      s.totalDem += city.dem;
+      s.totalMx += city.mx;
+      s.totalSat += (aiCounts[city.id] || 0);
+      if (g.locations.some(l => l.cityId === city.id)) s.hasShop = true;
+    }
+    return stats;
+  }, [aiCounts, g.locations]);
 
   const open = async (cityId) => {
     setBusy(cityId);
@@ -27,10 +43,21 @@ export default function ShopPanel() {
     setBusy(null);
   };
 
-  const states = [...new Set(CITIES.map(c => c.state))].sort();
-  const filtered = stateFilter
-    ? CITIES.filter(c => c.state === stateFilter)
-    : CITIES.slice(0, 20);
+  // Cities for the selected state
+  const stateCities = selectedState
+    ? CITIES.filter(c => c.state === selectedState).sort((a, b) => b.dem - a.dem)
+    : [];
+
+  // Tile color: green = high opportunity, gray = saturated
+  const getTileColor = (abbrev) => {
+    const s = stateStats[abbrev];
+    if (!s) return 'var(--border)';
+    const satPct = s.totalMx > 0 ? s.totalSat / s.totalMx : 0;
+    if (satPct > 0.8) return '#3a3a3a';
+    if (satPct > 0.6) return '#5a5a3a';
+    if (satPct > 0.4) return '#4a6a3a';
+    return '#3a7a4a';
+  };
 
   return (
     <>
@@ -55,69 +82,115 @@ export default function ShopPanel() {
         </div>
       )}
 
-      <div className="card">
-        <div className="card-title">Open a Shop</div>
-        <div className="text-sm text-dim mb-4">
-          Cost: ${fmt(SHOP_BASE)} + ${fmt(SHOP_MO)}/mo rent.
-          Pick a city with good demand and fewer competitors.
+      {g.locations.length > 0 && g.staff.techs > 0 && (
+        <div className="card">
+          <div className="card-title">Shop Services</div>
+          <div className="text-xs text-dim mb-4">
+            Walk-in labor revenue. Techs handle services with spare capacity after tire sales.
+          </div>
+          {g.weekServiceJobs > 0 && (
+            <div className="row-between text-sm mb-4">
+              <span className="text-dim">This week</span>
+              <span className="font-bold text-green">
+                {g.weekServiceJobs} jobs &middot; ${fmt(g.weekServiceRev)}
+              </span>
+            </div>
+          )}
+          {Object.entries(SERVICES).map(([k, svc]) => {
+            const price = (g.servicePrices && g.servicePrices[k]) || svc.price;
+            return (
+              <div key={k} className="row-between mb-4" style={{ alignItems: 'center' }}>
+                <span className="text-sm">{svc.n}</span>
+                <div className="row gap-8" style={{ alignItems: 'center' }}>
+                  <span className="text-xs text-dim">${svc.price} base</span>
+                  <input
+                    type="number"
+                    className="autoprice-offset"
+                    value={price}
+                    min={Math.round(svc.price * 0.5)}
+                    max={Math.round(svc.price * 3)}
+                    onChange={async (e) => {
+                      await postAction('setServicePrice', { service: k, price: Number(e.target.value) });
+                      refreshState();
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })}
         </div>
-        <select
-          value={stateFilter}
-          onChange={(e) => setStateFilter(e.target.value)}
-          style={{
-            width: '100%', padding: 8, marginBottom: 8, borderRadius: 6,
-            background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)',
-            minHeight: 44
-          }}
-        >
-          <option value="">Select a state...</option>
-          {states.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+      )}
+
+      <div className="card">
+        <div className="card-title">US Market Map</div>
+        <div className="text-xs text-dim mb-4">Tap a state to browse cities. Green = opportunity, gray = saturated.</div>
+        <div className="state-grid">
+          {STATE_GRID.map(([row, col, abbrev]) => {
+            const s = stateStats[abbrev];
+            const hasShop = s?.hasShop;
+            return (
+              <button
+                key={abbrev}
+                className={`state-tile${selectedState === abbrev ? ' state-tile-active' : ''}${hasShop ? ' state-tile-owned' : ''}`}
+                style={{
+                  gridRow: row + 1,
+                  gridColumn: col + 1,
+                  background: getTileColor(abbrev),
+                }}
+                onClick={() => setSelectedState(selectedState === abbrev ? null : abbrev)}
+              >
+                {abbrev}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {filtered.map(city => {
-        const cantAfford = g.cash < SHOP_BASE;
-        const lowRep = g.reputation < 15;
-        const hasShop = g.locations.some(l => l.cityId === city.id);
-        const competitors = aiCounts[city.id] || 0;
-        const satPct = city.mx > 0 ? Math.round((competitors / city.mx) * 100) : 0;
-        const satColor = satPct > 80 ? 'text-red' : satPct > 50 ? 'text-gold' : 'text-green';
+      {selectedState && stateCities.length > 0 && (
+        <div className="card">
+          <div className="card-title">{selectedState} Cities</div>
+          {stateCities.map(city => {
+            const cost = shopCost(city);
+            const cantAfford = g.cash < cost;
+            const lowRep = g.reputation < 15;
+            const hasShop = g.locations.some(l => l.cityId === city.id);
+            const competitors = aiCounts[city.id] || 0;
+            const satPct = city.mx > 0 ? Math.round((competitors / city.mx) * 100) : 0;
+            const satColor = satPct > 80 ? 'text-red' : satPct > 50 ? 'text-gold' : 'text-green';
 
-        return (
-          <div key={city.id} className="card">
-            <div className="row-between mb-4">
-              <span className="font-bold text-sm">{city.name}, {city.state}</span>
-              <span className="text-xs text-dim">{city.size}</span>
-            </div>
-            <div className="row gap-8 text-xs text-dim mb-4" style={{ flexWrap: 'wrap' }}>
-              <span>Pop: {city.pop}K</span>
-              <span>Dem: {city.dem}</span>
-              <span>Cost: {city.cost}x</span>
-              {city.win > 0.5 && <span>Win: {city.win}x</span>}
-              {city.agPct && <span>AG: {Math.round(city.agPct * 100)}%</span>}
-            </div>
-            <div className="row-between text-xs mb-4">
-              <span className="text-dim">
-                Shops: {competitors}/{city.mx}
-              </span>
-              <span className={`font-bold ${satColor}`}>
-                {satPct}% saturated
-              </span>
-            </div>
-            {hasShop ? (
-              <div className="text-sm text-green font-bold">You have a shop here</div>
-            ) : (
-              <button
-                className="btn btn-full btn-sm btn-green"
-                disabled={cantAfford || lowRep || busy === city.id}
-                onClick={() => open(city.id)}
-              >
-                {lowRep ? `Need Rep 15 (yours: ${g.reputation.toFixed(1)})` : cantAfford ? `Need $${fmt(SHOP_BASE)}` : `Open Shop ($${fmt(SHOP_BASE)})`}
-              </button>
-            )}
-          </div>
-        );
-      })}
+            return (
+              <div key={city.id} style={{ borderBottom: '1px solid var(--border)', paddingBottom: 8, marginBottom: 8 }}>
+                <div className="row-between mb-4">
+                  <span className="font-bold text-sm">{city.name}</span>
+                  <span className="text-xs text-dim">{city.size}</span>
+                </div>
+                <div className="row gap-8 text-xs text-dim mb-4" style={{ flexWrap: 'wrap' }}>
+                  <span>Pop: {city.pop}K</span>
+                  <span>Dem: {city.dem}</span>
+                  <span>Cost: ${fmt(cost)}</span>
+                  {city.win > 0.5 && <span>Win: {city.win}x</span>}
+                  {city.agPct && <span>AG: {Math.round(city.agPct * 100)}%</span>}
+                </div>
+                <div className="row-between text-xs mb-4">
+                  <span className="text-dim">Shops: {competitors}/{city.mx}</span>
+                  <span className={`font-bold ${satColor}`}>{satPct}% saturated</span>
+                </div>
+                {hasShop ? (
+                  <div className="text-sm text-green font-bold">You have a shop here</div>
+                ) : (
+                  <button
+                    className="btn btn-full btn-sm btn-green"
+                    disabled={cantAfford || lowRep || busy === city.id}
+                    onClick={() => open(city.id)}
+                  >
+                    {lowRep ? `Need Rep 15 (yours: ${g.reputation.toFixed(1)})` : cantAfford ? `Need $${fmt(cost)}` : `Open Shop ($${fmt(cost)})`}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </>
   );
 }

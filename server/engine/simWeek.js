@@ -9,9 +9,11 @@ import { SD } from '../../shared/constants/seasons.js';
 import { TIRES } from '../../shared/constants/tires.js';
 import { STORAGE } from '../../shared/constants/storage.js';
 import { PAY } from '../../shared/constants/staff.js';
-import { SHOP_MO } from '../../shared/constants/shop.js';
+import { SHOP_MO, shopRent } from '../../shared/constants/shop.js';
+import { CITIES } from '../../shared/constants/cities.js';
 import { CORP_PAY } from '../../shared/constants/corporate.js';
 import { EVENTS } from '../../shared/constants/events.js';
+import { SERVICES } from '../../shared/constants/services.js';
 import {
   ECOM_BASE_CONVERSION, ECOM_BASE_RETURN_RATE, ECOM_PAYMENT_FEE,
   ECOM_SHIP_COST_RANGE, ECOM_NATIONAL_MARKET, ECOM_HOSTING_BASE,
@@ -43,10 +45,29 @@ export function simWeek(g, shared = {}) {
   const sDem = SD[season] || 1;
 
   // ── RANDOM EVENTS ──
+  const totalStaff = Object.values(s.staff).reduce((a, v) => a + v, 0);
+  const usedInv = Object.entries(s.inventory)
+    .filter(([k]) => k.startsWith('used_'))
+    .reduce((a, [, v]) => a + v, 0);
+
+  const GATE_CHECK = {
+    hasSupplierOrLoc: () => (s.unlockedSuppliers || []).length > 0 || s.locations.length > 0,
+    hasRep:           () => s.reputation > 0,
+    hasTechs:         () => s.staff.techs > 0,
+    hasLocations:     () => s.locations.length > 0,
+    hasUsedInv:       () => usedInv > 0,
+    hasSupplier:      () => (s.unlockedSuppliers || []).length > 0,
+    hasSold:          () => (s.totalSold || 0) > 0,
+    hasLocOrRep:      () => s.locations.length > 0 || s.reputation > 3,
+    hasStaff:         () => totalStaff > 0,
+    hasJunk:          () => (s.inventory.used_junk || 0) > 10,
+  };
+
   for (let i = 0; i < EVENTS.length; i++) {
     const ev = EVENTS[i];
     if (Math.random() < (ev.ch || 0)) {
       if (ev.s !== undefined && ev.s !== si && ev.s !== 0) continue;
+      if (ev.gate && GATE_CHECK[ev.gate] && !GATE_CHECK[ev.gate]()) continue;
       s = EVENT_HANDLERS[i](s);
       s._events.push(ev.t);
       s.log.push(ev.t);
@@ -87,6 +108,41 @@ export function simWeek(g, shared = {}) {
         locDemand -= qty;
       }
     }
+  }
+
+  // ── SHOP SERVICES (flat repairs, balances, installs, nitrogen) ──
+  s.weekServiceRev = 0;
+  s.weekServiceJobs = 0;
+  if (s.locations.length > 0 && s.staff.techs > 0) {
+    // Leftover tech capacity after tire sales (each tech has 8 units/week)
+    const totalTechCap = s.staff.techs * 8 * (1 + s.staff.managers * .15);
+    const usedByTires = s.weekSold; // each tire sold uses ~1 unit
+    const spareCap = Math.max(0, totalTechCap - usedByTires);
+
+    // Walk-in service demand scales with locations, reputation, and season
+    const svcDemandBase = s.locations.length * (4 + s.reputation * .2) * sDem;
+    const svcPrices = s.servicePrices || { flatRepair: 25, balance: 20, install: 35, nitrogen: 10 };
+
+    let capLeft = spareCap;
+    for (const [svcKey, svc] of Object.entries(SERVICES)) {
+      if (capLeft <= 0) break;
+      // Each service type gets a share of demand
+      const demand = Math.floor(svcDemandBase * (.15 + Math.random() * .1));
+      const maxByTime = Math.floor(capLeft / svc.time);
+      const jobs = Math.min(demand, maxByTime);
+      if (jobs <= 0) continue;
+
+      const price = svcPrices[svcKey] || svc.price;
+      const rev = jobs * price;
+      s.cash += rev;
+      s.weekRev += rev;
+      s.weekProfit += rev; // services are pure labor profit
+      s.weekServiceRev += rev;
+      s.weekServiceJobs += jobs;
+      s.reputation = C(s.reputation + jobs * svc.repBoost, 0, 100);
+      capLeft -= jobs * svc.time;
+    }
+    s.totalServiceRev = (s.totalServiceRev || 0) + s.weekServiceRev;
   }
 
   // ── VAN SALES (bootstrap, no shop) ──
@@ -281,9 +337,12 @@ export function simWeek(g, shared = {}) {
   const storageRent = s.storage.reduce((a, st) => a + (STORAGE[st.type]?.mo || 0), 0) / 4;
   s.cash -= storageRent;
 
-  // Shop rent
-  const shopRent = s.locations.length * SHOP_MO / 4;
-  s.cash -= shopRent;
+  // Shop rent (variable by city cost)
+  const totalShopRent = s.locations.reduce((a, loc) => {
+    const city = CITIES.find(c => c.id === loc.cityId);
+    return a + shopRent(city);
+  }, 0);
+  s.cash -= totalShopRent;
 
   // Distribution monthly
   if (s.hasDist) s.cash -= DIST_MONTHLY / 4;

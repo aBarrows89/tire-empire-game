@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getPlayer, createPlayer } from '../db/queries.js';
+import { getPlayer, createPlayer, isCompanyNameTaken } from '../db/queries.js';
 import { init } from '../engine/init.js';
 import { authMiddleware } from '../middleware/auth.js';
 
@@ -30,6 +30,11 @@ router.post('/register', authMiddleware, async (req, res) => {
     const { playerName, companyName } = req.body;
     if (!playerName || !companyName) {
       return res.status(400).json({ error: 'playerName and companyName are required' });
+    }
+
+    const taken = await isCompanyNameTaken(companyName, req.playerId);
+    if (taken) {
+      return res.status(400).json({ error: 'Company name is already taken' });
     }
 
     let player = await getPlayer(req.playerId);

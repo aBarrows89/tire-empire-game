@@ -9,6 +9,7 @@ import stateRouter from './routes/state.js';
 import actionRouter from './routes/action.js';
 import marketRouter from './routes/market.js';
 import leaderboardRouter from './routes/leaderboard.js';
+import profileRouter from './routes/profile.js';
 
 const app = express();
 app.use(cors({ origin: CORS_ORIGIN }));
@@ -20,6 +21,7 @@ app.use('/api/state', stateRouter);
 app.use('/api/action', actionRouter);
 app.use('/api/market', marketRouter);
 app.use('/api/leaderboard', leaderboardRouter);
+app.use('/api/profile', profileRouter);
 
 // ── HTTP + WebSocket Server ──
 const server = createServer(app);

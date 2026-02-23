@@ -13,6 +13,8 @@ export default function Header() {
   const season = getSeason(g.week);
   const inv = getInv(g);
   const cap = getCap(g);
+  const year = Math.ceil(g.week / 52);
+  const weekOfYear = ((g.week - 1) % 52) + 1;
 
   return (
     <div className="header">
@@ -25,8 +27,7 @@ export default function Header() {
         <span className="stat-val">{g.reputation.toFixed(1)}</span>
       </div>
       <div className="stat">
-        <span className="stat-label">Wk</span>
-        <span className="stat-val">{g.week}</span>
+        <span className="stat-val">Y{year} W{weekOfYear}</span>
       </div>
       <div
         className="season-badge"

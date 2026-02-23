@@ -9,6 +9,31 @@ import { broadcast } from './broadcast.js';
 let tickInterval = null;
 
 /**
+ * Apply auto-pricing strategies before simWeek runs.
+ * Requires a pricing analyst on staff; if fired, autoPrice data persists
+ * but won't execute until re-hired.
+ */
+function applyAutoPrice(g) {
+  if (!g.autoPrice) return;
+  if (!g.staff.pricingAnalyst || g.staff.pricingAnalyst <= 0) return;
+  for (const [k, ap] of Object.entries(g.autoPrice)) {
+    if (!ap || ap.strategy === 'off') continue;
+    const t = TIRES[k];
+    if (!t) continue;
+    const mkt = (g.marketPrices && g.marketPrices[k]) || t.def;
+    let price;
+    switch (ap.strategy) {
+      case 'undercut': price = mkt - (ap.offset || 1); break;
+      case 'above':    price = mkt + (ap.offset || 1); break;
+      case 'match':    price = mkt; break;
+      case 'max':      price = t.hi; break;
+      default: continue;
+    }
+    g.prices[k] = Math.max(t.lo, Math.min(t.hi, Math.round(price)));
+  }
+}
+
+/**
  * Aggregate player prices across all active players into per-tire averages.
  * Returns { tireKey: avgPrice, ... }
  */
@@ -88,6 +113,7 @@ export async function runTick(clients) {
 
     for (const player of players) {
       const state = player.game_state;
+      applyAutoPrice(state);
       const newState = simWeek(state, shared);
       await savePlayerState(player.id, newState);
 

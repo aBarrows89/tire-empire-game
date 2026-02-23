@@ -28,6 +28,16 @@ export function createMemoryStore() {
       }
     },
 
+    async isCompanyNameTaken(name, excludeId = null) {
+      const lower = name.toLowerCase().trim();
+      for (const p of players.values()) {
+        if (excludeId && p.id === excludeId) continue;
+        const cn = p.game_state?.companyName;
+        if (cn && cn.toLowerCase().trim() === lower) return true;
+      }
+      return false;
+    },
+
     async getAllActivePlayers() {
       const results = [];
       for (const p of players.values()) {

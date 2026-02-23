@@ -9,7 +9,9 @@ import { STORAGE } from '../../shared/constants/storage.js';
 import { SOURCES } from '../../shared/constants/sources.js';
 import { SUPPLIERS } from '../../shared/constants/suppliers.js';
 import { LOANS } from '../../shared/constants/loans.js';
-import { SHOP_BASE } from '../../shared/constants/shop.js';
+import { SHOP_BASE, shopCost } from '../../shared/constants/shop.js';
+import { CITIES } from '../../shared/constants/cities.js';
+import { SERVICES } from '../../shared/constants/services.js';
 import { R } from '../../shared/helpers/format.js';
 
 const router = Router();
@@ -67,10 +69,13 @@ router.post('/', authMiddleware, async (req, res) => {
 
       case 'openShop': {
         const { cityId } = params;
-        if (g.cash < SHOP_BASE) return res.status(400).json({ error: 'Not enough cash' });
+        const city = CITIES.find(c => c.id === cityId);
+        if (!city) return res.status(400).json({ error: 'Invalid city' });
+        const cost = shopCost(city);
+        if (g.cash < cost) return res.status(400).json({ error: 'Not enough cash' });
         const check = canOpenInCity(g, cityId);
         if (!check.ok) return res.status(400).json({ error: check.reason });
-        g.cash -= SHOP_BASE;
+        g.cash -= cost;
         g.locations.push({ cityId, id: uid(), locStorage: 0 });
         break;
       }
@@ -119,6 +124,7 @@ router.post('/', authMiddleware, async (req, res) => {
         const { index } = params;
         const loan = LOANS[index];
         if (!loan) return res.status(400).json({ error: 'Invalid loan' });
+        if ((g.loans || []).length >= 3) return res.status(400).json({ error: 'Max 3 active loans' });
         if (loan.rr && g.reputation < loan.rr) return res.status(400).json({ error: 'Not enough reputation' });
         g.cash += loan.amt;
         g.loans.push({
@@ -159,6 +165,38 @@ router.post('/', authMiddleware, async (req, res) => {
 
       case 'tutorialDone': {
         g.tutorialDone = true;
+        break;
+      }
+
+      case 'setAutoPrice': {
+        const { tire, strategy, offset } = params;
+        if (!TIRES[tire]) return res.status(400).json({ error: 'Invalid tire type' });
+        const validStrategies = ['off', 'undercut', 'above', 'match', 'max'];
+        if (!validStrategies.includes(strategy)) return res.status(400).json({ error: 'Invalid strategy' });
+        if (!g.staff.pricingAnalyst || g.staff.pricingAnalyst <= 0) {
+          return res.status(400).json({ error: 'Hire a Pricing Analyst first' });
+        }
+        if (!g.autoPrice) g.autoPrice = {};
+        g.autoPrice[tire] = { strategy, offset: Math.max(0, Number(offset) || 0) };
+        break;
+      }
+
+      case 'setServicePrice': {
+        const { service, price } = params;
+        if (!SERVICES[service]) return res.status(400).json({ error: 'Invalid service' });
+        const svc = SERVICES[service];
+        const clamped = Math.max(Math.round(svc.price * 0.5), Math.min(Math.round(svc.price * 3), Number(price)));
+        if (!g.servicePrices) g.servicePrices = {};
+        g.servicePrices[service] = clamped;
+        break;
+      }
+
+      case 'resetGame': {
+        const { init: initFn } = await import('../engine/init.js');
+        const fresh = initFn(g.name || 'Player');
+        fresh.id = g.id || req.playerId;
+        // Preserve identity but reset everything else
+        g = fresh;
         break;
       }
 
