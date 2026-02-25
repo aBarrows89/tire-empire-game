@@ -211,10 +211,23 @@ export default function StoragePanel() {
           className="btn btn-full btn-sm btn-green"
           disabled={retreadQty <= 0 || busy === 'retread'}
           onClick={async () => {
+            const tireKey = retreadGrade === 'junk' ? 'used_junk' : 'used_poor';
+            const available = g.warehouseInventory?.[tireKey] || 0;
+            const costEach = retreadGrade === 'junk' ? 5 : 10;
+            const totalCost = retreadQty * costEach;
+            const gradeLabel = retreadGrade === 'junk' ? 'Junk → Poor' : 'Poor → Good';
+            if (!window.confirm(
+              `Retread ${retreadQty} ${gradeLabel} tires?\n\nCost: $${totalCost}\nAvailable: ${available}\nTime: 3 days\n\nTires will be removed from inventory during retreading.`
+            )) return;
             setBusy('retread');
-            await postAction('retreadTires', { tire: retreadGrade === 'junk' ? 'used_junk' : 'used_poor', qty: retreadQty });
-            refreshState();
+            const result = await postAction('retreadTires', { tire: tireKey, qty: retreadQty });
+            await refreshState();
             setBusy(null);
+            if (result?.error) {
+              alert(`Retread failed: ${result.error}`);
+            } else {
+              alert(`Retreading started! ${retreadQty} tires queued. They'll be ready in 3 days.`);
+            }
           }}
         >
           {busy === 'retread' ? 'Processing...' : 'Start Retread'}
@@ -227,13 +240,14 @@ export default function StoragePanel() {
           <div className="card-title">Retread Queue</div>
           {g.retreadQueue.map((job, i) => {
             const day = g.day || 1;
-            const daysLeft = Math.max(0, (job.doneDay || 0) - day);
+            const daysLeft = Math.max(0, (job.completionDay || job.doneDay || 0) - day);
             const totalDays = 3;
             const progressPct = totalDays > 0 ? Math.min(100, ((totalDays - daysLeft) / totalDays) * 100) : 100;
+            const tireName = TIRES[job.tire]?.n || job.tire || TIRES[job.type]?.n || job.type || 'Unknown';
             return (
               <div key={i} className="queue-item">
                 <div>
-                  <div className="text-sm font-bold">{job.type} x{job.qty}</div>
+                  <div className="text-sm font-bold">{tireName} x{job.qty || 1}</div>
                   <div className="text-xs text-dim">
                     {daysLeft > 0 ? `${daysLeft} day${daysLeft !== 1 ? 's' : ''} remaining` : 'Complete!'}
                     {job.successRate != null && ` \u00B7 ${Math.round(job.successRate * 100)}% success`}

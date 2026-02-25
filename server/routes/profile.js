@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { getPlayer, getGame } from '../db/queries.js';
-import { getCalendar, DAYS_PER_YEAR } from '../../shared/helpers/calendar.js';
+import { getPlayer } from '../db/queries.js';
+import { DAYS_PER_YEAR } from '../../shared/helpers/calendar.js';
 
 const router = Router();
 
@@ -11,19 +11,17 @@ router.get('/:playerId', async (req, res) => {
     if (!player) return res.status(404).json({ error: 'Player not found' });
 
     const g = player.game_state;
-    const game = await getGame();
-    const globalDay = game?.day || game?.week || 1;
-    const startDay = g.startDay || 1;
     const daysInBusiness = Math.max(1, g.day || 1);
     const yearsInBusiness = Math.floor(daysInBusiness / DAYS_PER_YEAR) + 1;
-    const startCal = getCalendar(startDay);
+    const currentYear = Math.floor((daysInBusiness - 1) / DAYS_PER_YEAR) + 1;
+    const yearStarted = currentYear - yearsInBusiness + 1; // always 1 from player perspective
 
     res.json({
       name: g.name || 'Unknown',
       companyName: g.companyName || 'Unnamed Co.',
       yearsInBusiness,
       daysInBusiness,
-      yearStarted: startCal.year,
+      yearStarted,
       locationCount: (g.locations || []).length,
       reputation: Math.round((g.reputation || 0) * 10) / 10,
     });
