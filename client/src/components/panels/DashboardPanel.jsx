@@ -56,7 +56,7 @@ export default function DashboardPanel() {
       <VinnieTip />
 
       {/* Daily Summary Card */}
-      {g.day > 1 && (
+      {g.day >= 1 && (
         <div className="card" style={{ borderColor: 'var(--accent)', borderLeft: '3px solid var(--accent)' }}>
           <div
             className="row-between"
@@ -64,7 +64,7 @@ export default function DashboardPanel() {
             onClick={() => setSummaryOpen(!summaryOpen)}
           >
             <div className="card-title" style={{ marginBottom: 0 }}>
-              Day {g.day - 1} Summary
+              Day {g.day} Summary
             </div>
             <span className="text-dim">{summaryOpen ? '\u25B2' : '\u25BC'}</span>
           </div>
@@ -72,16 +72,16 @@ export default function DashboardPanel() {
             <div style={{ marginTop: 8 }}>
               <div className="row-between text-sm mb-4">
                 <span className="text-dim">Tires Sold</span>
-                <span className="font-bold">{g.prevDaySold || 0}</span>
+                <span className="font-bold">{g.daySold || 0}</span>
               </div>
               <div className="row-between text-sm mb-4">
                 <span className="text-dim">Revenue</span>
-                <span className="font-bold text-green">${fmt(g.prevDayRev || 0)}</span>
+                <span className="font-bold text-green">${fmt(g.dayRev || 0)}</span>
               </div>
               <div className="row-between text-sm mb-4">
                 <span className="text-dim">Profit</span>
-                <span className={`font-bold ${(g.prevDayProfit || 0) >= 0 ? 'text-green' : 'text-red'}`}>
-                  ${fmt(g.prevDayProfit || 0)}
+                <span className={`font-bold ${(g.dayProfit || 0) >= 0 ? 'text-green' : 'text-red'}`}>
+                  ${fmt(g.dayProfit || 0)}
                 </span>
               </div>
             </div>

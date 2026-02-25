@@ -300,26 +300,31 @@ export default function SourcePanel() {
         )}
 
         {/* Available markets */}
-        {FLEA_MARKETS.filter(m => !(g.fleaMarketStands || []).some(s => s.marketId === m.id)).map(market => (
-          <div key={market.id} className="row-between mb-4">
-            <div>
-              <span className="text-sm font-bold">{market.name}</span>
-              <span className="text-xs text-dim" style={{ marginLeft: 6 }}>{market.transport}</span>
+        {FLEA_MARKETS.filter(m => !(g.fleaMarketStands || []).some(s => s.marketId === m.id)).map(market => {
+          const transportLabels = { local: 50, regional: 150, distant: 250 };
+          const totalCost = FLEA_STAND_COST + (transportLabels[market.transport] || 50);
+          return (
+            <div key={market.id} className="row-between mb-4">
+              <div>
+                <span className="text-sm font-bold">{market.name}</span>
+                <span className="text-xs text-dim" style={{ marginLeft: 6 }}>+${transportLabels[market.transport] || 50} transport</span>
+              </div>
+              <button
+                className="btn btn-sm btn-green"
+                disabled={g.cash < totalCost || busy === `open-${market.id}`}
+                onClick={async () => {
+                  setBusy(`open-${market.id}`);
+                  const res = await postAction('openFleaStand', { marketId: market.id });
+                  if (res.error) alert(res.error);
+                  refreshState();
+                  setBusy(null);
+                }}
+              >
+                Open (${fmt(totalCost)})
+              </button>
             </div>
-            <button
-              className="btn btn-sm btn-green"
-              disabled={g.cash < FLEA_STAND_COST || busy === `open-${market.id}`}
-              onClick={async () => {
-                setBusy(`open-${market.id}`);
-                await postAction('openFleaStand', { marketId: market.id });
-                refreshState();
-                setBusy(null);
-              }}
-            >
-              Open (${fmt(FLEA_STAND_COST)})
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* ── Car Meets ── */}
