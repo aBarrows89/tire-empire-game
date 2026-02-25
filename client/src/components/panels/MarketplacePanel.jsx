@@ -47,11 +47,12 @@ export default function MarketplacePanel() {
   const createListing = async () => {
     if (!sellTire || sellQty <= 0 || sellPrice <= 0) return;
     setBusy('list');
-    const res = await fetch(`${API_BASE}/market/list`, {
+    const response = await fetch(`${API_BASE}/market/list`, {
       method: 'POST', headers,
       body: JSON.stringify({ tireType: sellTire, qty: sellQty, askPrice: sellPrice, duration: sellDuration }),
-    }).then(r => r.json());
-    if (res.ok) {
+    });
+    const res = await response.json();
+    if (response.ok && res.ok) {
       refreshState();
       fetchListings();
       setTab('mine');
@@ -65,21 +66,23 @@ export default function MarketplacePanel() {
     const price = bidAmounts[listingId];
     if (!price || price <= 0) return;
     setBusy(listingId);
-    const res = await fetch(`${API_BASE}/market/bid`, {
+    const response = await fetch(`${API_BASE}/market/bid`, {
       method: 'POST', headers,
       body: JSON.stringify({ listingId, pricePerTire: price }),
-    }).then(r => r.json());
-    if (res.ok) fetchListings();
+    });
+    const res = await response.json();
+    if (response.ok && res.ok) fetchListings();
     setBusy(null);
   };
 
   const cancelListing = async (listingId) => {
     setBusy(listingId);
-    const res = await fetch(`${API_BASE}/market/cancel`, {
+    const response = await fetch(`${API_BASE}/market/cancel`, {
       method: 'POST', headers,
       body: JSON.stringify({ listingId }),
-    }).then(r => r.json());
-    if (res.ok) {
+    });
+    const res = await response.json();
+    if (response.ok && res.ok) {
       refreshState();
       fetchListings();
     }

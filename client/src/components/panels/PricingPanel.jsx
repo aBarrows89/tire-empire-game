@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { TIRES } from '@shared/constants/tires.js';
 import { postAction } from '../../api/client.js';
@@ -15,6 +15,12 @@ export default function PricingPanel() {
   const { state, refreshState } = useGame();
   const g = state.game;
   const timers = useRef({});
+
+  useEffect(() => {
+    return () => {
+      Object.values(timers.current).forEach(t => clearTimeout(t));
+    };
+  }, []);
 
   const hasAnalyst = (g.staff.pricingAnalyst || 0) > 0;
 
@@ -99,6 +105,26 @@ export default function PricingPanel() {
             <div className="row-between text-xs text-dim mt-8">
               <span>${t.lo}</span>
               <span>${t.hi}</span>
+            </div>
+
+            {/* Market Insight — Price Advisor */}
+            <div style={{
+              marginTop: 8, padding: '6px 8px', borderRadius: 6,
+              background: diff > 15 ? 'rgba(239,83,80,0.08)' : diff < -10 ? 'rgba(66,165,245,0.08)' : 'rgba(102,187,106,0.08)',
+              border: `1px solid ${diff > 15 ? 'rgba(239,83,80,0.2)' : diff < -10 ? 'rgba(66,165,245,0.2)' : 'rgba(102,187,106,0.2)'}`,
+            }}>
+              <div className="text-xs font-bold" style={{
+                color: diff > 15 ? 'var(--red)' : diff < -10 ? '#42a5f5' : 'var(--green)',
+                marginBottom: 2,
+              }}>
+                {diff > 15 ? 'Overpriced' : diff < -10 ? 'Undercutting' : 'Competitive'}
+              </div>
+              <div className="text-xs text-dim">
+                Market avg: ${mktAvg} {'\u00B7'} Your price: {diff > 0 ? `+$${diff} above` : diff < 0 ? `-$${Math.abs(diff)} below` : 'at avg'}
+              </div>
+              <div className="text-xs text-dim">
+                Competitor range: ${Math.round(mktAvg * 0.85)}-${Math.round(mktAvg * 1.15)}
+              </div>
             </div>
 
             {hasAnalyst && (

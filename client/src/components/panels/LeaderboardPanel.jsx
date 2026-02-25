@@ -19,7 +19,7 @@ export default function LeaderboardPanel() {
 
   useEffect(() => {
     if (tab === 'weekly') {
-      fetch(`${API_BASE}/api/tournament`, { headers })
+      fetch(`${API_BASE}/tournament`, { headers })
         .then(r => r.json())
         .then(data => setTournamentData(data))
         .catch(() => setTournamentData(null));

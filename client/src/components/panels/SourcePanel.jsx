@@ -6,6 +6,8 @@ import { fmt } from '@shared/helpers/format.js';
 import { getCap, getInv } from '@shared/helpers/inventory.js';
 import { getCalendar, DAY_NAMES } from '@shared/helpers/calendar.js';
 import { postAction } from '../../api/client.js';
+import { FLEA_MARKETS, FLEA_STAND_COST } from '@shared/constants/fleaMarkets.js';
+import { CAR_MEETS, CAR_MEET_SUMMER_START, CAR_MEET_SUMMER_END } from '@shared/constants/carMeets.js';
 
 export default function SourcePanel() {
   const { state, refreshState } = useGame();
@@ -261,6 +263,108 @@ export default function SourcePanel() {
           </div>
         </div>
       )}
+
+      {/* ── Flea Market Stands ── */}
+      <div className="card">
+        <div className="card-title">Flea Market Stands</div>
+        <div className="text-xs text-dim mb-4">
+          Open a stand at a flea market to sell used tires on Fri/Sat/Sun at 80% price.
+          Used tires get a 1.4-1.6x demand bonus. Cost: ${fmt(FLEA_STAND_COST)} + transport.
+        </div>
+
+        {/* Active stands */}
+        {(g.fleaMarketStands || []).length > 0 && (
+          <div style={{ marginBottom: 8 }}>
+            <div className="text-xs text-dim mb-4">Active Stands ({g.fleaMarketStands.length})</div>
+            {g.fleaMarketStands.map(stand => (
+              <div key={stand.id} className="row-between mb-4">
+                <span className="text-sm">{stand.name}</span>
+                <button
+                  className="btn btn-sm btn-red"
+                  disabled={busy === `close-${stand.id}`}
+                  onClick={async () => {
+                    setBusy(`close-${stand.id}`);
+                    await postAction('closeFleaStand', { standId: stand.id });
+                    refreshState();
+                    setBusy(null);
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            ))}
+            <div className="text-xs text-dim">
+              Total sold at flea markets: {g.fleaMarketTotalSold || 0}
+            </div>
+          </div>
+        )}
+
+        {/* Available markets */}
+        {FLEA_MARKETS.filter(m => !(g.fleaMarketStands || []).some(s => s.marketId === m.id)).map(market => (
+          <div key={market.id} className="row-between mb-4">
+            <div>
+              <span className="text-sm font-bold">{market.name}</span>
+              <span className="text-xs text-dim" style={{ marginLeft: 6 }}>{market.transport}</span>
+            </div>
+            <button
+              className="btn btn-sm btn-green"
+              disabled={g.cash < FLEA_STAND_COST || busy === `open-${market.id}`}
+              onClick={async () => {
+                setBusy(`open-${market.id}`);
+                await postAction('openFleaStand', { marketId: market.id });
+                refreshState();
+                setBusy(null);
+              }}
+            >
+              Open (${fmt(FLEA_STAND_COST)})
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Car Meets ── */}
+      {(() => {
+        const dayOfYear = cal.dayOfYear || ((day - 1) % 360) + 1;
+        const isSummer = dayOfYear >= CAR_MEET_SUMMER_START && dayOfYear <= CAR_MEET_SUMMER_END;
+        const isWeekend = cal.dayOfWeek === 0 || cal.dayOfWeek === 5 || cal.dayOfWeek === 6;
+        if (!isSummer) return null;
+        return (
+          <div className="card">
+            <div className="card-title">Car Meets</div>
+            <div className="text-xs text-dim mb-4">
+              Summer weekend events! Performance tires sell at 1.3-1.5x premium.
+              {g.carMeetsAttended > 0 && ` Attended: ${g.carMeetsAttended}`}
+            </div>
+            {!isWeekend ? (
+              <div className="text-sm text-dim">Come back on a weekend (Fri-Sun) to attend a car meet!</div>
+            ) : (
+              CAR_MEETS.map(meet => {
+                const alreadyAttending = (g.carMeetAttendance || []).some(a => a.meetId === meet.id && a.day === day);
+                return (
+                  <div key={meet.id} className="row-between mb-4">
+                    <div>
+                      <span className="text-sm font-bold">{meet.name}</span>
+                      <span className="text-xs text-dim" style={{ marginLeft: 6 }}>Fee: ${meet.fee}</span>
+                    </div>
+                    <button
+                      className="btn btn-sm btn-green"
+                      disabled={alreadyAttending || g.cash < meet.fee + 300 || busy === `meet-${meet.id}`}
+                      onClick={async () => {
+                        setBusy(`meet-${meet.id}`);
+                        await postAction('attendCarMeet', { meetId: meet.id });
+                        refreshState();
+                        setBusy(null);
+                      }}
+                    >
+                      {alreadyAttending ? 'Attending' : 'Attend'}
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        );
+      })()}
     </>
   );
 }

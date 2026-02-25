@@ -175,16 +175,16 @@ router.post('/fulfill', authMiddleware, async (req, res) => {
     if (sendsTheCash) {
       // Wire cash — deducted from this player, added to the other
       if (g.cash < trade.cashAmount) return res.status(400).json({ error: 'Not enough cash' });
-      g.cash -= trade.cashAmount;
 
       const otherId = isSender ? trade.receiverId : trade.senderId;
       const other = await getPlayer(otherId);
-      if (other) {
-        other.game_state.cash += trade.cashAmount;
-        other.game_state.log = other.game_state.log || [];
-        other.game_state.log.push(`Received $${trade.cashAmount.toLocaleString()} wire from ${g.companyName || g.name}`);
-        await savePlayerState(otherId, other.game_state);
-      }
+      if (!other) return res.status(400).json({ error: 'Other player not found' });
+
+      g.cash -= trade.cashAmount;
+      other.game_state.cash += trade.cashAmount;
+      other.game_state.log = other.game_state.log || [];
+      other.game_state.log.push(`Received $${trade.cashAmount.toLocaleString()} wire from ${g.companyName || g.name}`);
+      await savePlayerState(otherId, other.game_state);
 
       g.log = g.log || [];
       g.log.push(`Wired $${trade.cashAmount.toLocaleString()} to ${isSender ? trade.receiverName : trade.senderName}`);

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { fmt } from '@shared/helpers/format.js';
 import { TIRES } from '@shared/constants/tires.js';
@@ -24,6 +24,7 @@ const QUICK_ACTIONS = [
 export default function DashboardPanel() {
   const { state, dispatch } = useGame();
   const g = state.game;
+  const [summaryOpen, setSummaryOpen] = useState(true);
 
   const inv = getInv(g);
   const cap = getCap(g);
@@ -53,6 +54,41 @@ export default function DashboardPanel() {
   return (
     <>
       <VinnieTip />
+
+      {/* Daily Summary Card */}
+      {g.day > 1 && (
+        <div className="card" style={{ borderColor: 'var(--accent)', borderLeft: '3px solid var(--accent)' }}>
+          <div
+            className="row-between"
+            style={{ cursor: 'pointer' }}
+            onClick={() => setSummaryOpen(!summaryOpen)}
+          >
+            <div className="card-title" style={{ marginBottom: 0 }}>
+              Day {g.day - 1} Summary
+            </div>
+            <span className="text-dim">{summaryOpen ? '\u25B2' : '\u25BC'}</span>
+          </div>
+          {summaryOpen && (
+            <div style={{ marginTop: 8 }}>
+              <div className="row-between text-sm mb-4">
+                <span className="text-dim">Tires Sold</span>
+                <span className="font-bold">{g.prevDaySold || 0}</span>
+              </div>
+              <div className="row-between text-sm mb-4">
+                <span className="text-dim">Revenue</span>
+                <span className="font-bold text-green">${fmt(g.prevDayRev || 0)}</span>
+              </div>
+              <div className="row-between text-sm mb-4">
+                <span className="text-dim">Profit</span>
+                <span className={`font-bold ${(g.prevDayProfit || 0) >= 0 ? 'text-green' : 'text-red'}`}>
+                  ${fmt(g.prevDayProfit || 0)}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <LowStockBanner
         totalInventory={totalInventory}
         capacity={cap}

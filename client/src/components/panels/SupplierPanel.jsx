@@ -27,7 +27,16 @@ export default function SupplierPanel() {
 
   const order = async (supplierIndex) => {
     setBusy(`o${supplierIndex}`);
-    await postAction('orderTires', { tire: orderTire, qty: orderQty, supplierIndex });
+    const sup = SUPPLIERS[supplierIndex];
+    // Validate orderTire is valid for this supplier
+    const validTires = Object.entries(TIRES).filter(([, t]) => {
+      if (t.used) return false;
+      if (sup.ag && !t.ag) return false;
+      if (!sup.ag && t.ag) return false;
+      return true;
+    }).map(([k]) => k);
+    const tire = validTires.includes(orderTire) ? orderTire : validTires[0];
+    await postAction('orderTires', { tire, qty: orderQty, supplierIndex });
     refreshState();
     setBusy(null);
   };

@@ -109,6 +109,16 @@ export function init(playerName = "Player", globalDay = 1) {
     // Tire manufacturing
     hasFactory: false,
     factory: null,
+    // Flea market stands
+    fleaMarketStands: [],
+    fleaMarketTotalSold: 0,
+    // Car meets
+    carMeetAttendance: [],
+    carMeetTotalSold: 0,
+    carMeetsAttended: 0,
+    // Van tracking
+    vanTotalSold: 0,
+    vanOnlyDays: 0,
     _events: [],
   };
 }

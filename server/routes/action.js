@@ -20,8 +20,11 @@ import { RETREADING } from '../../shared/constants/retreading.js';
 import { getSupplierRelTier } from '../../shared/constants/supplierRelations.js';
 import { INSPECTION } from '../../shared/constants/inspection.js';
 import { FRANCHISE } from '../../shared/constants/franchise.js';
+import { FLEA_MARKETS, FLEA_STAND_COST, FLEA_TRANSPORT } from '../../shared/constants/fleaMarkets.js';
+import { CAR_MEETS, CAR_MEET_SUMMER_START, CAR_MEET_SUMMER_END, CAR_MEET_TRANSPORT } from '../../shared/constants/carMeets.js';
 import { FACTORY } from '../../shared/constants/factory.js';
 import { MANUFACTURERS } from '../../shared/constants/manufacturers.js';
+import { PAY } from '../../shared/constants/staff.js';
 
 const router = Router();
 
@@ -33,6 +36,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
     let g = { ...player.game_state };
     const { action, ...params } = req.body;
+    g.log = g.log || [];
 
     switch (action) {
       case 'setPrice': {
@@ -118,6 +122,9 @@ router.post('/', authMiddleware, async (req, res) => {
       case 'hireStaff': {
         const { role } = params;
         if (g.staff[role] === undefined) return res.status(400).json({ error: 'Invalid role' });
+        const hireCost = PAY[role] || 0;
+        if (g.cash < hireCost) return res.status(400).json({ error: `Not enough cash (need $${hireCost} for first month salary)` });
+        g.cash -= hireCost;
         g.staff[role]++;
         break;
       }
@@ -136,7 +143,7 @@ router.post('/', authMiddleware, async (req, res) => {
         if (g.cash < sup.c) return res.status(400).json({ error: 'Not enough cash' });
         if (sup.rr && g.reputation < sup.rr) return res.status(400).json({ error: 'Not enough reputation' });
         g.cash -= sup.c;
-        g.unlockedSuppliers = addA(g.unlockedSuppliers, index);
+        g.unlockedSuppliers = addA(g.unlockedSuppliers || [], index);
         break;
       }
 
@@ -381,6 +388,7 @@ router.post('/', authMiddleware, async (req, res) => {
         if (selected.length === 0) return res.status(400).json({ error: 'Select at least one tire' });
         if (g.cash < lot.cost) return res.status(400).json({ error: 'Not enough cash' });
         const freeSpace = getCap(g) - getInv(g);
+        if (freeSpace < selected.length) return res.status(400).json({ error: 'Not enough space' });
         const toAdd = Math.min(selected.length, freeSpace);
         g.cash -= lot.cost;
         for (let i = 0; i < toAdd; i++) {
@@ -535,7 +543,6 @@ router.post('/', authMiddleware, async (req, res) => {
           return res.status(400).json({ error: 'Max templates reached' });
         }
         if (!g.franchiseTemplates) g.franchiseTemplates = [];
-        const uid = () => Math.random().toString(36).slice(2, 12);
         g.franchiseTemplates.push({
           id: uid(),
           name: name || 'Template',
@@ -556,9 +563,8 @@ router.post('/', authMiddleware, async (req, res) => {
         const totalCost = shopCostBase + FRANCHISE.franchiseFee;
         if (g.cash < totalCost) return res.status(400).json({ error: 'Not enough cash' });
         g.cash -= totalCost;
-        const uid2 = () => Math.random().toString(36).slice(2, 12);
         g.locations.push({
-          cityId, id: uid2(), locStorage: 0, inventory: {},
+          cityId, id: uid(), locStorage: 0, inventory: {},
           loyalty: 0, marketing: template.marketing,
           isFranchise: true, templateId: template.id,
         });
@@ -713,6 +719,69 @@ router.post('/', authMiddleware, async (req, res) => {
           totalTarget: totalQty,
         });
         g.log.push(`Won contract: ${contract.name} (${totalQty} ${t?.n || tireKey})`);
+        break;
+      }
+
+      case 'openFleaStand': {
+        const { marketId } = params;
+        const market = FLEA_MARKETS.find(m => m.id === marketId);
+        if (!market) return res.status(400).json({ error: 'Invalid flea market' });
+        if (g.cash < FLEA_STAND_COST) return res.status(400).json({ error: `Need $${FLEA_STAND_COST}` });
+        if (!g.fleaMarketStands) g.fleaMarketStands = [];
+        if (g.fleaMarketStands.some(s => s.marketId === marketId)) {
+          return res.status(400).json({ error: 'Already have a stand there' });
+        }
+        const transportCost = FLEA_TRANSPORT[market.transport] || 50;
+        g.cash -= FLEA_STAND_COST + transportCost;
+        g.fleaMarketStands.push({ id: uid(), marketId, cityId: market.cityId, name: market.name });
+        g.log.push(`Opened flea stand at ${market.name} (-$${FLEA_STAND_COST + transportCost})`);
+        break;
+      }
+
+      case 'closeFleaStand': {
+        const { standId } = params;
+        if (!g.fleaMarketStands) g.fleaMarketStands = [];
+        const idx = g.fleaMarketStands.findIndex(s => s.id === standId);
+        if (idx === -1) return res.status(400).json({ error: 'Stand not found' });
+        const removed = g.fleaMarketStands.splice(idx, 1)[0];
+        g.log.push(`Closed flea stand at ${removed.name}`);
+        break;
+      }
+
+      case 'attendCarMeet': {
+        const { meetId } = params;
+        const meet = CAR_MEETS.find(m => m.id === meetId);
+        if (!meet) return res.status(400).json({ error: 'Invalid car meet' });
+        const cal = getCalendar(g.day || 1);
+        const dayOfYear = cal.dayOfYear;
+        // Check summer: days 151-240
+        if (dayOfYear < CAR_MEET_SUMMER_START || dayOfYear > CAR_MEET_SUMMER_END) {
+          return res.status(400).json({ error: 'Car meets are only held in summer (June-August)' });
+        }
+        // Check weekend (0=Sunday, 5=Friday, 6=Saturday)
+        if (cal.dayOfWeek !== 0 && cal.dayOfWeek !== 5 && cal.dayOfWeek !== 6) {
+          return res.status(400).json({ error: 'Car meets are only on weekends' });
+        }
+        const transportCost = CAR_MEET_TRANSPORT[meet.transport] || 50;
+        const totalCost = meet.fee + transportCost;
+        if (g.cash < totalCost) return res.status(400).json({ error: `Need $${totalCost} (fee + transport)` });
+        if (!g.carMeetAttendance) g.carMeetAttendance = [];
+        // Check if already attending this meet today
+        if (g.carMeetAttendance.some(a => a.meetId === meetId && a.day === g.day)) {
+          return res.status(400).json({ error: 'Already attending this meet today' });
+        }
+        g.cash -= totalCost;
+        g.carMeetAttendance.push({ meetId, day: g.day, cityId: meet.cityId, name: meet.name });
+        g.carMeetsAttended = (g.carMeetsAttended || 0) + 1;
+        g.log.push(`Attending ${meet.name} (-$${totalCost})`);
+        break;
+      }
+
+      case 'devSetState': {
+        if (params.cash != null) g.cash = Number(params.cash);
+        if (params.reputation != null) g.reputation = Number(params.reputation);
+        if (params.day != null) g.day = Number(params.day);
+        if (params.tireCoins != null) g.tireCoins = Number(params.tireCoins);
         break;
       }
 

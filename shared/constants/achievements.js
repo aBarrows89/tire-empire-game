@@ -50,4 +50,16 @@ export const ACHIEVEMENTS = [
     check: g => !!g.hasEcom },
   { id: 'wholesale', title: 'Bulk Dealer', desc: 'Start selling wholesale', icon: '📦', coins: 25,
     check: g => !!g.hasWholesale },
+
+  // --- Van Warrior / Flea / Car Meet ---
+  { id: 'road_warrior', title: 'Road Warrior', desc: 'Sell 100 tires from your van (no shops)', icon: '🚐', coins: 50,
+    check: g => (g.vanTotalSold || 0) >= 100 },
+  { id: 'van_life', title: 'Van Life', desc: 'Profitable for 30 days with only a van', icon: '🏕️', coins: 100,
+    check: g => (g.vanOnlyDays || 0) >= 30 },
+  { id: 'flea_king', title: 'Flea Market King', desc: 'Sell 200 tires at flea market stands', icon: '🏪', coins: 75,
+    check: g => (g.fleaMarketTotalSold || 0) >= 200 },
+  { id: 'car_meet_legend', title: 'Car Meet Legend', desc: 'Attend 10 car meets', icon: '🏎️', coins: 100,
+    check: g => (g.carMeetsAttended || 0) >= 10 },
+  { id: 'summer_hustler', title: 'Summer Hustler', desc: 'Sell 50 tires at car meets', icon: '☀️', coins: 150,
+    check: g => (g.carMeetTotalSold || 0) >= 50 },
 ];

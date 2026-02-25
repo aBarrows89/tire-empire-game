@@ -34,6 +34,10 @@ import { ACHIEVEMENTS } from '../../shared/constants/achievements.js';
 import { FACTORY } from '../../shared/constants/factory.js';
 import { MANUFACTURERS } from '../../shared/constants/manufacturers.js';
 import { getHolidayMult } from '../../shared/constants/holidays.js';
+import { getTireSeasonMult } from '../../shared/constants/tireSeasonal.js';
+import { FLEA_MARKETS, FLEA_DAILY_OPERATING, FLEA_PRICE_MULT } from '../../shared/constants/fleaMarkets.js';
+import { CAR_MEETS, CAR_MEET_SUMMER_START, CAR_MEET_SUMMER_END, CAR_MEET_PREMIUM_TIRES } from '../../shared/constants/carMeets.js';
+import { getCalendar } from '../../shared/helpers/calendar.js';
 
 /**
  * Simulate one game DAY. Pure function — no side effects.
@@ -258,12 +262,13 @@ export function simDay(g, shared = {}) {
         const isSeasonal = t.seas && season === "Winter";
         const winterMult = isSeasonal ? (city.win || 1) : 1;
         const agMult = t.ag ? (city.agPct || 0) : 1;
+        const tireSeasonMult = getTireSeasonMult(k, season);
 
         const evAdoptionMult = t.ev ? (1 + Math.min(2.0, s.day / 365 * 0.5)) : 1;
         const emergencyMult = t.emergency ? (1 + (Math.random() < 0.05 ? 3 : 0)) : 1;
         let qty = Math.min(
           locStock,
-          Math.floor(locDemand * (.15 + Math.random() * .10) * winterMult * agMult * priceMult * evAdoptionMult * emergencyMult)
+          Math.floor(locDemand * (.15 + Math.random() * .10) * winterMult * agMult * priceMult * evAdoptionMult * emergencyMult * tireSeasonMult)
         );
         qty = Math.min(qty, Math.ceil(staffCap));
         if (qty <= 0) continue;
@@ -417,7 +422,107 @@ export function simDay(g, shared = {}) {
         s.dayRev += qty * price;
         s.dayProfit += qty * (price - (t.bMin + t.bMax) / 2);
         s.daySold += qty;
+        s.vanTotalSold = (s.vanTotalSold || 0) + qty;
         sold += qty;
+      }
+      // Track van-only profitable days
+      if (s.dayProfit > 0) {
+        s.vanOnlyDays = (s.vanOnlyDays || 0) + 1;
+      }
+    }
+  }
+
+  // ── FLEA MARKET SALES (Fri/Sat/Sun only) ──
+  const cal = getCalendar(s.day);
+  const isWeekend = cal.dayOfWeek === 0 || cal.dayOfWeek === 5 || cal.dayOfWeek === 6;
+
+  if ((s.fleaMarketStands || []).length > 0 && isWeekend) {
+    const numStands = s.fleaMarketStands.length;
+    // Operating cost per stand per day
+    s.cash -= numStands * FLEA_DAILY_OPERATING;
+
+    // Van capacity divided among stands
+    const vanCap = 20; // base van capacity
+    const capsPerStand = Math.floor(vanCap / numStands);
+
+    for (const stand of s.fleaMarketStands) {
+      const market = FLEA_MARKETS.find(m => m.id === stand.marketId);
+      if (!market) continue;
+      const city = (shared.cities || []).find(c => c.id === stand.cityId) || { dem: 50 };
+
+      let standSold = 0;
+      const standDemand = Math.max(1, Math.floor(city.dem * 0.05 * sDem * market.demandMult * holidayMult));
+
+      for (const [k, t] of Object.entries(TIRES)) {
+        if (standSold >= capsPerStand) break;
+        const whStock = s.warehouseInventory[k] || 0;
+        if (whStock <= 0) continue;
+
+        const usedBonus = t.used ? market.usedBonus : 1.0;
+        const tireSeasonM = getTireSeasonMult(k, season);
+        const sellQty = Math.min(
+          whStock,
+          Math.max(1, Math.floor((standDemand - standSold) * 0.2 * usedBonus * tireSeasonM)),
+          capsPerStand - standSold
+        );
+        if (sellQty <= 0) continue;
+
+        const price = Math.round((s.prices[k] || t.def) * FLEA_PRICE_MULT);
+        s.warehouseInventory[k] -= sellQty;
+        s.cash += sellQty * price;
+        s.dayRev += sellQty * price;
+        s.dayProfit += sellQty * (price - (t.bMin + t.bMax) / 2);
+        s.daySold += sellQty;
+        s.fleaMarketTotalSold = (s.fleaMarketTotalSold || 0) + sellQty;
+        standSold += sellQty;
+      }
+      if (standSold > 0) {
+        s.log.push({ msg: `\u{1F3EA} ${stand.name}: sold ${standSold} tires`, cat: 'sale' });
+      }
+    }
+  }
+
+  // ── CAR MEET SALES (summer weekends only) ──
+  if ((s.carMeetAttendance || []).length > 0 && isWeekend) {
+    const dayOfYear = cal.dayOfYear;
+    if (dayOfYear >= CAR_MEET_SUMMER_START && dayOfYear <= CAR_MEET_SUMMER_END) {
+      const todayMeets = s.carMeetAttendance.filter(a => a.day === s.day);
+      const halfVanCap = 10; // half van capacity per meet
+
+      for (const attendance of todayMeets) {
+        const meet = CAR_MEETS.find(m => m.id === attendance.meetId);
+        if (!meet) continue;
+
+        let meetSold = 0;
+        const meetDemand = Math.max(1, Math.floor(15 * meet.demandMult * holidayMult));
+
+        for (const [k, t] of Object.entries(TIRES)) {
+          if (meetSold >= halfVanCap) break;
+          const whStock = s.warehouseInventory[k] || 0;
+          if (whStock <= 0) continue;
+
+          const isPremium = CAR_MEET_PREMIUM_TIRES.includes(k);
+          const premiumMult = isPremium ? meet.premiumPct : 1.0;
+          const tireSeasonM = getTireSeasonMult(k, season);
+          const sellQty = Math.min(
+            whStock,
+            Math.max(1, Math.floor((meetDemand - meetSold) * 0.25 * (isPremium ? 1.5 : 0.5) * tireSeasonM)),
+            halfVanCap - meetSold
+          );
+          if (sellQty <= 0) continue;
+
+          const price = Math.round((s.prices[k] || t.def) * premiumMult);
+          s.warehouseInventory[k] -= sellQty;
+          s.cash += sellQty * price;
+          s.dayRev += sellQty * price;
+          s.dayProfit += sellQty * (price - (t.bMin + t.bMax) / 2);
+          s.daySold += sellQty;
+          s.carMeetTotalSold = (s.carMeetTotalSold || 0) + sellQty;
+          meetSold += sellQty;
+        }
+        if (meetSold > 0) {
+          s.log.push({ msg: `\u{1F3CE}\uFE0F ${meet.name}: sold ${meetSold} tires`, cat: 'sale' });
+        }
       }
     }
   }
