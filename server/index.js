@@ -10,6 +10,9 @@ import actionRouter from './routes/action.js';
 import marketRouter from './routes/market.js';
 import leaderboardRouter from './routes/leaderboard.js';
 import profileRouter from './routes/profile.js';
+import tradeRouter from './routes/trade.js';
+import tournamentRouter from './routes/tournament.js';
+import chatRouter from './routes/chat.js';
 
 const app = express();
 app.use(cors({ origin: CORS_ORIGIN }));
@@ -22,6 +25,9 @@ app.use('/api/action', actionRouter);
 app.use('/api/market', marketRouter);
 app.use('/api/leaderboard', leaderboardRouter);
 app.use('/api/profile', profileRouter);
+app.use('/api/trade', tradeRouter);
+app.use('/api/tournament', tournamentRouter);
+app.use('/api/chat', chatRouter);
 
 // ── HTTP + WebSocket Server ──
 const server = createServer(app);

@@ -17,31 +17,31 @@ export default function SellPanel() {
         </div>
         {g.locations.length === 0 ? (
           <div className="text-sm text-dim">
-            You're selling from your van. Sales happen automatically each week
+            You're selling from your van. Sales happen automatically each day
             based on your inventory, prices, and reputation.
           </div>
         ) : (
           <div className="text-sm text-dim">
             Your {g.locations.length} shop{g.locations.length > 1 ? 's' : ''} sell
-            automatically each week. Hire techs and sales staff to increase capacity.
+            automatically each day. Hire techs and sales staff to increase capacity.
           </div>
         )}
       </div>
 
       <div className="card">
-        <div className="card-title">Last Week</div>
+        <div className="card-title">Today</div>
         <div className="row-between mb-4">
           <span className="text-sm text-dim">Revenue</span>
-          <span className="text-green font-bold">${fmt(g.weekRev)}</span>
+          <span className="text-green font-bold">${fmt(g.dayRev || g.weekRev || 0)}</span>
         </div>
         <div className="row-between mb-4">
           <span className="text-sm text-dim">Tires Sold</span>
-          <span className="font-bold">{g.weekSold}</span>
+          <span className="font-bold">{g.daySold || g.weekSold || 0}</span>
         </div>
         <div className="row-between mb-4">
           <span className="text-sm text-dim">Profit</span>
-          <span className={`font-bold ${g.weekProfit >= 0 ? 'text-green' : 'text-red'}`}>
-            ${fmt(g.weekProfit)}
+          <span className={`font-bold ${(g.dayProfit || g.weekProfit || 0) >= 0 ? 'text-green' : 'text-red'}`}>
+            ${fmt(g.dayProfit || g.weekProfit || 0)}
           </span>
         </div>
       </div>

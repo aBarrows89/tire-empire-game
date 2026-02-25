@@ -88,7 +88,7 @@ export default function PricingPanel() {
             </div>
             <input
               type="range"
-              min={t.lo}
+              min={Math.min(t.lo, Math.floor((t.bMin + t.bMax) / 2 * 0.5))}
               max={t.hi}
               defaultValue={price}
               key={isAuto ? `auto-${price}` : `manual-${k}`}

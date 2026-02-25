@@ -32,10 +32,10 @@ export async function getGame(id = 'default') {
   return rows[0] || null;
 }
 
-export async function saveGame(id, week, economy, aiShops, liquidation) {
+export async function saveGame(id, day, economy, aiShops, liquidation) {
   await pool.query(
     'UPDATE games SET week = $2, economy = $3, ai_shops = $4, liquidation = $5, updated_at = NOW() WHERE id = $1',
-    [id, week, economy, aiShops, liquidation]
+    [id, day, economy, aiShops, liquidation]
   );
 }
 
@@ -47,12 +47,12 @@ export async function getLeaderboard(limit = 20) {
   return rows;
 }
 
-export async function upsertLeaderboard(playerId, name, wealth, reputation, locations, week) {
+export async function upsertLeaderboard(playerId, name, wealth, reputation, locations, day) {
   await pool.query(
     `INSERT INTO leaderboard (player_id, name, wealth, reputation, locations, week, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, NOW())
      ON CONFLICT (player_id) DO UPDATE SET
        name = $2, wealth = $3, reputation = $4, locations = $5, week = $6, updated_at = NOW()`,
-    [playerId, name, wealth, reputation, locations, week]
+    [playerId, name, wealth, reputation, locations, day]
   );
 }

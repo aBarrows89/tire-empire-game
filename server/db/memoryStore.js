@@ -2,6 +2,9 @@ const players = new Map();
 const games = new Map();
 const leaderboard = new Map();
 const playerListings = [];
+const directTrades = [];
+const tournaments = new Map();
+const chatMessages = [];
 
 export function createMemoryStore() {
   return {
@@ -51,10 +54,10 @@ export function createMemoryStore() {
       return games.get(id) || null;
     },
 
-    async saveGame(id, week, economy, aiShops, liquidation) {
+    async saveGame(id, day, economy, aiShops, liquidation) {
       const existing = games.get(id);
       if (existing) {
-        existing.week = week;
+        existing.day = day;
         existing.economy = economy;
         existing.ai_shops = aiShops;
         existing.liquidation = liquidation;
@@ -62,8 +65,7 @@ export function createMemoryStore() {
       } else {
         games.set(id, {
           id,
-          week,
-          tick_ms: 60000,
+          day,
           economy,
           ai_shops: aiShops,
           liquidation,
@@ -79,14 +81,14 @@ export function createMemoryStore() {
       return rows.slice(0, limit);
     },
 
-    async upsertLeaderboard(playerId, name, wealth, reputation, locations, week) {
+    async upsertLeaderboard(playerId, name, wealth, reputation, locations, day) {
       leaderboard.set(playerId, {
         player_id: playerId,
         name,
         wealth,
         reputation,
         locations,
-        week,
+        day,
         updated_at: new Date().toISOString(),
       });
     },
@@ -113,6 +115,42 @@ export function createMemoryStore() {
 
     async getPlayerListingById(id) {
       return playerListings.find(l => l.id === id) || null;
+    },
+
+    // Direct P2P trades (no escrow)
+    async getDirectTrades(filter = {}) {
+      let results = [...directTrades];
+      if (filter.status) results = results.filter(t => t.status === filter.status);
+      if (filter.playerId) results = results.filter(t => t.senderId === filter.playerId || t.receiverId === filter.playerId);
+      return results;
+    },
+
+    async addDirectTrade(trade) {
+      directTrades.push(trade);
+      return trade;
+    },
+
+    async getDirectTradeById(id) {
+      return directTrades.find(t => t.id === id) || null;
+    },
+
+    async updateDirectTrade(id, updates) {
+      const idx = directTrades.findIndex(t => t.id === id);
+      if (idx === -1) return null;
+      Object.assign(directTrades[idx], updates);
+      return directTrades[idx];
+    },
+
+    // Tournaments
+    async getTournament(id) { return tournaments.get(id) || null; },
+    async saveTournament(id, data) { tournaments.set(id, data); },
+
+    // Chat messages
+    async getChatMessages(limit = 50) { return chatMessages.slice(-limit); },
+    async addChatMessage(msg) {
+      chatMessages.push(msg);
+      if (chatMessages.length > 500) chatMessages.splice(0, chatMessages.length - 500);
+      return msg;
     },
   };
 }

@@ -16,6 +16,6 @@ export function getVinnieTip(g) {
   if (g.cash < 100) return "You're almost broke, kid. Go hit up a scrap yard — even junk tires flip for something.";
   if (g.reputation < 5) return "Nobody knows you yet. Sell cheap, sell fast, build that rep.";
   if (g.locations.length === 0 && g.cash > 137500) return "You've got enough for a shop. Time to stop working out of your van, don't you think?";
-  if (g.week < 10) return "First few weeks are tough. Keep grinding those used tire sources.";
+  if ((g.day || g.week || 1) < 30) return "First month is tough. Keep grinding those used tire sources.";
   return "Keep moving tires, kid. That's how empires are built.";
 }

@@ -15,6 +15,8 @@ export default function StoragePanel() {
   const [txTo, setTxTo] = useState('');
   const [txTire, setTxTire] = useState('');
   const [txQty, setTxQty] = useState(1);
+  const [retreadGrade, setRetreadGrade] = useState('junk');
+  const [retreadQty, setRetreadQty] = useState(5);
 
   const buy = async (type) => {
     setBusy(type);
@@ -169,6 +171,80 @@ export default function StoragePanel() {
           >
             {busy === 'transfer' ? 'Transferring...' : 'Transfer'}
           </button>
+        </div>
+      )}
+
+      {/* Tire Retreading */}
+      <div className="card">
+        <div className="card-title">Tire Retreading</div>
+        <div className="text-xs text-dim mb-4">
+          Upgrade tire quality by retreading. Junk becomes Poor, Poor becomes Good. Takes 3 days.
+        </div>
+        <div className="mb-4">
+          <div className="text-xs text-dim mb-4">Grade to retread</div>
+          <select
+            className="autoprice-select"
+            style={{ width: '100%' }}
+            value={retreadGrade}
+            onChange={e => setRetreadGrade(e.target.value)}
+          >
+            <option value="junk">Junk &rarr; Poor ({g.warehouseInventory?.used_junk || 0} available)</option>
+            <option value="poor">Poor &rarr; Good ({g.warehouseInventory?.used_poor || 0} available)</option>
+          </select>
+        </div>
+        <div className="mb-4">
+          <div className="text-xs text-dim mb-4">Quantity</div>
+          <input
+            type="number"
+            className="autoprice-offset"
+            style={{ width: '100%' }}
+            min={1}
+            max={retreadGrade === 'junk' ? (g.warehouseInventory?.used_junk || 0) : (g.warehouseInventory?.used_poor || 0)}
+            value={retreadQty}
+            onChange={e => setRetreadQty(Math.max(1, Number(e.target.value)))}
+          />
+        </div>
+        <div className="text-xs text-dim mb-4">
+          Cost: ~${retreadQty * (retreadGrade === 'junk' ? 5 : 10)} &middot; Success rate: ~{retreadGrade === 'junk' ? 70 : 85}%
+        </div>
+        <button
+          className="btn btn-full btn-sm btn-green"
+          disabled={retreadQty <= 0 || busy === 'retread'}
+          onClick={async () => {
+            setBusy('retread');
+            await postAction('retreadTires', { tire: retreadGrade === 'junk' ? 'used_junk' : 'used_poor', qty: retreadQty });
+            refreshState();
+            setBusy(null);
+          }}
+        >
+          {busy === 'retread' ? 'Processing...' : 'Start Retread'}
+        </button>
+      </div>
+
+      {/* Active Retread Queue */}
+      {(g.retreadQueue || []).length > 0 && (
+        <div className="card">
+          <div className="card-title">Retread Queue</div>
+          {g.retreadQueue.map((job, i) => {
+            const day = g.day || 1;
+            const daysLeft = Math.max(0, (job.doneDay || 0) - day);
+            const totalDays = 3;
+            const progressPct = totalDays > 0 ? Math.min(100, ((totalDays - daysLeft) / totalDays) * 100) : 100;
+            return (
+              <div key={i} className="queue-item">
+                <div>
+                  <div className="text-sm font-bold">{job.type} x{job.qty}</div>
+                  <div className="text-xs text-dim">
+                    {daysLeft > 0 ? `${daysLeft} day${daysLeft !== 1 ? 's' : ''} remaining` : 'Complete!'}
+                    {job.successRate != null && ` \u00B7 ${Math.round(job.successRate * 100)}% success`}
+                  </div>
+                  <div className="progress-bar" style={{ width: 80, marginTop: 4 }}>
+                    <div className="progress-fill" style={{ width: `${progressPct}%` }} />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

@@ -1,28 +1,59 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
+import { formatDateShort } from '@shared/helpers/calendar.js';
+
+const FILTERS = ['All', 'Sales', 'Events', 'Costs', 'Market', 'Trades', 'Source', 'Bank'];
 
 export default function WeeklyLogPanel() {
   const { state } = useGame();
+  const [activeFilter, setActiveFilter] = useState('All');
+
+  const filteredLogs = (state.logHistory || []).filter(entry => {
+    if (activeFilter === 'All') return true;
+    // If entry has a cat field, match against the filter (case-insensitive)
+    if (entry.cat) {
+      return entry.cat.toLowerCase() === activeFilter.toLowerCase();
+    }
+    // String-only entries (no cat) only show in "All"
+    return false;
+  });
 
   return (
     <>
       <div className="card">
         <div className="card-title">Activity Log</div>
-        <div className="text-sm text-dim">Events and actions from recent weeks.</div>
+        <div className="text-sm text-dim">Events and actions from recent days.</div>
       </div>
 
-      {(state.logHistory || []).length === 0 ? (
+      <div className="log-pills">
+        {FILTERS.map(f => (
+          <button
+            key={f}
+            className={`log-pill${activeFilter === f ? ' active' : ''}`}
+            onClick={() => setActiveFilter(f)}
+          >
+            {f}
+          </button>
+        ))}
+      </div>
+
+      {filteredLogs.length === 0 ? (
         <div className="card">
-          <div className="text-sm text-dim">No activity yet. Start sourcing tires!</div>
+          <div className="text-sm text-dim">
+            {activeFilter === 'All' ? 'No activity yet. Start sourcing tires!' : `No ${activeFilter.toLowerCase()} entries yet.`}
+          </div>
         </div>
       ) : (
         <div className="card">
-          {state.logHistory.map((entry, i) => (
-            <div key={i} className="log-entry">
-              <span className="log-week">Wk {entry.week}</span>{' '}
-              {entry.msg}
-            </div>
-          ))}
+          {filteredLogs.map((entry, i) => {
+            const msg = typeof entry.msg === 'string' ? entry.msg : (entry.msg?.msg || String(entry.msg));
+            return (
+              <div key={i} className="log-entry">
+                <span className="log-week">{entry.day ? formatDateShort(entry.day) : `Day ${entry.week || '?'}`}</span>{' '}
+                {msg}
+              </div>
+            );
+          })}
         </div>
       )}
     </>

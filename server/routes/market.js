@@ -3,6 +3,8 @@ import { getGame, getPlayer, savePlayerState, getPlayerListings, addPlayerListin
 import { authMiddleware } from '../middleware/auth.js';
 import { uid } from '../../shared/helpers/random.js';
 import { TIRES } from '../../shared/constants/tires.js';
+import { MAP_FLOOR } from '../../shared/constants/wholesale.js';
+import { P2P_FEES } from '../../shared/constants/marketplace.js';
 import { getLocInv, getLocCap, getStorageCap, rebuildGlobalInv } from '../../shared/helpers/inventory.js';
 
 const router = Router();
@@ -14,7 +16,7 @@ router.get('/', async (req, res) => {
     if (!game) return res.status(404).json({ error: 'No active game' });
 
     res.json({
-      week: game.week,
+      day: game.day || game.week,
       economy: game.economy,
       aiShopCount: (game.ai_shops || []).length,
       liquidationCount: (game.liquidation || []).length,
@@ -96,13 +98,40 @@ router.post('/list', authMiddleware, async (req, res) => {
     if (!player) return res.status(404).json({ error: 'Player not found' });
     const g = player.game_state;
 
+    // Check marketplace access tier
+    const hasEcom = g.hasEcom;
+    const hasSpecialist = g.marketplaceSpecialist;
+    if (!hasEcom && !hasSpecialist) {
+      return res.status(400).json({ error: 'Hire a Marketplace Specialist or unlock E-commerce to list on the marketplace' });
+    }
+    const tier = hasEcom ? 'ecommerce' : 'basic';
+    const fees = P2P_FEES[tier];
+
     const { tireType, qty, askPrice, duration } = req.body;
     if (!TIRES[tireType]) return res.status(400).json({ error: 'Invalid tire type' });
     const listQty = Math.floor(Number(qty));
     if (!listQty || listQty <= 0) return res.status(400).json({ error: 'Invalid quantity' });
     const ask = Math.floor(Number(askPrice));
     if (!ask || ask <= 0) return res.status(400).json({ error: 'Invalid ask price' });
-    const dur = Math.max(1, Math.min(4, Math.floor(Number(duration) || 2)));
+
+    // MAP enforcement for new tires
+    const tire = TIRES[tireType];
+    if (!tire.used && MAP_FLOOR[tireType]) {
+      const minPrice = Math.ceil(tire.def * MAP_FLOOR[tireType]);
+      if (ask < minPrice) {
+        return res.status(400).json({ error: `MAP violation: minimum price for ${tire.n} is $${minPrice}` });
+      }
+    }
+
+    // Enforce max listings per tier
+    const myActive = await getPlayerListings({ sellerId: req.playerId, status: 'active' });
+    if (myActive.length >= fees.maxListings) {
+      return res.status(400).json({ error: `Max ${fees.maxListings} active listings (${tier} tier)` });
+    }
+
+    // Enforce duration limits per tier
+    const maxDur = Math.max(...fees.listingDuration);
+    const dur = Math.max(1, Math.min(maxDur, Math.floor(Number(duration) || 7)));
 
     // Check aggregate stock
     const totalStock = (g.warehouseInventory?.[tireType] || 0) +
@@ -137,9 +166,9 @@ router.post('/list', authMiddleware, async (req, res) => {
       bids: [],
       highBid: 0,
       highBidder: null,
-      expiresWeek: (game?.week || g.week) + dur,
+      expiresDay: (game?.day || game?.week || g.day || g.week || 1) + dur,
       status: 'active',
-      listedWeek: game?.week || g.week,
+      listedDay: game?.day || game?.week || g.day || g.week || 1,
     };
 
     await addPlayerListing(listing);
@@ -174,7 +203,7 @@ router.post('/bid', authMiddleware, async (req, res) => {
       bidderId: req.playerId,
       bidderName: g.companyName || g.name || 'Unknown',
       pricePerTire: bidPrice,
-      week: game?.week || g.week,
+      day: game?.day || game?.week || g.day || g.week || 1,
     });
     listing.highBid = bidPrice;
     listing.highBidder = req.playerId;

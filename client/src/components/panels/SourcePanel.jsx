@@ -1,18 +1,23 @@
 import React, { useState } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { SOURCES } from '@shared/constants/sources.js';
+import { TIRES } from '@shared/constants/tires.js';
 import { fmt } from '@shared/helpers/format.js';
 import { getCap, getInv } from '@shared/helpers/inventory.js';
+import { getCalendar, DAY_NAMES } from '@shared/helpers/calendar.js';
 import { postAction } from '../../api/client.js';
 
 export default function SourcePanel() {
   const { state, refreshState } = useGame();
   const g = state.game;
   const [busy, setBusy] = useState(null);
+  const [selectedLotItems, setSelectedLotItems] = useState([]);
 
   const inv = getInv(g);
   const cap = getCap(g);
   const freeSpace = cap - inv;
+  const day = g.day || g.week || 1;
+  const cal = getCalendar(day);
 
   const buy = async (sourceId) => {
     setBusy(sourceId);
@@ -39,9 +44,93 @@ export default function SourcePanel() {
     return g.reputation >= src.rr - 10;
   });
 
+  // Check if a source is closed today
+  const isClosedToday = (src) => {
+    if (!src.days) return false;
+    return !src.days.includes(cal.dayOfWeek);
+  };
+
+  const inspect = async (sourceKey) => {
+    setBusy(`inspect-${sourceKey}`);
+    await postAction('inspectSource', { sourceId: sourceKey });
+    setSelectedLotItems([]);
+    refreshState();
+    setBusy(null);
+  };
+
+  const buyFromLot = async (indices) => {
+    setBusy('lotBuy');
+    await postAction('buyFromLot', { indices });
+    setSelectedLotItems([]);
+    refreshState();
+    setBusy(null);
+  };
+
+  const dismissLot = async () => {
+    setBusy('lotDismiss');
+    await postAction('dismissLot');
+    setSelectedLotItems([]);
+    refreshState();
+    setBusy(null);
+  };
+
+  const toggleLotItem = (idx) => {
+    setSelectedLotItems(prev =>
+      prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+    );
+  };
+
   return (
     <>
-      {/* Auto-Source Card — prominent at top */}
+      {/* Lot Preview (tire inspection) */}
+      {g.pendingLot && (
+        <div className="card" style={{ borderColor: 'var(--gold)' }}>
+          <div className="card-title">Lot Preview</div>
+          <div className="text-xs text-dim mb-4">
+            Inspect the lot and pick which tires to buy.
+          </div>
+          {(g.pendingLot.tires || []).map((tire, idx) => (
+            <label key={idx} className="row gap-8 mb-4" style={{ cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={selectedLotItems.includes(idx)}
+                onChange={() => toggleLotItem(idx)}
+              />
+              <span className="text-sm">
+                {TIRES[tire.type]?.n || tire.type} {tire.grade && `(${tire.grade})`}
+              </span>
+              {tire.cost != null && (
+                <span className="text-xs text-dim" style={{ marginLeft: 'auto' }}>${fmt(tire.cost)}</span>
+              )}
+            </label>
+          ))}
+          <div className="row gap-8" style={{ marginTop: 8 }}>
+            <button
+              className="btn btn-sm btn-green flex-1"
+              disabled={selectedLotItems.length === 0 || busy === 'lotBuy'}
+              onClick={() => buyFromLot(selectedLotItems)}
+            >
+              {busy === 'lotBuy' ? 'Buying...' : `Buy Selected (${selectedLotItems.length})`}
+            </button>
+            <button
+              className="btn btn-sm btn-green flex-1"
+              disabled={busy === 'lotBuy'}
+              onClick={() => buyFromLot((g.pendingLot.tires || []).map((_, i) => i))}
+            >
+              Buy All
+            </button>
+            <button
+              className="btn btn-sm btn-outline flex-1"
+              disabled={busy === 'lotDismiss'}
+              onClick={dismissLot}
+            >
+              Walk Away
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Auto-Source Card */}
       <div className="card" style={{ borderColor: g.autoSource ? 'var(--green)' : 'var(--border)' }}>
         <div className="row-between mb-4">
           <div className="card-title" style={{ marginBottom: 0 }}>Auto Source</div>
@@ -50,7 +139,8 @@ export default function SourcePanel() {
           )}
         </div>
         <div className="text-xs text-dim mb-4">
-          Automatically buy tires every week so you stay stocked even while offline.
+          Automatically buy tires every day so you stay stocked even while offline.
+          Spends up to 50% of your cash to fill inventory.
         </div>
         <select
           className="autoprice-select"
@@ -62,13 +152,15 @@ export default function SourcePanel() {
           <option value="">Off — Manual only</option>
           {unlockedSources.map(([id, src]) => (
             <option key={id} value={id}>
-              {src.ic} {src.n} — ${src.c}/wk ({src.min}-{src.max} tires)
+              {src.ic} {src.n} — ${src.c}/batch ({src.min}-{src.max} tires)
+              {src.days ? ' (Fri-Sun)' : ''}
             </option>
           ))}
         </select>
         {g.autoSource && SOURCES[g.autoSource] && (
           <div className="text-xs text-green" style={{ marginTop: 4 }}>
-            Spending ${SOURCES[g.autoSource].c}/week on {SOURCES[g.autoSource].n}. Stops if you run out of cash or space.
+            Auto-buying from {SOURCES[g.autoSource].n} daily. Stops if you run out of cash or space.
+            {SOURCES[g.autoSource].days ? ' Only buys Fri/Sat/Sun.' : ''}
           </div>
         )}
       </div>
@@ -78,6 +170,9 @@ export default function SourcePanel() {
         <div className="text-sm text-dim mb-4">
           Hit up local spots for used tires. You buy a batch, get a random mix of
           quality grades, then sell them from your van.
+        </div>
+        <div className="text-xs text-dim mb-4">
+          Today: {cal.dayName} {cal.monthName} {cal.dayOfMonth}, Year {cal.year}
         </div>
         <div className="row-between text-sm">
           <span className="text-dim">Cash</span>
@@ -102,13 +197,20 @@ export default function SourcePanel() {
         const locked = src.rr && g.reputation < src.rr;
         const cantAfford = g.cash < src.c;
         const noSpace = freeSpace <= 0;
+        const closed = isClosedToday(src);
 
         return (
-          <div key={id} className="card" style={locked ? { opacity: 0.6 } : {}}>
+          <div key={id} className="card" style={locked ? { opacity: 0.6 } : closed ? { opacity: 0.7 } : {}}>
             <div className="row-between mb-4">
               <div>
                 <span style={{ marginRight: 6 }}>{src.ic}</span>
                 <span className="font-bold">{src.n}</span>
+                {closed && <span className="text-xs text-dim" style={{ marginLeft: 6 }}>CLOSED</span>}
+                {!closed && src.days && (
+                  <span className="text-xs font-bold" style={{ marginLeft: 6, color: 'var(--green)', background: 'rgba(102,187,106,0.15)', padding: '1px 6px', borderRadius: 4 }}>
+                    OPEN TODAY
+                  </span>
+                )}
               </div>
               <span className="text-accent font-bold">${fmt(src.c)}</span>
             </div>
@@ -116,22 +218,36 @@ export default function SourcePanel() {
             <div className="text-xs text-dim mb-4">
               Yield: {src.min}-{src.max} tires
               {src.rr ? ` \u00B7 Rep ${src.rr}+ required` : ''}
+              {src.days ? ` \u00B7 Open ${src.days.map(d => DAY_NAMES[d].slice(0, 3)).join('/')}` : ''}
             </div>
-            <button
-              className="btn btn-full btn-green btn-sm"
-              disabled={locked || cantAfford || noSpace || busy === id}
-              onClick={() => buy(id)}
-            >
-              {locked
-                ? `Need Rep ${src.rr} (yours: ${g.reputation.toFixed(1)})`
-                : noSpace
-                  ? 'Storage Full'
-                  : cantAfford
-                    ? 'Not enough cash'
-                    : busy === id
-                      ? 'Sourcing...'
-                      : `Source ($${src.c})`}
-            </button>
+            <div className="row gap-8">
+              <button
+                className="btn btn-green btn-sm flex-1"
+                disabled={locked || cantAfford || noSpace || busy === id || closed}
+                onClick={() => buy(id)}
+              >
+                {locked
+                  ? `Need Rep ${src.rr} (yours: ${g.reputation.toFixed(1)})`
+                  : closed
+                    ? `Closed — Open ${src.days.map(d => DAY_NAMES[d].slice(0, 3)).join('/')}`
+                    : noSpace
+                      ? 'Storage Full'
+                      : cantAfford
+                        ? 'Not enough cash'
+                        : busy === id
+                          ? 'Sourcing...'
+                          : `Source ($${src.c})`}
+              </button>
+              {!locked && !closed && (
+                <button
+                  className="btn btn-sm btn-outline"
+                  disabled={cantAfford || noSpace || busy === `inspect-${id}`}
+                  onClick={() => inspect(id)}
+                >
+                  {busy === `inspect-${id}` ? '...' : 'Inspect'}
+                </button>
+              )}
+            </div>
           </div>
         );
       })}
@@ -140,8 +256,8 @@ export default function SourcePanel() {
         <div className="card" style={{ borderColor: 'var(--accent)', borderStyle: 'dashed' }}>
           <div className="text-sm" style={{ lineHeight: 1.5 }}>
             <span className="font-bold text-accent">How selling works:</span> Your tires sell
-            automatically each game week from your van. Demand depends on your prices, reputation,
-            and the season. Check the Dashboard to see weekly sales.
+            automatically each game day from your van. Demand depends on your prices, reputation,
+            and the season. Check the Dashboard to see daily sales.
           </div>
         </div>
       )}

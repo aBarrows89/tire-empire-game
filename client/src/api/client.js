@@ -11,9 +11,6 @@ const SERVER_URL = import.meta.env.VITE_SERVER_URL || '';
 // If SERVER_URL is set (native builds), use full URL; otherwise relative /api (browser dev)
 const API_BASE = SERVER_URL ? `${SERVER_URL}/api` : '/api';
 
-// Export for components that make direct fetch calls
-export { API_BASE, headers };
-
 const PLAYER_ID = 'dev-player';
 
 const headers = {
@@ -22,14 +19,42 @@ const headers = {
   'ngrok-skip-browser-warning': 'true',
 };
 
+// Export for components that make direct fetch calls
+export { API_BASE, headers };
+
+/**
+ * Fetch with automatic retry on failure.
+ * @param {string} url
+ * @param {object} opts - fetch options
+ * @param {number} retries - number of retries (default 2)
+ * @returns {Promise<Response>}
+ */
+async function fetchWithRetry(url, opts = {}, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, opts);
+      if (res.ok || attempt === retries) return res;
+      // Retry on server errors (5xx)
+      if (res.status >= 500) {
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      return res; // Client errors (4xx) don't retry
+    } catch (err) {
+      if (attempt === retries) throw err;
+      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+    }
+  }
+}
+
 export async function getState() {
-  const res = await fetch(`${API_BASE}/state`, { headers });
+  const res = await fetchWithRetry(`${API_BASE}/state`, { headers });
   if (!res.ok) throw new Error(`GET /api/state failed: ${res.status}`);
   return res.json();
 }
 
 export async function registerPlayer(playerName, companyName) {
-  const res = await fetch(`${API_BASE}/state/register`, {
+  const res = await fetchWithRetry(`${API_BASE}/state/register`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ playerName, companyName }),
@@ -39,7 +64,7 @@ export async function registerPlayer(playerName, companyName) {
 }
 
 export async function postAction(action, params = {}) {
-  const res = await fetch(`${API_BASE}/action`, {
+  const res = await fetchWithRetry(`${API_BASE}/action`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ action, ...params }),
@@ -48,47 +73,94 @@ export async function postAction(action, params = {}) {
 }
 
 export async function getMarket() {
-  const res = await fetch(`${API_BASE}/market`, { headers });
+  const res = await fetchWithRetry(`${API_BASE}/market`, { headers });
   return res.json();
 }
 
 export async function getLeaderboard() {
-  const res = await fetch(`${API_BASE}/leaderboard`, { headers });
+  const res = await fetchWithRetry(`${API_BASE}/leaderboard`, { headers });
   return res.json();
 }
 
-export function useWebSocket(onTick) {
-  const cbRef = useRef(onTick);
-  cbRef.current = onTick;
+export async function getTrades() {
+  const res = await fetchWithRetry(`${API_BASE}/trade`, { headers });
+  return res.json();
+}
+
+export async function createTradeOffer(params) {
+  const res = await fetchWithRetry(`${API_BASE}/trade/offer`, {
+    method: 'POST', headers,
+    body: JSON.stringify(params),
+  });
+  return res.json();
+}
+
+export async function tradeAction(action, tradeId) {
+  const res = await fetchWithRetry(`${API_BASE}/trade/${action}`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ tradeId }),
+  });
+  return res.json();
+}
+
+export function useWebSocket(onTick, onChat) {
+  const tickRef = useRef(onTick);
+  const chatRef = useRef(onChat);
+  const wsRef = useRef(null);
+  tickRef.current = onTick;
+  chatRef.current = onChat;
 
   useEffect(() => {
-    let wsUrl;
-    if (SERVER_URL) {
-      // Convert http(s) to ws(s) for native
-      wsUrl = SERVER_URL.replace(/^http/, 'ws');
-    } else {
-      wsUrl = `ws://${window.location.hostname}:3000`;
+    let destroyed = false;
+    let reconnectTimeout = null;
+
+    function connect() {
+      if (destroyed) return;
+      let wsUrl;
+      if (SERVER_URL) {
+        wsUrl = SERVER_URL.replace(/^http/, 'ws');
+      } else {
+        wsUrl = `ws://${window.location.hostname}:3000`;
+      }
+
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: 'subscribe', playerId: PLAYER_ID }));
+      };
+
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'tick') tickRef.current(msg);
+          if (msg.type === 'chat' && chatRef.current) chatRef.current(msg.message);
+        } catch {}
+      };
+
+      ws.onerror = () => {};
+      ws.onclose = () => {
+        wsRef.current = null;
+        if (!destroyed) {
+          reconnectTimeout = setTimeout(connect, 3000);
+        }
+      };
     }
 
-    const ws = new WebSocket(wsUrl);
+    connect();
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'subscribe', playerId: PLAYER_ID }));
+    return () => {
+      destroyed = true;
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (wsRef.current) wsRef.current.close();
     };
-
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'tick') cbRef.current(msg);
-      } catch {}
-    };
-
-    ws.onerror = () => {};
-    ws.onclose = () => {
-      // Reconnect after 3s
-      setTimeout(() => {}, 3000);
-    };
-
-    return () => ws.close();
   }, []);
+
+  return wsRef;
+}
+
+export function sendWsMessage(wsRef, data) {
+  if (wsRef.current?.readyState === 1) {
+    wsRef.current.send(JSON.stringify(data));
+  }
 }

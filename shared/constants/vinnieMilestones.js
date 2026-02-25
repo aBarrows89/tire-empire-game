@@ -6,7 +6,7 @@
 export const VINNIE_MILESTONES = [
   {
     id: 'welcome_back',
-    check: g => g.tutorialDone && g.week <= 3,
+    check: g => g.tutorialDone && (g.day || g.week || 1) <= 10,
     title: "Let's Get to Work!",
     message: "Alright kid, tutorial's done. First thing — go to Source and grab some tires. Can't sell air!",
     emotion: 'smirk',
@@ -97,7 +97,7 @@ export const VINNIE_MILESTONES = [
   },
   {
     id: 'cash_low_warning',
-    check: g => g.cash < 50 && g.week > 5,
+    check: g => g.cash < 50 && (g.day || g.week || 1) > 14,
     title: 'Watch Your Cash!',
     message: "Whoa, you're running dry! Sell tires at a discount, take a small loan, or cut costs. Don't go broke on me, kid.",
     emotion: 'serious',

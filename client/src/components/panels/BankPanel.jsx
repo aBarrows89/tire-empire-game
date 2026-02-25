@@ -10,6 +10,7 @@ export default function BankPanel() {
   const [busy, setBusy] = useState(null);
   const [depAmount, setDepAmount] = useState('');
   const [wdAmount, setWdAmount] = useState('');
+  const [repayAmounts, setRepayAmounts] = useState({});
 
   const take = async (index) => {
     setBusy(`loan-${index}`);
@@ -38,6 +39,21 @@ export default function BankPanel() {
     setBusy(null);
   };
 
+  const repayLoan = async (loanIndex, amount) => {
+    setBusy(`repay-${loanIndex}`);
+    await postAction('repayLoan', { loanIndex, amount });
+    setRepayAmounts(prev => ({ ...prev, [loanIndex]: '' }));
+    refreshState();
+    setBusy(null);
+  };
+
+  const vinnieBailout = async () => {
+    setBusy('bailout');
+    await postAction('vinnieBailout');
+    refreshState();
+    setBusy(null);
+  };
+
   const depositAll = () => setDepAmount(String(Math.floor(g.cash)));
   const withdrawAll = () => setWdAmount(String(Math.floor(g.bankBalance || 0)));
 
@@ -55,6 +71,23 @@ export default function BankPanel() {
 
   return (
     <>
+      {/* Vinnie Bailout */}
+      {g.cash < 0 && (g.tireCoins || 0) >= 10000 && (
+        <div className="card" style={{ borderColor: 'var(--red)' }}>
+          <div className="card-title" style={{ color: 'var(--red)' }}>Emergency Bailout</div>
+          <div className="text-xs text-dim mb-4">
+            You're in the red! Vinnie can bail you out for 10,000 TireCoins.
+          </div>
+          <button
+            className="btn btn-full btn-sm btn-red"
+            disabled={busy === 'bailout'}
+            onClick={vinnieBailout}
+          >
+            {busy === 'bailout' ? 'Processing...' : `Vinnie Bailout (10K TC) — You have ${g.tireCoins || 0} TC`}
+          </button>
+        </div>
+      )}
+
       {/* Savings Account */}
       <div className="card">
         <div className="card-title">Savings Account</div>
@@ -150,16 +183,47 @@ export default function BankPanel() {
         </div>
       )}
 
-      {/* Active Loans */}
+      {/* Active Loans with Repayment */}
       {(g.loans || []).length > 0 && (
         <div className="card">
           <div className="card-title">Active Loans</div>
-          {g.loans.map((loan, i) => (
-            <div key={i} className="row-between text-sm mb-4">
-              <span>{loan.name}</span>
-              <span className="text-red">${fmt(loan.remaining)} left</span>
-            </div>
-          ))}
+          {g.loans.map((loan, i) => {
+            const repayVal = repayAmounts[i] || '';
+            return (
+              <div key={i} style={{ borderBottom: i < g.loans.length - 1 ? '1px solid var(--border)' : 'none', paddingBottom: 8, marginBottom: 8 }}>
+                <div className="row-between text-sm mb-4">
+                  <span>{loan.name}</span>
+                  <span className="text-red">${fmt(loan.remaining)} left</span>
+                </div>
+                <div className="row gap-8">
+                  <input
+                    type="number"
+                    placeholder="Pay Extra"
+                    value={repayVal}
+                    onChange={(e) => setRepayAmounts(prev => ({ ...prev, [i]: e.target.value }))}
+                    min={1}
+                    max={Math.min(Math.floor(g.cash), Math.ceil(loan.remaining))}
+                    style={{ ...inputStyle, fontSize: 12 }}
+                  />
+                  <button
+                    className="btn btn-sm btn-green"
+                    disabled={!repayVal || Number(repayVal) <= 0 || Number(repayVal) > g.cash || busy === `repay-${i}`}
+                    onClick={() => repayLoan(i, Number(repayVal))}
+                  >
+                    {busy === `repay-${i}` ? '...' : 'Pay'}
+                  </button>
+                  <button
+                    className="btn btn-sm btn-outline"
+                    disabled={g.cash < loan.remaining || busy === `repay-${i}`}
+                    onClick={() => repayLoan(i, Math.ceil(loan.remaining))}
+                    style={{ whiteSpace: 'nowrap' }}
+                  >
+                    Pay Off
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -190,6 +254,41 @@ export default function BankPanel() {
               onClick={() => take(index)}
             >
               {locked ? `Need Rep ${loan.rr}` : busy === `loan-${index}` ? 'Processing...' : 'Take Loan'}
+            </button>
+          </div>
+        );
+      })}
+
+      {/* Insurance */}
+      <div className="card">
+        <div className="card-title">Insurance</div>
+        <div className="text-sm text-dim mb-4">Protect your business from unexpected events.</div>
+      </div>
+      {[
+        { tier: 'basic', name: 'Basic', cost: '$500/mo', desc: 'Covers theft and minor damage.' },
+        { tier: 'business', name: 'Business', cost: '$1,500/mo', desc: 'Covers theft, damage, chargebacks, and minor lawsuits.' },
+        { tier: 'premium', name: 'Premium', cost: '$3,000/mo', desc: 'Covers everything including major lawsuits and natural disasters.' },
+      ].map(ins => {
+        const isActive = g.insurance === ins.tier;
+        return (
+          <div key={ins.tier} className={`insurance-card${isActive ? ' active' : ''}`}>
+            <div className="row-between mb-4">
+              <span className="font-bold">{ins.name}</span>
+              <span className="text-accent font-bold">{ins.cost}</span>
+            </div>
+            <div className="text-xs text-dim mb-4">{ins.desc}</div>
+            {isActive && <div className="text-xs text-green font-bold mb-4">CURRENT PLAN</div>}
+            <button
+              className={`btn btn-full btn-sm ${isActive ? 'btn-red' : 'btn-green'}`}
+              disabled={busy === `ins-${ins.tier}`}
+              onClick={async () => {
+                setBusy(`ins-${ins.tier}`);
+                await postAction('setInsurance', { tier: isActive ? null : ins.tier });
+                refreshState();
+                setBusy(null);
+              }}
+            >
+              {busy === `ins-${ins.tier}` ? '...' : isActive ? 'Cancel' : 'Subscribe'}
             </button>
           </div>
         );

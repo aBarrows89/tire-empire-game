@@ -24,13 +24,13 @@ export const TUTORIAL_STEPS = [
   },
   {
     title: "The Van Life",
-    text: "Right now you're selling out of your van. It's slow — maybe 2-4 tires a week. But it's free and it builds reputation. Every sale earns you a little rep. Rep opens doors.",
+    text: "Right now you're selling out of your van. It's slow — maybe a tire or two a day. But it's free and it builds reputation. Every sale earns you a little rep. Rep opens doors.",
     panel: "dashboard",
     vinnieEmotion: "shrug",
   },
   {
     title: "Watch the Clock",
-    text: "This is a LIVE economy. Time keeps moving whether you're here or not. Every game week, your tires sell automatically based on demand, your prices, and your reputation. Check your dashboard for weekly stats.",
+    text: "This is a LIVE economy. Time keeps moving whether you're here or not. Every game day, your tires sell automatically based on demand, your prices, and your reputation. Check your dashboard for daily stats.",
     panel: "dashboard",
     vinnieEmotion: "serious",
   },

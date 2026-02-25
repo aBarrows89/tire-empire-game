@@ -1,3 +1,5 @@
+import { getPlayer, addChatMessage } from '../db/queries.js';
+
 /**
  * Handle a new WebSocket connection.
  * @param {WebSocket} ws - The WebSocket connection
@@ -7,7 +9,7 @@ export function handleConnection(ws, clients) {
   clients.add(ws);
   console.log(`WS connected (${clients.size} total)`);
 
-  ws.on('message', (raw) => {
+  ws.on('message', async (raw) => {
     try {
       const msg = JSON.parse(raw);
 
@@ -21,6 +23,33 @@ export function handleConnection(ws, clients) {
           ws.playerId = msg.playerId;
           ws.send(JSON.stringify({ type: 'subscribed', playerId: msg.playerId }));
           break;
+
+        case 'chat': {
+          if (!ws.playerId) {
+            ws.send(JSON.stringify({ type: 'error', message: 'Not subscribed' }));
+            break;
+          }
+          const player = await getPlayer(ws.playerId);
+          if (!player) {
+            ws.send(JSON.stringify({ type: 'error', message: 'Player not found' }));
+            break;
+          }
+          const text = (msg.text || '').trim().slice(0, 200);
+          if (!text) break;
+          const chatMsg = {
+            id: `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            playerId: ws.playerId,
+            playerName: player.game_state?.companyName || player.name || 'Unknown',
+            text,
+            timestamp: Date.now(),
+          };
+          await addChatMessage(chatMsg);
+          const broadcast = JSON.stringify({ type: 'chat', message: chatMsg });
+          for (const client of clients) {
+            if (client.readyState === 1) client.send(broadcast);
+          }
+          break;
+        }
 
         default:
           ws.send(JSON.stringify({ type: 'error', message: `Unknown message type: ${msg.type}` }));

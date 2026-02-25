@@ -1,6 +1,7 @@
 import React from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { PAY } from '@shared/constants/staff.js';
+import { MARKETPLACE_SPECIALIST } from '@shared/constants/marketplace.js';
 import { fmt } from '@shared/helpers/format.js';
 import { postAction } from '../../api/client.js';
 
@@ -74,6 +75,43 @@ export default function StaffPanel() {
           </div>
         );
       })}
+
+      {/* Marketplace Specialist */}
+      <div className="card">
+        <div className="card-title">Marketplace</div>
+        <div className="row-between mb-4">
+          <div>
+            <div className="font-bold text-sm">{MARKETPLACE_SPECIALIST.title}</div>
+            <div className="text-xs text-dim">{MARKETPLACE_SPECIALIST.description}</div>
+            <div className="text-xs text-dim">Requires: Rep {MARKETPLACE_SPECIALIST.minRep}+, {MARKETPLACE_SPECIALIST.minLocations}+ location</div>
+          </div>
+          <div className="text-xs text-dim">${fmt(MARKETPLACE_SPECIALIST.salary)}/mo</div>
+        </div>
+        <div className="row-between">
+          {g.marketplaceSpecialist ? (
+            <>
+              <span className="text-xs text-green font-bold">HIRED</span>
+              <button
+                className="btn btn-sm btn-red"
+                onClick={async () => { await postAction('fireMarketplaceSpecialist'); refreshState(); }}
+              >
+                Fire
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="text-xs text-dim">Not hired</span>
+              <button
+                className="btn btn-sm btn-green"
+                disabled={g.reputation < MARKETPLACE_SPECIALIST.minRep || (g.locations || []).length < MARKETPLACE_SPECIALIST.minLocations}
+                onClick={async () => { await postAction('hireMarketplaceSpecialist'); refreshState(); }}
+              >
+                Hire
+              </button>
+            </>
+          )}
+        </div>
+      </div>
     </>
   );
 }

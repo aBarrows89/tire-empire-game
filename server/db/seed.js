@@ -10,7 +10,7 @@ export async function seedMemoryStore(store) {
   console.log(`  Created game with ${aiShops.length} AI shops`);
 
   // Create a default player (no companyName = will see welcome screen)
-  const state = init('Player');
+  const state = init('Player', 1);
   state.id = 'dev-player';
   await store.createPlayer('dev-player', 'Player', state);
   console.log('  Created default player (dev-player)');

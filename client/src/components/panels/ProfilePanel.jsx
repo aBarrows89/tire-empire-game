@@ -1,45 +1,145 @@
 import React, { useState, useEffect } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
-import { API_BASE, headers } from '../../api/client.js';
+import { API_BASE, headers, postAction } from '../../api/client.js';
 
 export default function ProfilePanel() {
-  const { state } = useGame();
+  const { state, dispatch, refreshState } = useGame();
   const g = state.game;
+  const viewingId = state.viewingProfile;
+  const isOther = viewingId && viewingId !== g?.id;
+
   const [profile, setProfile] = useState(null);
+  const [showReset, setShowReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
+
+  const targetId = isOther ? viewingId : g?.id;
 
   useEffect(() => {
-    if (!g?.id) return;
-    fetch(`${API_BASE}/profile/${g.id}`, { headers })
+    if (!targetId) return;
+    setProfile(null);
+    fetch(`${API_BASE}/profile/${targetId}`, { headers })
       .then(r => r.json())
       .then(data => setProfile(data))
       .catch(() => {});
-  }, [g?.id, g?.week]);
+  }, [targetId, g?.day]);
+
+  const handleReset = async () => {
+    setResetting(true);
+    const res = await postAction('resetGame', {});
+    if (res.ok) {
+      refreshState();
+      setShowReset(false);
+    }
+    setResetting(false);
+  };
+
+  const goBack = () => {
+    dispatch({ type: 'SET_PANEL', payload: 'leaderboard' });
+  };
 
   if (!profile) return <div className="card"><div className="text-sm text-dim">Loading profile...</div></div>;
 
+  // For own profile, use live game context for volatile stats
+  const rep = isOther ? (profile.reputation || 0) : g.reputation;
+  const locCount = isOther ? (profile.locationCount || 0) : (g.locations || []).length;
+
   return (
-    <div className="card profile-card">
-      <div className="profile-avatar">🏪</div>
-      <div className="profile-name">{profile.companyName}</div>
-      <div className="profile-company">Founded by {profile.name}</div>
-      <div className="profile-stat-grid">
-        <div className="profile-stat">
-          <div className="profile-stat-val">{profile.yearsInBusiness}</div>
-          <div className="profile-stat-label">Year{profile.yearsInBusiness !== 1 ? 's' : ''} in Business</div>
+    <>
+      {isOther && (
+        <div className="card">
+          <button className="btn btn-sm btn-outline" onClick={goBack}>
+            {'\u2190'} Back to Leaderboard
+          </button>
         </div>
-        <div className="profile-stat">
-          <div className="profile-stat-val">{profile.locationCount}</div>
-          <div className="profile-stat-label">Location{profile.locationCount !== 1 ? 's' : ''}</div>
-        </div>
-        <div className="profile-stat">
-          <div className="profile-stat-val">{profile.reputation}</div>
-          <div className="profile-stat-label">Reputation</div>
-        </div>
-        <div className="profile-stat">
-          <div className="profile-stat-val">Y{profile.yearsInBusiness}</div>
-          <div className="profile-stat-label">Founded</div>
+      )}
+
+      <div className="card profile-card">
+        <div className="profile-avatar">{'\u{1F3EA}'}</div>
+        <div className="profile-name">{profile.companyName}</div>
+        <div className="profile-company">Founded by {profile.name}</div>
+        <div className="profile-stat-grid">
+          <div className="profile-stat">
+            <div className="profile-stat-val">{profile.yearsInBusiness}</div>
+            <div className="profile-stat-label">Year{profile.yearsInBusiness !== 1 ? 's' : ''} in Business</div>
+          </div>
+          <div className="profile-stat">
+            <div className="profile-stat-val">{locCount}</div>
+            <div className="profile-stat-label">Location{locCount !== 1 ? 's' : ''}</div>
+          </div>
+          <div className="profile-stat">
+            <div className="profile-stat-val">{typeof rep === 'number' ? rep.toFixed(1) : rep}</div>
+            <div className="profile-stat-label">Reputation</div>
+          </div>
+          <div className="profile-stat">
+            <div className="profile-stat-val">Y{profile.yearStarted}</div>
+            <div className="profile-stat-label">Founded</div>
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* Trade button when viewing other player */}
+      {isOther && (g.locations || []).length > 0 && (
+        <div className="card">
+          <button
+            className="btn btn-full btn-sm"
+            style={{ background: 'var(--accent)', color: '#000' }}
+            onClick={() => dispatch({ type: 'SET_PANEL', payload: 'trade' })}
+          >
+            Send Trade Offer
+          </button>
+          <div className="text-xs text-dim" style={{ marginTop: 4, textAlign: 'center' }}>
+            Direct trade — no escrow, no protection
+          </div>
+        </div>
+      )}
+
+      {/* Only show reset for own profile */}
+      {!isOther && (
+        <>
+          <div className="card">
+            <button
+              className="btn btn-full btn-sm"
+              style={{ background: 'var(--red)', color: '#fff', opacity: 0.8 }}
+              onClick={() => setShowReset(true)}
+            >
+              Reset Character
+            </button>
+            <div className="text-xs text-dim" style={{ marginTop: 4, textAlign: 'center' }}>
+              Start over from scratch. The world clock keeps ticking.
+            </div>
+          </div>
+
+          {showReset && (
+            <div className="vinnie-popup-backdrop" onClick={() => setShowReset(false)}>
+              <div className="vinnie-popup-card" onClick={e => e.stopPropagation()}>
+                <div className="vinnie-popup-emoji">{'\u{1F628}'}</div>
+                <div className="vinnie-popup-title">You Sure About This?</div>
+                <div className="vinnie-popup-message">
+                  Whoa whoa whoa... Everything you built — gone. Cash, tires, shops, rep...
+                  back to square one with a van and a dream. The clock keeps ticking though,
+                  so the world moves on without you. You really wanna do this, kid?
+                </div>
+                <div className="vinnie-popup-actions">
+                  <button
+                    className="btn btn-full btn-sm"
+                    style={{ background: 'var(--red)', color: '#fff' }}
+                    onClick={handleReset}
+                    disabled={resetting}
+                  >
+                    {resetting ? 'Resetting...' : "Yeah, Start Over"}
+                  </button>
+                  <button
+                    className="btn btn-full btn-sm btn-outline"
+                    onClick={() => setShowReset(false)}
+                  >
+                    Nah, I'm Good
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </>
   );
 }

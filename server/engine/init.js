@@ -3,31 +3,32 @@ import { TIRES } from '../../shared/constants/tires.js';
 
 /**
  * Create a fresh player game state.
- * Matches the init() function from tire-empire-v6.jsx exactly.
+ * @param {string} playerName
+ * @param {number} globalDay — current server day (for startDay tracking)
  */
-export function init(playerName = "Player") {
+export function init(playerName = "Player", globalDay = 1) {
   const inventory = {};
   const prices = {};
   const marketPrices = {};
   for (const k of Object.keys(TIRES)) {
     inventory[k] = 0;
     prices[k] = TIRES[k].def;
-    // Market average = midpoint of lo-hi range with some noise
     marketPrices[k] = TIRES[k].def;
   }
 
   return {
     id: uid(),
     name: playerName,
-    week: 1,
-    cash: 400,
+    day: 1,             // player's own day counter (resets on character reset)
+    startDay: globalDay, // global server day when this character was created/reset
+    cash: 500,
     reputation: 0,
     totalRev: 0,
     totalProfit: 0,
     totalSold: 0,
-    weekRev: 0,
-    weekProfit: 0,
-    weekSold: 0,
+    dayRev: 0,
+    dayProfit: 0,
+    daySold: 0,
     inventory,
     prices,
     marketPrices,
@@ -35,21 +36,21 @@ export function init(playerName = "Player") {
     locations: [],
     staff: { techs: 0, sales: 0, managers: 0, drivers: 0, pricingAnalyst: 0 },
     autoPrice: {},
-    autoSource: null,  // source ID to auto-buy each week (e.g. 'scrapYard')
+    autoSource: null,
     servicePrices: { flatRepair: 25, balance: 20, install: 35, nitrogen: 10 },
-    weekServiceRev: 0,
-    weekServiceJobs: 0,
+    dayServiceRev: 0,
+    dayServiceJobs: 0,
     totalServiceRev: 0,
     whStaff: {},
     corpStaff: {},
     loans: [],
-    warehouseInventory: {},  // central storage inventory (keys = tire types)
-    hasWarehouse: false,     // unlocked when player buys smallWH+
-    disposalFee: 3,          // $ charged to customers for tire disposal
+    warehouseInventory: {},
+    hasWarehouse: false,
+    disposalFee: 3,
     bankBalance: 0,
-    bankRate: 0.042,       // annual rate, fluctuates each tick
-    bankInterestEarned: 0, // interest earned this week
-    bankTotalInterest: 0,  // lifetime interest earned
+    bankRate: 0.042,
+    bankInterestEarned: 0,
+    bankTotalInterest: 0,
     unlockedSources: ["scrapYard", "garageCleanout"],
     unlockedSuppliers: [],
     unlockedMfgs: [],
@@ -60,8 +61,9 @@ export function init(playerName = "Player") {
     ecomStaff: {},
     ecomUpgrades: [],
     ecomTotalSpent: 0,
-    ecomWeeklyOrders: 0,
-    ecomWeeklyRev: 0,
+    ecomDailyOrders: 0,
+    ecomDailyRev: 0,
+    marketplaceSpecialist: false,
     marketplaceChannels: [],
     hasDist: false,
     distClients: [],
@@ -73,13 +75,40 @@ export function init(playerName = "Player") {
     isInstaller: false,
     liquidationListings: [],
     log: [],
-    achievements: [],
+    achievements: {},
     tireCoins: 0,
     tutorialStep: 0,
     tutorialDone: false,
     vinnieSeen: [],
     companyName: '',
     aiShops: [],
+    // History & trends
+    history: [],
+    prevDayRev: 0,
+    prevDayProfit: 0,
+    prevDaySold: 0,
+    prevCash: 500,
+    prevRep: 0,
+    // Insurance
+    insurance: null,
+    // Tire retreading
+    retreadQueue: [],
+    // Supplier relationships
+    supplierRelationships: {},
+    // Pending tire lot inspection
+    pendingLot: null,
+    // Regional market share
+    marketShare: {},
+    // Import orders in transit
+    pendingImports: [],
+    // Weekly tournament snapshot
+    weeklySnapshot: null,
+    // Franchise system
+    hasFranchise: false,
+    franchiseTemplates: [],
+    // Tire manufacturing
+    hasFactory: false,
+    factory: null,
     _events: [],
   };
 }

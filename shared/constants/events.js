@@ -11,8 +11,8 @@ export const EVENTS = [
   { t: "\u{1F4C9} Recession \u2014 used up", ch: .03, gate: "hasUsedInv" },
   { t: "\u{1F389} Vendor rebate 12%!", ch: .04, gate: "hasSupplier" },
   { t: "\u{1F525} Competitor closed!", ch: .015, gate: "hasLocations" },
-  { t: "\u{1F4B8} Chargeback $450", ch: .05, gate: "hasSold" },
-  { t: "\u{1F4F1} Bad review", ch: .04, gate: "hasLocOrRep" },
+  { t: "\u{1F4B8} Chargeback $450", ch: .05, gate: "hasLocations" },
+  { t: "\u{1F4F1} Bad review", ch: .04, gate: "hasLocations" },
   { t: "\u{1F3E5} Workers comp", ch: .025, gate: "hasStaff" },
   { t: "\u{1F694} Junk tire fine!", ch: .03, gate: "hasJunk" },
 ];

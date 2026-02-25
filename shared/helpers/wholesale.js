@@ -23,8 +23,8 @@ export function getWsVolBonus(monthlyVol) {
 export function getWsMargin(g, client) {
   const base = Rf(WS_BASE_MARGIN.min, WS_BASE_MARGIN.max);
   const volBonus = getWsVolBonus(g.monthlyPurchaseVol || 0).bonus;
-  const weeksActive = Math.max(0, (g.week || 0) - (client?.joinedWeek || 0));
-  const relBonus = Math.min(.05, Math.floor(weeksActive / 10) * WS_RELATIONSHIP_BONUS);
+  const daysActive = Math.max(0, (g.day || g.week || 0) - (client?.joinedDay || client?.joinedWeek || 0));
+  const relBonus = Math.min(.05, Math.floor(daysActive / 30) * WS_RELATIONSHIP_BONUS);
   return base + volBonus + relBonus;
 }
 

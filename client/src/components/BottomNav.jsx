@@ -8,10 +8,14 @@ const TABS = [
   { id: 'pricing', icon: '\u{1F4B2}', label: 'Prices' },
   { id: 'storage', icon: '\u{1F4E6}', label: 'Storage' },
   { id: 'bank', icon: '\u{1F3E6}', label: 'Bank' },
+  { id: 'marketplace', icon: '\u{1F4E2}', label: 'Market' },
+  { id: 'trade', icon: '\u{1F91D}', label: 'Trade' },
   { id: 'shop', icon: '\u{1F3EA}', label: 'Shops' },
   { id: 'staff', icon: '\u{1F465}', label: 'Staff' },
   { id: 'supplier', icon: '\u{1F69A}', label: 'Supply' },
-  { id: 'marketplace', icon: '\u{1F4E2}', label: 'Market' },
+  { id: 'achievements', icon: '\u{1F3C5}', label: 'Awards' },
+  { id: 'factory', icon: '\u{1F3ED}', label: 'Factory' },
+  { id: 'leaderboard', icon: '\u{1F3C6}', label: 'Ranks' },
   { id: 'profile', icon: '\u{1F464}', label: 'Profile' },
   { id: 'log', icon: '\u{1F4CB}', label: 'Log' },
 ];
@@ -23,7 +27,7 @@ const TABS = [
  */
 function getUnlockedTabs(g) {
   const inv = getInv(g);
-  const unlocked = new Set(['dashboard', 'source', 'pricing', 'log', 'profile']);
+  const unlocked = new Set(['dashboard', 'source', 'pricing', 'log', 'profile', 'leaderboard']);
 
   // Storage: once you have > 12 tires or bought any storage beyond van
   if (inv > 12 || g.storage.length > 1) unlocked.add('storage');
@@ -40,8 +44,17 @@ function getUnlockedTabs(g) {
   // Supplier (new tires): once you have rep and some cash
   if (g.reputation >= 8 || g.unlockedSuppliers.length > 0) unlocked.add('supplier');
 
-  // Marketplace: once you have a shop
-  if (g.locations.length > 0) unlocked.add('marketplace');
+  // Marketplace & Trade: once you have a shop
+  if (g.locations.length > 0) {
+    unlocked.add('marketplace');
+    unlocked.add('trade');
+  }
+
+  // Achievements: always visible
+  unlocked.add('achievements');
+
+  // Factory: visible when player has factory or high reputation
+  if (g.hasFactory || g.reputation >= 70) unlocked.add('factory');
 
   return unlocked;
 }
