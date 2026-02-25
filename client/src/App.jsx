@@ -83,6 +83,7 @@ function GameLayout() {
         <AchievementToast
           achievements={toastAch}
           onDismiss={() => setToastAch(null)}
+          hasCelebration={(g.cosmetics || []).includes('celebration')}
         />
       )}
 

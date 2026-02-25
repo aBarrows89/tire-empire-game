@@ -53,7 +53,7 @@ export default function ProfilePanel() {
         </div>
       )}
 
-      <div className="card profile-card">
+      <div className={`card profile-card${(g.cosmetics || []).includes('elite_border') ? ' elite-profile-border' : ''}`}>
         <div className="profile-avatar">{'\u{1F3EA}'}</div>
         <div className="profile-name">{profile.companyName}</div>
         <div className="profile-company">Founded by {profile.name}</div>

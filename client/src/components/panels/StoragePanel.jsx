@@ -63,7 +63,7 @@ export default function StoragePanel() {
         <div className="text-sm text-dim">Storage units:</div>
         {g.storage.map((s, i) => (
           <div key={i} className="row-between text-sm mt-8">
-            <span>{STORAGE[s.type]?.ic} {STORAGE[s.type]?.n}</span>
+            <span>{STORAGE[s.type]?.ic} {STORAGE[s.type]?.n}{s.type === 'van' && (g.cosmetics || []).includes('premium_van') && <span className="premium-van-badge">PREMIUM</span>}</span>
             <span className="text-accent">{STORAGE[s.type]?.cap} cap</span>
           </div>
         ))}

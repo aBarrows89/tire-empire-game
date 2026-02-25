@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 
-export default function AchievementToast({ achievements, onDismiss }) {
+export default function AchievementToast({ achievements, onDismiss, hasCelebration }) {
   useEffect(() => {
     if (!achievements || achievements.length === 0) return;
     const timer = setTimeout(() => {
@@ -13,7 +13,7 @@ export default function AchievementToast({ achievements, onDismiss }) {
 
   return (
     <div
-      className="achievement-toast"
+      className={`achievement-toast${hasCelebration ? ' celebration-toast' : ''}`}
       onClick={onDismiss}
       style={{
         position: 'fixed',

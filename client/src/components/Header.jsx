@@ -48,7 +48,7 @@ export default function Header() {
       </div>
       {g.companyName && (
         <div className="stat" style={{ marginLeft: 'auto' }}>
-          <span className="stat-label" style={{ fontSize: 10 }}>{g.companyName}</span>
+          <span className={`stat-label${(g.cosmetics || []).includes('gold_name') ? ' gold-name' : ''}`} style={{ fontSize: 10 }}>{g.companyName}</span>
         </div>
       )}
     </div>

@@ -64,7 +64,7 @@ export default function DashboardPanel() {
         {QUICK_ACTIONS.map(qa => (
           <button
             key={qa.id}
-            className="quick-action-btn"
+            className={`quick-action-btn${(g.cosmetics || []).includes('vip_dash') ? ' vip-action-btn' : ''}`}
             onClick={() => dispatch({ type: 'SET_PANEL', payload: qa.id })}
           >
             <span style={{ fontSize: 22 }}>{qa.icon}</span>

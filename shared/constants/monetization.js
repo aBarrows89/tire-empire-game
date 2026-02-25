@@ -28,11 +28,11 @@ export const MONET = {
     becameInstaller: 40,
   },
   cosmetics: [
-    { id: "gold_name", n: "Gold Name Badge", cost: 200, desc: "Your name in gold on leaderboard" },
-    { id: "custom_logo", n: "Custom Shop Logo", cost: 100, desc: "Upload your own logo" },
-    { id: "premium_truck", n: "Premium Delivery Truck", cost: 150, desc: "Custom truck skin" },
-    { id: "neon_sign", n: "Neon Shop Sign", cost: 75, desc: "Animated sign on your shops" },
-    { id: "fireworks", n: "Fireworks Celebration", cost: 50, desc: "Fireworks on achievements" },
-    { id: "map_trail", n: "Map Trail Effect", cost: 120, desc: "Trail on the map showing your empire" },
+    { id: "gold_name", n: "Gold Company Name", cost: 500, desc: "Your company name glows gold in the header — always visible" },
+    { id: "neon_sign", n: "Neon Shop Glow", cost: 300, desc: "Your shop cards pulse with a neon border effect" },
+    { id: "vip_dash", n: "VIP Dashboard", cost: 200, desc: "Gold-bordered quick actions on your dashboard" },
+    { id: "premium_van", n: "Premium Van", cost: 150, desc: "Flashy van icon in your storage panel" },
+    { id: "celebration", n: "Celebration Effects", cost: 100, desc: "Extra sparkle animation on achievement toasts" },
+    { id: "elite_border", n: "Elite Profile Border", cost: 400, desc: "Animated gold border on your profile card" },
   ],
 };

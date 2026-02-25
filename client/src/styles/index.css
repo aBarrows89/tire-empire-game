@@ -609,3 +609,81 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 3px;
   transition: width 0.5s ease;
 }
+
+/* Cosmetic: Gold Company Name */
+.gold-name {
+  color: var(--gold) !important;
+  text-shadow: 0 0 8px rgba(255, 213, 79, 0.6), 0 0 16px rgba(255, 213, 79, 0.3);
+  font-weight: 800 !important;
+  font-size: 11px !important;
+}
+
+/* Cosmetic: Neon Shop Glow */
+.neon-shop-card {
+  border: 1px solid rgba(79, 195, 247, 0.6) !important;
+  box-shadow: 0 0 8px rgba(79, 195, 247, 0.3), inset 0 0 8px rgba(79, 195, 247, 0.05);
+  animation: neon-pulse 2s ease-in-out infinite;
+}
+@keyframes neon-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(79, 195, 247, 0.3), inset 0 0 8px rgba(79, 195, 247, 0.05); }
+  50% { box-shadow: 0 0 16px rgba(79, 195, 247, 0.5), inset 0 0 12px rgba(79, 195, 247, 0.1); }
+}
+
+/* Cosmetic: VIP Dashboard */
+.vip-action-btn {
+  border-color: var(--gold) !important;
+  box-shadow: 0 0 6px rgba(255, 213, 79, 0.2);
+}
+
+/* Cosmetic: Premium Van */
+.premium-van-badge {
+  background: linear-gradient(135deg, var(--gold), #ff8f00);
+  color: #111;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+
+/* Cosmetic: Celebration Effects */
+.celebration-toast {
+  position: relative;
+  overflow: visible;
+}
+.celebration-toast::before,
+.celebration-toast::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  animation: sparkle 1s ease-in-out infinite;
+}
+.celebration-toast::before {
+  top: -4px;
+  left: 20%;
+  background: var(--gold);
+  animation-delay: 0s;
+}
+.celebration-toast::after {
+  top: -6px;
+  right: 25%;
+  background: var(--accent);
+  animation-delay: 0.5s;
+}
+@keyframes sparkle {
+  0%, 100% { opacity: 0; transform: scale(0) translateY(0); }
+  50% { opacity: 1; transform: scale(1.5) translateY(-8px); }
+}
+
+/* Cosmetic: Elite Profile Border */
+.elite-profile-border {
+  border: 2px solid var(--gold) !important;
+  box-shadow: 0 0 12px rgba(255, 213, 79, 0.3);
+  animation: elite-glow 3s ease-in-out infinite;
+}
+@keyframes elite-glow {
+  0%, 100% { box-shadow: 0 0 12px rgba(255, 213, 79, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(255, 213, 79, 0.5), 0 0 30px rgba(255, 213, 79, 0.2); }
+}

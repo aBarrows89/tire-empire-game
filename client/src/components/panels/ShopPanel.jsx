@@ -86,7 +86,7 @@ export default function ShopPanel() {
   return (
     <>
       {g.locations.length > 0 && (
-        <div className="card">
+        <div className={`card${(g.cosmetics || []).includes('neon_sign') ? ' neon-shop-card' : ''}`}>
           <div className="card-title">Your Shops ({g.locations.length})</div>
           {g.locations.map((loc, i) => {
             const city = CITIES.find(c => c.id === loc.cityId);
