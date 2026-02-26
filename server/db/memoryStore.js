@@ -5,6 +5,7 @@ const playerListings = [];
 const directTrades = [];
 const tournaments = new Map();
 const chatMessages = [];
+const shopSaleListings = [];
 
 export function createMemoryStore() {
   return {
@@ -81,7 +82,7 @@ export function createMemoryStore() {
       return rows.slice(0, limit);
     },
 
-    async upsertLeaderboard(playerId, name, wealth, reputation, locations, day) {
+    async upsertLeaderboard(playerId, name, wealth, reputation, locations, day, isPremium) {
       leaderboard.set(playerId, {
         player_id: playerId,
         name,
@@ -89,6 +90,7 @@ export function createMemoryStore() {
         reputation,
         locations,
         day,
+        isPremium: !!isPremium,
         updated_at: new Date().toISOString(),
       });
     },
@@ -151,6 +153,45 @@ export function createMemoryStore() {
       chatMessages.push(msg);
       if (chatMessages.length > 500) chatMessages.splice(0, chatMessages.length - 500);
       return msg;
+    },
+
+    // Shop sale listings (shared marketplace)
+    async getShopSaleListings(filter = {}) {
+      let results = [...shopSaleListings];
+      if (filter.status) results = results.filter(l => l.status === filter.status);
+      if (filter.sellerId) results = results.filter(l => l.sellerId === filter.sellerId);
+      return results;
+    },
+
+    async addShopSaleListing(listing) {
+      shopSaleListings.push(listing);
+      return listing;
+    },
+
+    async getShopSaleListingById(id) {
+      return shopSaleListings.find(l => l.id === id) || null;
+    },
+
+    async updateShopSaleListing(id, updates) {
+      const idx = shopSaleListings.findIndex(l => l.id === id);
+      if (idx === -1) return null;
+      Object.assign(shopSaleListings[idx], updates);
+      return shopSaleListings[idx];
+    },
+
+    async removeShopSaleListing(id) {
+      const idx = shopSaleListings.findIndex(l => l.id === id);
+      if (idx === -1) return false;
+      shopSaleListings.splice(idx, 1);
+      return true;
+    },
+
+    // Remove a player (used for AI phase-out)
+    async removePlayer(id) {
+      const existed = players.has(id);
+      players.delete(id);
+      leaderboard.delete(id);
+      return existed;
     },
   };
 }

@@ -24,6 +24,8 @@ router.get('/:playerId', async (req, res) => {
       yearStarted,
       locationCount: (g.locations || []).length,
       reputation: Math.round((g.reputation || 0) * 10) / 10,
+      isPremium: !!g.isPremium,
+      cosmetics: g.cosmetics || [],
     });
   } catch (err) {
     console.error('GET /api/profile error:', err);

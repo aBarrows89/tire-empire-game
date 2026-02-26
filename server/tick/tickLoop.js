@@ -1,18 +1,93 @@
 import { TICK_MS } from '../config.js';
-import { getAllActivePlayers, savePlayerState, getGame, saveGame, upsertLeaderboard, getPlayerListings, updatePlayerListing, getPlayer } from '../db/queries.js';
+import { getAllActivePlayers, savePlayerState, getGame, saveGame, upsertLeaderboard, getPlayerListings, updatePlayerListing, getPlayer, removePlayer } from '../db/queries.js';
 import { simDay } from '../engine/simDay.js';
+import { simAIPlayerDay } from '../engine/aiPlayers.js';
 import { getWealth } from '../../shared/helpers/wealth.js';
 import { getStorageCap, getLocInv, getLocCap, rebuildGlobalInv, getCap, getInv } from '../../shared/helpers/inventory.js';
 import { getCalendar } from '../../shared/helpers/calendar.js';
 import { CITIES } from '../../shared/constants/cities.js';
 import { TIRES } from '../../shared/constants/tires.js';
 import { SOURCES } from '../../shared/constants/sources.js';
+import { SUPPLIERS } from '../../shared/constants/suppliers.js';
+import { getSupplierRelTier } from '../../shared/constants/supplierRelations.js';
 import { P2P_FEES } from '../../shared/constants/marketplace.js';
 import { broadcast } from './broadcast.js';
 import { updateAIPrices } from '../engine/aiPriceWar.js';
 import { saveTournament } from '../db/queries.js';
 
 let tickInterval = null;
+
+// ── AI Phase-Out ──
+// As real players join, AI shops and AI players gradually go out of business.
+// This ensures the economy transitions from AI-populated to fully player-driven.
+
+const AI_SHOPS_PER_REAL_PLAYER = 3;   // Each real player displaces ~3 AI shops
+const AI_PLAYERS_PER_REAL_PLAYER = 2; // Each real player displaces ~2 AI players
+const MAX_AI_REMOVALS_PER_DAY = 5;    // Don't remove too many at once (gradual)
+const MIN_AI_SHOPS = 20;              // Keep a few AI shops so new players have some competition
+const MIN_AI_PLAYERS = 2;             // Keep a couple AI players for leaderboard variety
+
+/**
+ * Gradually phase out AI shops and AI players as real players join.
+ * Prioritizes removing AI shops in cities where real players have shops.
+ */
+async function phaseOutAI(game, players) {
+  const realPlayers = players.filter(p => !p.game_state.isAI && p.game_state.companyName);
+  const aiPlayers = players.filter(p => p.game_state.isAI);
+  const realCount = realPlayers.length;
+
+  if (realCount === 0) return; // No real players yet, keep all AI
+
+  const aiShops = game.ai_shops || [];
+
+  // ── Phase out AI shops ──
+  const baseAIShops = 746; // Original seed count
+  const targetAIShops = Math.max(MIN_AI_SHOPS, baseAIShops - (realCount * AI_SHOPS_PER_REAL_PLAYER));
+  const shopsToRemove = Math.min(MAX_AI_REMOVALS_PER_DAY, aiShops.length - targetAIShops);
+
+  if (shopsToRemove > 0) {
+    // Build set of cities where real players have shops — prioritize removing AI from those
+    const realCities = new Set();
+    for (const p of realPlayers) {
+      for (const loc of (p.game_state.locations || [])) {
+        realCities.add(loc.cityId);
+      }
+    }
+
+    // Sort AI shops: those in real-player cities first, then by lowest wealth (weakest go first)
+    const ranked = [...aiShops].sort((a, b) => {
+      const aInReal = realCities.has(a.cityId) ? 0 : 1;
+      const bInReal = realCities.has(b.cityId) ? 0 : 1;
+      if (aInReal !== bInReal) return aInReal - bInReal;
+      return (a.wealth || 0) - (b.wealth || 0);
+    });
+
+    const removeIds = new Set(ranked.slice(0, shopsToRemove).map(s => s.id));
+    game.ai_shops = aiShops.filter(s => !removeIds.has(s.id));
+
+    if (shopsToRemove > 0 && game.day % 30 === 0) {
+      console.log(`  [AI Phase-Out] Removed ${shopsToRemove} AI shops (${game.ai_shops.length} remain, ${realCount} real players)`);
+    }
+  }
+
+  // ── Phase out AI players ──
+  const targetAIPlayers = Math.max(MIN_AI_PLAYERS, 12 - (realCount * AI_PLAYERS_PER_REAL_PLAYER));
+  const aiToRemove = Math.min(1, aiPlayers.length - targetAIPlayers); // Remove max 1 AI player per day
+
+  if (aiToRemove > 0) {
+    // Remove the weakest AI player (lowest wealth)
+    const sorted = [...aiPlayers].sort((a, b) => {
+      const wa = (a.game_state.cash || 0) + (a.game_state.bankBalance || 0);
+      const wb = (b.game_state.cash || 0) + (b.game_state.bankBalance || 0);
+      return wa - wb;
+    });
+    const victim = sorted[0];
+    if (victim) {
+      await removePlayer(victim.id);
+      console.log(`  [AI Phase-Out] AI player "${victim.game_state.companyName}" went out of business (${aiPlayers.length - 1} AI players remain)`);
+    }
+  }
+}
 
 /**
  * Apply auto-pricing strategies before simDay runs.
@@ -89,6 +164,74 @@ function applyAutoSource(g) {
   if (totalAdded > 0) {
     g.log = g.log || [];
     g.log.push({ msg: `Auto-sourced ${totalAdded} tires from ${src.n} (-$${spent})`, cat: 'source' });
+  }
+}
+
+/**
+ * Auto-order from suppliers when stock is low.
+ * For each config in g.autoSuppliers, checks total stock across warehouse + locations,
+ * and orders if below threshold. Uses up to 50% of cash across all auto-orders.
+ */
+function applyAutoSupplier(g) {
+  if (!g.autoSuppliers || g.autoSuppliers.length === 0) return;
+
+  const maxSpend = Math.floor(g.cash * 0.5);
+  let spent = 0;
+
+  for (const config of g.autoSuppliers) {
+    const { supplierIndex, tire, qty, threshold } = config;
+    const sup = SUPPLIERS[supplierIndex];
+    const t = TIRES[tire];
+    if (!sup || !t) continue;
+    if (!(g.unlockedSuppliers || []).includes(supplierIndex)) continue;
+
+    // Count current stock of this tire across warehouse + all locations
+    const totalStock = (g.warehouseInventory?.[tire] || 0) +
+      (g.locations || []).reduce((a, l) => a + (l.inventory?.[tire] || 0), 0);
+
+    if (totalStock >= threshold) continue;
+
+    // Calculate cost
+    const orderCost = qty * t.bMin * (1 - sup.disc);
+    if (spent + orderCost > maxSpend || g.cash < orderCost) continue;
+
+    // Check free space
+    const freeSpace = getCap(g) - getInv(g);
+    if (freeSpace < qty) continue;
+
+    // Execute order
+    g.cash -= orderCost;
+    spent += orderCost;
+
+    if (!g.warehouseInventory) g.warehouseInventory = {};
+    const whInv = Object.values(g.warehouseInventory).reduce((a, b) => a + b, 0);
+    const whCap = getStorageCap(g);
+    const toWh = Math.min(qty, whCap - whInv);
+    if (toWh > 0) g.warehouseInventory[tire] = (g.warehouseInventory[tire] || 0) + toWh;
+    const overflow = qty - toWh;
+    if (overflow > 0 && g.locations.length > 0) {
+      const loc = g.locations.find(l => getLocInv(l) < getLocCap(l)) || g.locations[0];
+      if (!loc.inventory) loc.inventory = {};
+      loc.inventory[tire] = (loc.inventory[tire] || 0) + overflow;
+    } else if (overflow > 0) {
+      g.warehouseInventory[tire] = (g.warehouseInventory[tire] || 0) + overflow;
+    }
+    rebuildGlobalInv(g);
+
+    // Track supplier relationship
+    if (!g.supplierRelationships) g.supplierRelationships = {};
+    const supKey = String(supplierIndex);
+    if (!g.supplierRelationships[supKey]) g.supplierRelationships[supKey] = { totalPurchased: 0, level: 0 };
+    g.supplierRelationships[supKey].totalPurchased += qty;
+    const relTier = getSupplierRelTier(g.supplierRelationships[supKey].totalPurchased);
+    g.supplierRelationships[supKey].level = relTier.level;
+    if (relTier.discBonus > 0) {
+      const refund = Math.floor(qty * t.bMin * relTier.discBonus);
+      g.cash += refund;
+    }
+
+    g.log = g.log || [];
+    g.log.push({ msg: `Auto-ordered ${qty} ${t.n} from ${sup.n} (-$${Math.round(orderCost)})`, cat: 'source' });
   }
 }
 
@@ -246,8 +389,24 @@ export async function runTick(clients) {
 
     for (const player of players) {
       const state = player.game_state;
+      if (state.isAI) {
+        // Lightweight AI player simulation
+        const newState = simAIPlayerDay(state);
+        await savePlayerState(player.id, newState);
+        await upsertLeaderboard(
+          player.id,
+          newState.companyName || newState.name || 'Unknown',
+          getWealth(newState),
+          newState.reputation,
+          newState.locations.length,
+          newState.day,
+          newState.isPremium
+        );
+        continue;
+      }
       applyAutoPrice(state);
       applyAutoSource(state);
+      applyAutoSupplier(state);
       const newState = simDay(state, shared);
       await savePlayerState(player.id, newState);
 
@@ -257,7 +416,8 @@ export async function runTick(clients) {
         getWealth(newState),
         newState.reputation,
         newState.locations.length,
-        newState.day
+        newState.day,
+        newState.isPremium
       );
     }
 
@@ -272,6 +432,13 @@ export async function runTick(clients) {
       } catch (err) {
         console.error('AI price war error:', err);
       }
+    }
+
+    // AI phase-out — gradually remove AI as real players join
+    try {
+      await phaseOutAI(game, players);
+    } catch (err) {
+      console.error('AI phase-out error:', err);
     }
 
     // Weekly tournaments — every 7 days, rank players and award TireCoins

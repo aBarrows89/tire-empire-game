@@ -29,12 +29,9 @@ export default function Header() {
         <TrendArrow current={g.reputation} previous={g.prevRep} />
       </div>
       <div className="stat">
-        <span className="stat-val" style={{ fontSize: 10 }}>
-          {cal.dayName.slice(0, 3)} {cal.monthName.slice(0, 3)} {cal.dayOfMonth}
+        <span className="stat-val text-xs">
+          {cal.dayName.slice(0, 3)} {cal.monthName.slice(0, 3)} {cal.dayOfMonth}, Y{cal.year}
         </span>
-      </div>
-      <div className="stat">
-        <span className="stat-val" style={{ fontSize: 10 }}>Y{cal.year}</span>
       </div>
       <div
         className="season-badge"
@@ -48,7 +45,8 @@ export default function Header() {
       </div>
       {g.companyName && (
         <div className="stat" style={{ marginLeft: 'auto' }}>
-          <span className={`stat-label${(g.cosmetics || []).includes('gold_name') ? ' gold-name' : ''}`} style={{ fontSize: 10 }}>{g.companyName}</span>
+          {g.isPremium && <span className="premium-star">{'\u2B50'}</span>}
+          <span className={`stat-label text-xs${(g.cosmetics || []).includes('gold_name') ? ' gold-name' : ''}`}>{g.companyName}</span>
         </div>
       )}
     </div>

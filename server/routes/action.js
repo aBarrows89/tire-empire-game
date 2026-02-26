@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { getPlayer, savePlayerState, getGame } from '../db/queries.js';
+import { getPlayer, savePlayerState, getGame, addShopSaleListing, removeShopSaleListing, getShopSaleListings } from '../db/queries.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { NODE_ENV } from '../config.js';
 import { uid } from '../../shared/helpers/random.js';
 import { getCap, getInv, getLocInv, getLocCap, getStorageCap, rebuildGlobalInv, addA } from '../../shared/helpers/inventory.js';
 import { canOpenInCity } from '../../shared/helpers/market.js';
@@ -9,7 +10,7 @@ import { STORAGE } from '../../shared/constants/storage.js';
 import { SOURCES } from '../../shared/constants/sources.js';
 import { SUPPLIERS } from '../../shared/constants/suppliers.js';
 import { LOANS } from '../../shared/constants/loans.js';
-import { SHOP_BASE, shopCost } from '../../shared/constants/shop.js';
+import { SHOP_BASE, shopCost, shopRent } from '../../shared/constants/shop.js';
 import { CITIES } from '../../shared/constants/cities.js';
 import { SERVICES } from '../../shared/constants/services.js';
 import { R } from '../../shared/helpers/format.js';
@@ -25,6 +26,8 @@ import { CAR_MEETS, CAR_MEET_SUMMER_START, CAR_MEET_SUMMER_END, CAR_MEET_TRANSPO
 import { FACTORY } from '../../shared/constants/factory.js';
 import { MANUFACTURERS } from '../../shared/constants/manufacturers.js';
 import { PAY } from '../../shared/constants/staff.js';
+import { getNextUpgrade } from '../../shared/constants/shopStorage.js';
+import { getShopValuation, SHOP_BID, AI_BUYER_NAMES } from '../../shared/constants/shopSale.js';
 
 const router = Router();
 
@@ -106,6 +109,27 @@ router.post('/', authMiddleware, async (req, res) => {
         break;
       }
 
+      case 'sellStorage': {
+        const { storageId } = params;
+        const idx = g.storage.findIndex(s => s.id === storageId);
+        if (idx === -1) return res.status(400).json({ error: 'Storage unit not found' });
+        const unit = g.storage[idx];
+        const st = STORAGE[unit.type];
+        if (!st) return res.status(400).json({ error: 'Invalid storage type' });
+        // Calculate current warehouse inventory
+        const whInv = Object.values(g.warehouseInventory || {}).reduce((a, b) => a + b, 0);
+        // Calculate remaining capacity if we remove this unit
+        const remainingCap = getStorageCap(g) - st.cap;
+        if (whInv > remainingCap) {
+          return res.status(400).json({ error: `Cannot sell: ${whInv} tires in warehouse but only ${remainingCap} capacity would remain. Move tires first.` });
+        }
+        const sellPrice = Math.round(st.c * 0.5);
+        g.cash += sellPrice;
+        g.storage.splice(idx, 1);
+        g.log.push(`Sold ${st.n} for $${sellPrice.toLocaleString()} (50% of cost)`);
+        break;
+      }
+
       case 'openShop': {
         const { cityId } = params;
         const city = CITIES.find(c => c.id === cityId);
@@ -115,7 +139,7 @@ router.post('/', authMiddleware, async (req, res) => {
         const check = canOpenInCity(g, cityId);
         if (!check.ok) return res.status(400).json({ error: check.reason });
         g.cash -= cost;
-        g.locations.push({ cityId, id: uid(), locStorage: 0, inventory: {}, loyalty: 0 });
+        g.locations.push({ cityId, id: uid(), locStorage: 0, inventory: {}, loyalty: 0, openedDay: g.day });
         break;
       }
 
@@ -233,6 +257,14 @@ router.post('/', authMiddleware, async (req, res) => {
 
       case 'tutorialDone': {
         g.tutorialDone = true;
+        break;
+      }
+
+      case 'devBoost': {
+        if (NODE_ENV === 'production') return res.status(403).json({ error: 'Not available' });
+        if (params.cash != null) g.cash = Number(params.cash);
+        if (params.reputation != null) g.reputation = Number(params.reputation);
+        g.log.push(`[DEV] Set cash=${g.cash}, rep=${g.reputation}`);
         break;
       }
 
@@ -566,7 +598,7 @@ router.post('/', authMiddleware, async (req, res) => {
         g.locations.push({
           cityId, id: uid(), locStorage: 0, inventory: {},
           loyalty: 0, marketing: template.marketing,
-          isFranchise: true, templateId: template.id,
+          isFranchise: true, templateId: template.id, openedDay: g.day,
         });
         break;
       }
@@ -633,7 +665,7 @@ router.post('/', authMiddleware, async (req, res) => {
         const check = canOpenInCity(g, cityId);
         if (!check.ok) return res.status(400).json({ error: check.reason });
         g.cash -= downPayment;
-        g.locations.push({ cityId, id: uid(), locStorage: 0, inventory: {}, loyalty: 0 });
+        g.locations.push({ cityId, id: uid(), locStorage: 0, inventory: {}, loyalty: 0, openedDay: g.day });
         // Create financing loan for remaining 80%
         const financed = cost - downPayment;
         const rate = 0.08;
@@ -657,7 +689,7 @@ router.post('/', authMiddleware, async (req, res) => {
         if (locIdx === -1) return res.status(400).json({ error: 'Invalid location' });
         const loc = g.locations[locIdx];
         const city = CITIES.find(c => c.id === loc.cityId);
-        const sellPrice = Math.round((city ? shopCost(city) : 120000) * 0.60);
+        const sellPrice = Math.round((city ? shopCost(city) : 120000) * 0.50);
         // Return inventory to warehouse
         if (!g.warehouseInventory) g.warehouseInventory = {};
         for (const [k, qty] of Object.entries(loc.inventory || {})) {
@@ -666,6 +698,13 @@ router.post('/', authMiddleware, async (req, res) => {
         g.locations.splice(locIdx, 1);
         g.cash += sellPrice;
         rebuildGlobalInv(g);
+        // Clean up marketplace listings and bids for this shop
+        if (g.shopListings) g.shopListings = g.shopListings.filter(l => l.locationId !== locationId);
+        if (g.shopBids) g.shopBids = g.shopBids.filter(b => b.locationId !== locationId);
+        // Also remove from shared marketplace
+        const sellSharedListings = await getShopSaleListings({ sellerId: req.playerId });
+        const sellSharedListing = sellSharedListings.find(l => l.locationId === locationId);
+        if (sellSharedListing) await removeShopSaleListing(sellSharedListing.id);
         g.log.push(`Sold shop in ${city?.name || 'unknown'} for $${sellPrice.toLocaleString()}`);
         break;
       }
@@ -774,6 +813,174 @@ router.post('/', authMiddleware, async (req, res) => {
         g.carMeetAttendance.push({ meetId, day: g.day, cityId: meet.cityId, name: meet.name });
         g.carMeetsAttended = (g.carMeetsAttended || 0) + 1;
         g.log.push(`Attending ${meet.name} (-$${totalCost})`);
+        break;
+      }
+
+      // ── Feature 1: Expandable Shop Storage ──
+      case 'upgradeShopStorage': {
+        const { locationId } = params;
+        const loc = g.locations.find(l => l.id === locationId);
+        if (!loc) return res.status(400).json({ error: 'Invalid location' });
+        const upgrade = getNextUpgrade(loc);
+        if (!upgrade) return res.status(400).json({ error: 'Storage already at max' });
+        if (g.cash < upgrade.cost) return res.status(400).json({ error: 'Not enough cash' });
+        g.cash -= upgrade.cost;
+        loc.locStorage = upgrade.cumCap;
+        g.log.push(`Upgraded storage: ${upgrade.ic} ${upgrade.n} (+${upgrade.add} capacity)`);
+        break;
+      }
+
+      // ── Feature 2: Auto Supplier Orders ──
+      case 'addAutoSupplier': {
+        const { supplierIndex, tire, qty, threshold } = params;
+        const sup = SUPPLIERS[supplierIndex];
+        if (!sup) return res.status(400).json({ error: 'Invalid supplier' });
+        if (!(g.unlockedSuppliers || []).includes(supplierIndex)) return res.status(400).json({ error: 'Supplier not unlocked' });
+        const t = TIRES[tire];
+        if (!t) return res.status(400).json({ error: 'Invalid tire type' });
+        // Validate tire is valid for this supplier (ag check)
+        if (sup.ag && !t.ag) return res.status(400).json({ error: 'This supplier only sells agricultural tires' });
+        if (!sup.ag && t.ag) return res.status(400).json({ error: 'This supplier does not sell agricultural tires' });
+        if (t.used) return res.status(400).json({ error: 'Cannot auto-order used tires from supplier' });
+        const orderQty = Math.max(sup.min, Math.floor(Number(qty) || sup.min));
+        const orderThreshold = Math.max(1, Math.floor(Number(threshold) || 50));
+        if (!g.autoSuppliers) g.autoSuppliers = [];
+        // Dedup by supplierIndex + tire
+        g.autoSuppliers = g.autoSuppliers.filter(a => !(a.supplierIndex === supplierIndex && a.tire === tire));
+        g.autoSuppliers.push({ supplierIndex, tire, qty: orderQty, threshold: orderThreshold });
+        g.log.push(`Auto-order set: ${t.n} x${orderQty} from ${sup.n} when stock < ${orderThreshold}`);
+        break;
+      }
+
+      case 'removeAutoSupplier': {
+        const { supplierIndex, tire } = params;
+        if (!g.autoSuppliers) { g.autoSuppliers = []; break; }
+        g.autoSuppliers = g.autoSuppliers.filter(a => !(a.supplierIndex === supplierIndex && a.tire === tire));
+        break;
+      }
+
+      // ── Feature 3: Shop Marketplace ──
+      case 'listShopForSale': {
+        const { locationId, askingPrice } = params;
+        const loc = g.locations.find(l => l.id === locationId);
+        if (!loc) return res.status(400).json({ error: 'Invalid location' });
+        if (!g.shopListings) g.shopListings = [];
+        if (g.shopListings.some(l => l.locationId === locationId)) return res.status(400).json({ error: 'Shop already listed' });
+        const ownedDays = g.day - (loc.openedDay || 0);
+        if (ownedDays < SHOP_BID.minOwnershipDays) {
+          return res.status(400).json({ error: `Must own shop at least ${SHOP_BID.minOwnershipDays} days before listing (${SHOP_BID.minOwnershipDays - ownedDays} days left)` });
+        }
+        const city = CITIES.find(c => c.id === loc.cityId);
+        const val = getShopValuation(loc, city);
+        const price = Math.max(1, Math.floor(Number(askingPrice) || val.totalValue));
+        g.shopListings.push({ locationId, askingPrice: price, listedDay: g.day });
+        // Mirror to shared marketplace
+        const invEntries = Object.entries(loc.inventory || {}).filter(([, q]) => q > 0);
+        const monthlyRent = shopRent(city) * 4; // weekly rent * 4
+        const locStaff = loc.staff || g.staff || {};
+        const monthlyStaffCost = Object.entries(locStaff).reduce((a, [k, v]) => a + (PAY[k] || 0) * v, 0);
+        const monthlyExpenses = monthlyRent + monthlyStaffCost;
+        const monthlyRevenue = Math.round((loc.dailyStats?.rev || 0) * 30);
+        await addShopSaleListing({
+          id: uid(), sellerId: req.playerId,
+          sellerName: g.companyName || g.name || 'Unknown',
+          cityId: loc.cityId, cityName: city?.name || 'Unknown',
+          state: city?.state || '', askingPrice: price, valuation: val,
+          inventorySummary: { totalTires: invEntries.reduce((a, [, q]) => a + q, 0), tireTypes: invEntries.map(([k, q]) => `${TIRES[k]?.n || k} x${q}`) },
+          loyalty: loc.loyalty || 0, dayRevenue: (loc.dailyStats?.rev) || 0,
+          monthlyRevenue, monthlyRent, monthlyStaffCost, monthlyExpenses,
+          listedDay: g.day, status: 'active', locationId,
+          offers: [], messages: [],
+        });
+        g.log.push(`Listed shop in ${city?.name || 'unknown'} for sale at $${price.toLocaleString()}`);
+        break;
+      }
+
+      case 'delistShop': {
+        const { locationId } = params;
+        if (!g.shopListings) g.shopListings = [];
+        if (!g.shopListings.some(l => l.locationId === locationId)) return res.status(400).json({ error: 'Shop not listed' });
+        g.shopListings = g.shopListings.filter(l => l.locationId !== locationId);
+        if (!g.shopBids) g.shopBids = [];
+        g.shopBids = g.shopBids.filter(b => b.locationId !== locationId);
+        // Remove from shared marketplace
+        const sharedListings = await getShopSaleListings({ sellerId: req.playerId });
+        const sharedListing = sharedListings.find(l => l.locationId === locationId);
+        if (sharedListing) await removeShopSaleListing(sharedListing.id);
+        g.log.push('Delisted shop from marketplace');
+        break;
+      }
+
+      case 'acceptShopBid': {
+        const { bidId } = params;
+        if (!g.shopBids) g.shopBids = [];
+        const bid = g.shopBids.find(b => b.id === bidId);
+        if (!bid) return res.status(400).json({ error: 'Bid not found' });
+        const locIdx = g.locations.findIndex(l => l.id === bid.locationId);
+        if (locIdx === -1) return res.status(400).json({ error: 'Location not found' });
+        const loc = g.locations[locIdx];
+        const city = CITIES.find(c => c.id === loc.cityId);
+
+        // Payment handling by type
+        if (bid.paymentType === 'cash') {
+          g.cash += bid.bidPrice;
+        } else if (bid.paymentType === 'installment') {
+          const downPayment = Math.round(bid.bidPrice * bid.downPct);
+          g.cash += downPayment;
+          if (!g.shopInstallments) g.shopInstallments = [];
+          const monthlyPayment = Math.round((bid.bidPrice - downPayment) / bid.months);
+          g.shopInstallments.push({
+            buyerName: bid.bidderName,
+            monthlyPayment,
+            remaining: bid.months,
+            startDay: g.day,
+          });
+        } else if (bid.paymentType === 'revShare') {
+          const upfront = Math.round(bid.bidPrice * SHOP_BID.revShareUpfront);
+          g.cash += upfront;
+          if (!g.shopRevenueShares) g.shopRevenueShares = [];
+          const dailyRev = (loc.dailyStats && loc.dailyStats.rev) || 0;
+          g.shopRevenueShares.push({
+            buyerName: bid.bidderName,
+            cityId: loc.cityId,
+            monthlyEstimate: dailyRev * 30,
+            revSharePct: bid.revSharePct,
+            remaining: bid.revShareMonths,
+            startDay: g.day,
+          });
+        }
+
+        // Remove location (inventory goes with buyer)
+        g.locations.splice(locIdx, 1);
+        rebuildGlobalInv(g);
+
+        // Clean up listing and all bids for this shop
+        if (!g.shopListings) g.shopListings = [];
+        g.shopListings = g.shopListings.filter(l => l.locationId !== bid.locationId);
+        g.shopBids = g.shopBids.filter(b => b.locationId !== bid.locationId);
+
+        const payDesc = bid.paymentType === 'cash' ? `$${bid.bidPrice.toLocaleString()} cash`
+          : bid.paymentType === 'installment' ? `installment (${Math.round(bid.downPct * 100)}% down)`
+          : `revenue share (${Math.round(bid.revSharePct * 100)}% for ${bid.revShareMonths}mo)`;
+        g.log.push(`Sold shop in ${city?.name || 'unknown'} to ${bid.bidderName} — ${payDesc}`);
+        break;
+      }
+
+      case 'rejectShopBid': {
+        const { bidId } = params;
+        if (!g.shopBids) g.shopBids = [];
+        g.shopBids = g.shopBids.filter(b => b.id !== bidId);
+        break;
+      }
+
+      case 'setPremium': {
+        if (NODE_ENV === 'production') return res.status(403).json({ error: 'Use in-app purchase' });
+        g.isPremium = true;
+        g.premiumSince = g.day;
+        // Premium includes gold_name cosmetic for free
+        if (!g.cosmetics) g.cosmetics = [];
+        if (!g.cosmetics.includes('gold_name')) g.cosmetics.push('gold_name');
+        g.log.push('[DEV] Premium membership activated');
         break;
       }
 

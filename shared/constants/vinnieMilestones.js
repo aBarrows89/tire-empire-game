@@ -104,6 +104,34 @@ export const VINNIE_MILESTONES = [
     hint: 'Check Bank',
     panel: 'bank',
   },
+  // ── Premium pitch milestones ──
+  {
+    id: 'premium_pitch_shops',
+    check: g => !g.isPremium && (g.locations || []).length >= 2 && (g.totalSold || 0) > 50,
+    title: "Let's Talk Business",
+    message: g => `Look, I can tell you're serious \u2014 ${g.locations.length} shops, ${g.totalSold} tires moved. I'm sure you're tired of seeing those ads. For just $4.99 a month, hire me as your full-time consultant. I'll handle the advertisers and you get that gold PRO badge. Whatdya say?`,
+    emotion: 'money',
+    hint: 'Go PRO \u2014 $4.99/mo',
+    action: 'openPremium',
+  },
+  {
+    id: 'premium_pitch_revenue',
+    check: g => !g.isPremium && (g.dayRev || 0) >= 2000,
+    title: "You're Making Real Money Now",
+    message: g => `$${g.dayRev.toLocaleString()} in a single day? Kid, you're a natural. Your ${g.locations.length} store${g.locations.length !== 1 ? 's' : ''} ${g.locations.length !== 1 ? 'are' : 'is'} humming. Ditch the ads, get the PRO badge, and let the other players know you mean business. $4.99/mo \u2014 cheaper than a set of used tires.`,
+    emotion: 'excited',
+    hint: 'Go PRO',
+    action: 'openPremium',
+  },
+  {
+    id: 'premium_pitch_rep',
+    check: g => !g.isPremium && g.reputation >= 40,
+    title: "You've Earned It",
+    message: g => `Rep ${g.reputation.toFixed(0)}... you're one of the top names in the business. Every empire needs a crown, kid. Go PRO \u2014 no ads, gold badge on the leaderboard, and bragging rights. $4.99/mo. You spend more than that on junk tires.`,
+    emotion: 'thumbsup',
+    hint: 'Go PRO',
+    action: 'openPremium',
+  },
 ];
 
 export const VINNIE_EMOTIONS = {

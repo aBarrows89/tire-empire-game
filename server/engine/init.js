@@ -119,6 +119,16 @@ export function init(playerName = "Player", globalDay = 1) {
     // Van tracking
     vanTotalSold: 0,
     vanOnlyDays: 0,
+    // Auto supplier orders
+    autoSuppliers: [],
+    // Shop marketplace
+    shopListings: [],
+    shopBids: [],
+    shopRevenueShares: [],
+    shopInstallments: [],
+    // Premium membership
+    isPremium: false,
+    premiumSince: null,
     _events: [],
   };
 }

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { GameProvider, useGame } from './context/GameContext.jsx';
 import WelcomeScreen from './components/WelcomeScreen.jsx';
 import TutorialOverlay from './components/TutorialOverlay.jsx';
@@ -7,6 +7,9 @@ import BottomNav from './components/BottomNav.jsx';
 import VinniePopup from './components/VinniePopup.jsx';
 import AchievementToast from './components/AchievementToast.jsx';
 import ChatOverlay from './components/ChatOverlay.jsx';
+import AdBanner from './components/AdBanner.jsx';
+import PremiumModal from './components/PremiumModal.jsx';
+import { initAds, showBanner, hideBanner, showInterstitial } from './services/ads.js';
 import DashboardPanel from './components/panels/DashboardPanel.jsx';
 import SourcePanel from './components/panels/SourcePanel.jsx';
 import PricingPanel from './components/panels/PricingPanel.jsx';
@@ -45,12 +48,47 @@ function GameLayout() {
   const { state, sendChat } = useGame();
   const [chatOpen, setChatOpen] = useState(false);
   const [toastAch, setToastAch] = useState(null);
+  const [showPremiumModal, setShowPremiumModal] = useState(false);
   const shownRef = useRef(new Set());
+  const lastInterstitialRef = useRef(0);
+  const adsInitRef = useRef(false);
+  const prevPanelRef = useRef(null);
+
+  // Listen for openPremiumModal event (from profile, Vinnie, etc.)
+  const openPremium = useCallback(() => setShowPremiumModal(true), []);
+  useEffect(() => {
+    window.addEventListener('openPremiumModal', openPremium);
+    return () => window.removeEventListener('openPremiumModal', openPremium);
+  }, [openPremium]);
+
+  // Initialize ads for non-premium players
+  const g = state.game;
+  useEffect(() => {
+    if (g && !g.isPremium && !adsInitRef.current) {
+      adsInitRef.current = true;
+      initAds().then(() => showBanner());
+    }
+    if (g && g.isPremium && adsInitRef.current) {
+      hideBanner();
+    }
+  }, [g?.isPremium]);
+
+  // Show interstitial on panel switch (max once per 5 minutes)
+  useEffect(() => {
+    if (!g || g.isPremium) return;
+    const panel = state.activePanel;
+    if (prevPanelRef.current && prevPanelRef.current !== panel) {
+      const now = Date.now();
+      if (now - lastInterstitialRef.current > 5 * 60 * 1000) {
+        lastInterstitialRef.current = now;
+        showInterstitial();
+      }
+    }
+    prevPanelRef.current = panel;
+  }, [state.activePanel, g?.isPremium]);
 
   if (state.loading) return <div className="loading">Loading Tire Empire...</div>;
   if (state.error) return <div className="loading">Error: {state.error}</div>;
-
-  const g = state.game;
 
   // Show welcome screen if no company name set
   if (!g.companyName) return <WelcomeScreen />;
@@ -72,11 +110,19 @@ function GameLayout() {
   return (
     <>
       <Header />
+      {!g.isPremium && (
+        <AdBanner onOpenPremium={() => setShowPremiumModal(true)} />
+      )}
       <div className="main">
         <Panel />
       </div>
       <BottomNav />
       <VinniePopup />
+
+      {/* Premium Modal */}
+      {showPremiumModal && (
+        <PremiumModal onClose={() => setShowPremiumModal(false)} />
+      )}
 
       {/* Achievement Toast */}
       {toastAch && toastAch.length > 0 && (

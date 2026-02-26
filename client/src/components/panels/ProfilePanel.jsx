@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { API_BASE, headers, postAction } from '../../api/client.js';
+import { getCalendar, DAYS_PER_YEAR } from '@shared/helpers/calendar.js';
 
 export default function ProfilePanel() {
   const { state, dispatch, refreshState } = useGame();
@@ -11,6 +12,7 @@ export default function ProfilePanel() {
   const [profile, setProfile] = useState(null);
   const [showReset, setShowReset] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [showPremium, setShowPremium] = useState(false);
 
   const targetId = isOther ? viewingId : g?.id;
 
@@ -42,6 +44,12 @@ export default function ProfilePanel() {
   // For own profile, use live game context for volatile stats
   const rep = isOther ? (profile.reputation || 0) : g.reputation;
   const locCount = isOther ? (profile.locationCount || 0) : (g.locations || []).length;
+  const profileIsPremium = isOther ? !!profile.isPremium : !!g.isPremium;
+
+  // Premium since year
+  const premiumYear = !isOther && g.premiumSince
+    ? Math.floor((g.premiumSince - 1) / DAYS_PER_YEAR) + 1
+    : null;
 
   return (
     <>
@@ -53,7 +61,12 @@ export default function ProfilePanel() {
         </div>
       )}
 
-      <div className={`card profile-card${(g.cosmetics || []).includes('elite_border') ? ' elite-profile-border' : ''}`}>
+      <div className={`card profile-card${profileIsPremium ? ' premium-card premium-shimmer' : ''}${(g.cosmetics || []).includes('elite_border') && !profileIsPremium ? ' elite-profile-border' : ''}`}>
+        {profileIsPremium && (
+          <div style={{ marginBottom: 8 }}>
+            <span className="premium-crown">{'\u{1F451}'} PRO</span>
+          </div>
+        )}
         <div className="profile-avatar">{'\u{1F3EA}'}</div>
         <div className="profile-name">{profile.companyName}</div>
         <div className="profile-company">Founded by {profile.name}</div>
@@ -75,7 +88,34 @@ export default function ProfilePanel() {
             <div className="profile-stat-label">Founded</div>
           </div>
         </div>
+        {profileIsPremium && premiumYear && (
+          <div className="text-xs text-dim" style={{ marginTop: 12 }}>
+            {'\u{1F451}'} PRO Member since Year {premiumYear}
+          </div>
+        )}
       </div>
+
+      {/* Go Premium button (own profile, not premium) */}
+      {!isOther && !g.isPremium && (
+        <div className="card" style={{ textAlign: 'center' }}>
+          <button
+            className="btn btn-full btn-sm"
+            style={{
+              background: 'linear-gradient(135deg, #ffd54f, #ff8f00)',
+              color: '#1a1a2e',
+              fontWeight: 800,
+            }}
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('openPremiumModal'));
+            }}
+          >
+            {'\u{1F451}'} Go Premium — $4.99/mo
+          </button>
+          <div className="text-xs text-dim" style={{ marginTop: 4 }}>
+            No ads, premium badge, gold name effect
+          </div>
+        </div>
+      )}
 
       {/* Trade button when viewing other player */}
       {isOther && (g.locations || []).length > 0 && (

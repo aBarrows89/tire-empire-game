@@ -21,28 +21,39 @@ export default function VinniePopup() {
 
   if (!activeMilestone) return null;
 
+  // Support function-type messages (dynamic with game state)
+  const message = typeof activeMilestone.message === 'function'
+    ? activeMilestone.message(g)
+    : activeMilestone.message;
+
   const dismiss = async () => {
     await postAction('dismissVinnie', { id: activeMilestone.id });
     refreshState();
   };
 
-  const goToPanel = async () => {
+  const handleAction = async () => {
     await postAction('dismissVinnie', { id: activeMilestone.id });
-    dispatch({ type: 'SET_PANEL', payload: activeMilestone.panel });
+    if (activeMilestone.action === 'openPremium') {
+      // Dispatch custom event to open PremiumModal (handled by App.jsx)
+      window.dispatchEvent(new CustomEvent('openPremiumModal'));
+    } else if (activeMilestone.panel) {
+      dispatch({ type: 'SET_PANEL', payload: activeMilestone.panel });
+    }
     refreshState();
   };
 
   const emoji = VINNIE_EMOTIONS[activeMilestone.emotion] || '\u{1F9D4}';
+  const hasAction = activeMilestone.panel || activeMilestone.action;
 
   return (
     <div className="vinnie-popup-backdrop" onClick={dismiss}>
       <div className="vinnie-popup-card" onClick={e => e.stopPropagation()}>
         <div className="vinnie-popup-emoji">{emoji}</div>
         <div className="vinnie-popup-title">{activeMilestone.title}</div>
-        <div className="vinnie-popup-message">{activeMilestone.message}</div>
+        <div className="vinnie-popup-message">{message}</div>
         <div className="vinnie-popup-actions">
-          {activeMilestone.panel && (
-            <button className="btn btn-full btn-sm btn-green" onClick={goToPanel}>
+          {hasAction && (
+            <button className="btn btn-full btn-sm btn-green" onClick={handleAction}>
               {activeMilestone.hint || 'Let\'s Go'}
             </button>
           )}

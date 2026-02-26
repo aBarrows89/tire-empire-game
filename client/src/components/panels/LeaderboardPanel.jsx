@@ -71,6 +71,7 @@ export default function LeaderboardPanel() {
 
       {displayRows.map((row, i) => {
         const isMe = row.player_id === g?.id;
+        const rowPremium = isMe ? !!g?.isPremium : !!row.isPremium;
         const rank = i + 1;
         const medal = rank === 1 ? '\u{1F947}' : rank === 2 ? '\u{1F948}' : rank === 3 ? '\u{1F949}' : '';
         const prizeLabel = tab === 'weekly' && rank <= 3
@@ -79,11 +80,11 @@ export default function LeaderboardPanel() {
         return (
           <div
             key={row.player_id}
-            className="card"
+            className={`card${rowPremium ? ' lb-premium' : ''}`}
             style={{
               cursor: 'pointer',
-              borderLeft: isMe ? '3px solid var(--accent)' : undefined,
-              background: isMe ? 'rgba(0,200,255,0.05)' : undefined,
+              borderLeft: !rowPremium && isMe ? '3px solid var(--accent)' : undefined,
+              background: !rowPremium && isMe ? 'rgba(0,200,255,0.05)' : undefined,
             }}
             onClick={() => viewProfile(row.player_id)}
           >
@@ -94,7 +95,10 @@ export default function LeaderboardPanel() {
                 </span>
                 <div>
                   <div className="font-bold text-sm">
-                    {row.name || 'Unknown'}
+                    {rowPremium && <span style={{ fontSize: 11, marginRight: 3 }}>{'\u{1F451}'}</span>}
+                    <span className={rowPremium ? 'lb-premium-name' : ''}>
+                      {row.name || 'Unknown'}
+                    </span>
                     {isMe && <span className="text-accent text-xs"> (You)</span>}
                   </div>
                   <div className="text-xs text-dim">
