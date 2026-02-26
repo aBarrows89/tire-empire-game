@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useGame } from '../context/GameContext.jsx';
 import { getInv } from '@shared/helpers/inventory.js';
 
@@ -61,6 +61,18 @@ export default function BottomNav() {
   const { state, dispatch } = useGame();
   const [showMore, setShowMore] = useState(false);
   const g = state.game;
+  const seenMsgCount = useRef(0);
+  const [unreadChat, setUnreadChat] = useState(0);
+
+  // Track unread chat messages
+  const msgCount = (state.chatMessages || []).length;
+  useEffect(() => {
+    if (msgCount > seenMsgCount.current) {
+      setUnreadChat(prev => prev + (msgCount - seenMsgCount.current));
+    }
+    seenMsgCount.current = msgCount;
+  }, [msgCount]);
+
   if (!g) return null;
 
   const unlocked = getUnlockedTabs(g);
@@ -92,6 +104,21 @@ export default function BottomNav() {
                 <span className="more-grid-label">{tab.label}</span>
               </button>
             ))}
+            <button
+              className="more-grid-btn"
+              onClick={() => {
+                setShowMore(false);
+                setUnreadChat(0);
+                window.dispatchEvent(new CustomEvent('toggleChat'));
+              }}
+              style={{ position: 'relative' }}
+            >
+              <span className="more-grid-icon">{'\u{1F4AC}'}</span>
+              <span className="more-grid-label">Chat</span>
+              {unreadChat > 0 && (
+                <span className="nav-badge">{unreadChat > 99 ? '99+' : unreadChat}</span>
+              )}
+            </button>
           </div>
         </div>
       )}
@@ -111,9 +138,13 @@ export default function BottomNav() {
         <button
           className={`nav-btn ${showMore || activeInSecondary ? 'active' : ''}`}
           onClick={() => setShowMore(!showMore)}
+          style={{ position: 'relative' }}
         >
           <span className="nav-icon">{showMore ? '\u2716' : '\u2630'}</span>
           More
+          {unreadChat > 0 && !showMore && (
+            <span className="nav-badge">{unreadChat > 99 ? '99+' : unreadChat}</span>
+          )}
         </button>
       </div>
     </>

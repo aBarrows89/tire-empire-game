@@ -61,6 +61,13 @@ function GameLayout() {
     return () => window.removeEventListener('openPremiumModal', openPremium);
   }, [openPremium]);
 
+  // Listen for toggleChat event (from BottomNav More menu)
+  const toggleChat = useCallback(() => setChatOpen(o => !o), []);
+  useEffect(() => {
+    window.addEventListener('toggleChat', toggleChat);
+    return () => window.removeEventListener('toggleChat', toggleChat);
+  }, [toggleChat]);
+
   // Initialize ads for non-premium players
   const g = state.game;
   useEffect(() => {
@@ -132,15 +139,6 @@ function GameLayout() {
           hasCelebration={(g.cosmetics || []).includes('celebration')}
         />
       )}
-
-      {/* Chat FAB */}
-      <button
-        className="chat-fab"
-        onClick={() => setChatOpen(o => !o)}
-        aria-label="Open chat"
-      >
-        {'\uD83D\uDCAC'}
-      </button>
 
       {/* Chat Overlay */}
       <ChatOverlay

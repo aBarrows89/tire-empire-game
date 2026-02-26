@@ -69,6 +69,25 @@ body {
 .nav-btn.active { color: var(--accent); }
 .nav-btn .nav-icon { font-size: 18px; margin-bottom: 2px; }
 
+/* Notification badge */
+.nav-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--red);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
 /* More menu overlay */
 .more-overlay {
   position: fixed; inset: 0; z-index: 9;
@@ -494,7 +513,7 @@ input[type="range"]::-webkit-slider-thumb {
 .chat-fab {
   position: fixed;
   bottom: 80px;
-  left: 16px;
+  right: 16px;
   width: 48px;
   height: 48px;
   border-radius: 50%;

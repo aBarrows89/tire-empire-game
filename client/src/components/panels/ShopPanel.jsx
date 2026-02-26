@@ -596,6 +596,7 @@ export default function ShopPanel() {
           {STATE_GRID.map(([row, col, abbrev]) => {
             const s = stateStats[abbrev];
             const hasShop = s?.hasShop;
+            const shopCount = s?.totalSat || 0;
             return (
               <button
                 key={abbrev}
@@ -604,10 +605,15 @@ export default function ShopPanel() {
                   gridRow: row + 1,
                   gridColumn: col + 1,
                   background: getTileColor(abbrev),
+                  flexDirection: 'column',
+                  lineHeight: 1,
                 }}
                 onClick={() => setSelectedState(selectedState === abbrev ? null : abbrev)}
               >
                 {abbrev}
+                {shopCount > 0 && (
+                  <span style={{ fontSize: 6, opacity: 0.7 }}>{shopCount}</span>
+                )}
               </button>
             );
           })}
