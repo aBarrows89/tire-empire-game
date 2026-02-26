@@ -32,11 +32,23 @@ export function getWealth(g) {
     locValue += city ? shopCost(city) : 120000;
   }
 
+  // Pending installment payments
+  const installmentValue = (g.shopInstallments || []).reduce(
+    (a, i) => a + (i.monthlyPayment || 0) * (i.remaining || 0), 0
+  );
+
+  // Pending revenue share payments (estimated)
+  const revShareValue = (g.shopRevenueShares || []).reduce(
+    (a, r) => a + ((r.monthlyEstimate || 0) * (r.revSharePct || 0)) * (r.remaining || 0), 0
+  );
+
   return Math.floor(
     g.cash
     + (g.bankBalance || 0)
     + invValue
     + locValue
+    + installmentValue
+    + revShareValue
     - debt
   );
 }

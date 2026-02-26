@@ -73,7 +73,20 @@ router.post('/register', authMiddleware, async (req, res) => {
       }
     }
 
-    res.json(player.game_state);
+    // Immediately update leaderboard with correct name
+    const g = player.game_state;
+    const { upsertLeaderboard } = await import('../db/queries.js');
+    const { getWealth } = await import('../../shared/helpers/wealth.js');
+    await upsertLeaderboard(
+      req.playerId,
+      g.companyName || g.name || 'Unknown',
+      getWealth(g),
+      g.reputation || 0,
+      (g.locations || []).length,
+      g.day || 1
+    );
+
+    res.json(g);
   } catch (err) {
     console.error('POST /api/state/register error:', err);
     res.status(500).json({ error: 'Internal server error' });

@@ -51,6 +51,17 @@ export function handleConnection(ws, clients) {
           break;
         }
 
+        case 'shopOffer': {
+          // Client-side relay: forward shop offer notifications to specific player
+          if (!msg.targetPlayerId) break;
+          for (const client of clients) {
+            if (client.playerId === msg.targetPlayerId && client.readyState === 1) {
+              client.send(JSON.stringify({ type: 'shopOffer', ...msg.data }));
+            }
+          }
+          break;
+        }
+
         default:
           ws.send(JSON.stringify({ type: 'error', message: `Unknown message type: ${msg.type}` }));
       }

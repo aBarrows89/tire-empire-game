@@ -8,7 +8,9 @@ import { TIRES } from '@shared/constants/tires.js';
 import { GOV_TYPES } from '@shared/constants/govTypes.js';
 import { fmt } from '@shared/helpers/format.js';
 import { getLocInv, getLocCap } from '@shared/helpers/inventory.js';
-import { postAction, API_BASE } from '../../api/client.js';
+import { getNextUpgrade, SHOP_STORAGE_UPGRADES } from '@shared/constants/shopStorage.js';
+import { getShopValuation } from '@shared/constants/shopSale.js';
+import { postAction, API_BASE, acceptShopOffer, rejectShopOffer, counterShopOffer, fetchShopMessages, sendShopMessage, fetchShopListings } from '../../api/client.js';
 
 export default function ShopPanel() {
   const { state, refreshState } = useGame();
@@ -16,12 +18,19 @@ export default function ShopPanel() {
   const [busy, setBusy] = useState(null);
   const [selectedState, setSelectedState] = useState(null);
   const [aiCounts, setAiCounts] = useState({});
+  const [askingPrices, setAskingPrices] = useState({});
+  const [sharedListings, setSharedListings] = useState([]);
+  const [counterForm, setCounterForm] = useState({});
+  const [cityAIShops, setCityAIShops] = useState({});
+  const [offerAmounts, setOfferAmounts] = useState({});
+  const [offerMsg, setOfferMsg] = useState({});
 
   useEffect(() => {
     fetch(`${API_BASE}/market/cities`)
       .then(r => r.json())
       .then(data => setAiCounts(data))
       .catch(() => {});
+    fetchShopListings().then(setSharedListings).catch(() => {});
   }, [g.day || g.week]);
 
   // Pre-compute per-state stats
@@ -60,6 +69,42 @@ export default function ShopPanel() {
     setBusy(null);
   };
 
+  const upgradeStorage = async (locationId) => {
+    setBusy(`upg-${locationId}`);
+    await postAction('upgradeShopStorage', { locationId });
+    refreshState();
+    setBusy(null);
+  };
+
+  const listForSale = async (locationId) => {
+    setBusy(`list-${locationId}`);
+    const price = askingPrices[locationId];
+    await postAction('listShopForSale', { locationId, askingPrice: price || undefined });
+    refreshState();
+    setBusy(null);
+  };
+
+  const delistShop = async (locationId) => {
+    setBusy(`delist-${locationId}`);
+    await postAction('delistShop', { locationId });
+    refreshState();
+    setBusy(null);
+  };
+
+  const acceptBid = async (bidId) => {
+    setBusy(`accept-${bidId}`);
+    await postAction('acceptShopBid', { bidId });
+    refreshState();
+    setBusy(null);
+  };
+
+  const rejectBid = async (bidId) => {
+    setBusy(`reject-${bidId}`);
+    await postAction('rejectShopBid', { bidId });
+    refreshState();
+    setBusy(null);
+  };
+
   const bidContract = async (contractType) => {
     setBusy(`bid-${contractType}`);
     await postAction('bidOnContract', { contractType });
@@ -72,6 +117,42 @@ export default function ShopPanel() {
     ? CITIES.filter(c => c.state === selectedState).sort((a, b) => b.dem - a.dem)
     : [];
 
+  // Fetch AI shops when a state is selected
+  useEffect(() => {
+    if (!selectedState) return;
+    const cities = CITIES.filter(c => c.state === selectedState);
+    for (const city of cities) {
+      if (cityAIShops[city.id]) continue;
+      fetch(`${API_BASE}/market/city-shops/${city.id}`)
+        .then(r => r.json())
+        .then(shops => setCityAIShops(prev => ({ ...prev, [city.id]: shops })))
+        .catch(() => {});
+    }
+  }, [selectedState]);
+
+  const sendAIOffer = async (shopId, cityId) => {
+    const price = Number(offerAmounts[shopId]) || 0;
+    if (price <= 0) return;
+    setBusy(`aioffer-${shopId}`);
+    try {
+      const res = await fetch(`${API_BASE}/market/offer-ai-shop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-player-id': g.id || 'dev-player' },
+        body: JSON.stringify({ shopId, offerPrice: price }),
+      });
+      const data = await res.json();
+      setOfferMsg(prev => ({ ...prev, [shopId]: data.message }));
+      if (data.accepted) {
+        refreshState();
+        // Refresh AI shops for this city
+        setCityAIShops(prev => ({ ...prev, [cityId]: (prev[cityId] || []).filter(s => s.id !== shopId) }));
+      }
+    } catch (err) {
+      setOfferMsg(prev => ({ ...prev, [shopId]: 'Error sending offer' }));
+    }
+    setBusy(null);
+  };
+
   // Tile color: green = high opportunity, gray = saturated
   const getTileColor = (abbrev) => {
     const s = stateStats[abbrev];
@@ -81,6 +162,16 @@ export default function ShopPanel() {
     if (satPct > 0.6) return '#5a5a3a';
     if (satPct > 0.4) return '#4a6a3a';
     return '#3a7a4a';
+  };
+
+  // Helper: describe a bid's payment terms
+  const describeBid = (bid) => {
+    if (bid.paymentType === 'cash') return 'Full cash payment';
+    if (bid.paymentType === 'installment')
+      return `${Math.round(bid.downPct * 100)}% down, ${bid.months}mo installments`;
+    if (bid.paymentType === 'revShare')
+      return `10% upfront + ${Math.round(bid.revSharePct * 100)}% rev share for ${bid.revShareMonths}mo`;
+    return bid.paymentType;
   };
 
   return (
@@ -94,6 +185,20 @@ export default function ShopPanel() {
             const locInv = getLocInv(loc);
             const locCap = getLocCap(loc);
             const ds = loc.dailyStats || {};
+            const nextUpgrade = getNextUpgrade(loc);
+            const isListed = (g.shopListings || []).some(l => l.locationId === loc.id);
+            const listing = (g.shopListings || []).find(l => l.locationId === loc.id);
+            const bids = (g.shopBids || []).filter(b => b.locationId === loc.id);
+            const val = getShopValuation(loc, city);
+
+            // Storage tier progress dots
+            let cumStorage = 0;
+            const tierDots = SHOP_STORAGE_UPGRADES.map(tier => {
+              cumStorage += tier.add;
+              const purchased = (loc.locStorage || 0) >= cumStorage;
+              return { ...tier, purchased };
+            });
+
             return (
               <div key={i} style={{ borderBottom: i < g.locations.length - 1 ? '1px solid var(--border)' : 'none', paddingBottom: 6, marginBottom: 6 }}>
                 <div className="row-between text-sm">
@@ -119,6 +224,31 @@ export default function ShopPanel() {
                 <div className="loyalty-bar">
                   <div className="loyalty-fill" style={{ width: `${loc.loyalty ?? 0}%` }} />
                 </div>
+
+                {/* Storage Upgrade */}
+                <div style={{ marginTop: 6, padding: '4px 0' }}>
+                  <div className="row-between text-xs">
+                    <span className="text-dim">Storage: {locCap} capacity</span>
+                    {!nextUpgrade && <span className="text-green font-bold">MAX STORAGE</span>}
+                  </div>
+                  <div className="tier-track">
+                    {tierDots.map(td => (
+                      <div key={td.id} title={td.n} className={`tier-segment${td.purchased ? ' purchased' : ''}`} />
+                    ))}
+                  </div>
+                  {nextUpgrade && (
+                    <button
+                      className="btn btn-sm btn-outline btn-full mt-4"
+                      disabled={g.cash < nextUpgrade.cost || busy === `upg-${loc.id}`}
+                      onClick={() => upgradeStorage(loc.id)}
+                    >
+                      {busy === `upg-${loc.id}` ? '...' : g.cash < nextUpgrade.cost
+                        ? `Need $${fmt(nextUpgrade.cost)} for ${nextUpgrade.n}`
+                        : `${nextUpgrade.ic} ${nextUpgrade.n} (+${nextUpgrade.add}) - $${fmt(nextUpgrade.cost)}`}
+                    </button>
+                  )}
+                </div>
+
                 {/* Marketing */}
                 <div className="row-between" style={{ marginTop: 6 }}>
                   <span className="text-xs text-dim">Marketing</span>
@@ -140,18 +270,202 @@ export default function ShopPanel() {
                     <option value="digital">Digital ($500/day +40%)</option>
                   </select>
                 </div>
-                {/* Sell Shop */}
-                <button
-                  className="btn btn-sm btn-outline"
-                  style={{ marginTop: 6, width: '100%', fontSize: 10, minHeight: 28, color: 'var(--red)' }}
-                  disabled={busy === `sell-${loc.id}`}
-                  onClick={() => sellShop(loc.id)}
-                >
-                  {busy === `sell-${loc.id}` ? 'Selling...' : `Sell Shop (60% = $${fmt(Math.round((city ? shopCost(city) : 120000) * 0.6))})`}
-                </button>
+
+                {/* Shop Sale / Marketplace Section */}
+                <div className="card-section">
+                  {!isListed ? (
+                    <>
+                      {/* Valuation breakdown */}
+                      <div className="text-xs text-dim mb-4">Valuation:</div>
+                      <div className="val-grid mb-4">
+                        <span className="text-dim">Base</span><span>${fmt(val.baseValue)}</span>
+                        <span className="text-dim">Inventory</span><span>${fmt(val.inventoryValue)}</span>
+                        <span className="text-dim">Loyalty bonus</span><span>${fmt(val.loyaltyBonus)}</span>
+                        <span className="text-dim">Revenue bonus</span><span>${fmt(val.revenueBonus)}</span>
+                        <span className="font-bold">Total</span><span className="font-bold text-accent">${fmt(val.totalValue)}</span>
+                      </div>
+                      <div className="row gap-8 mt-4">
+                        <input
+                          type="number"
+                          className="input input-sm"
+                          style={{ flex: 1 }}
+                          placeholder={`$${fmt(val.totalValue)}`}
+                          value={askingPrices[loc.id] || ''}
+                          onChange={(e) => setAskingPrices(p => ({ ...p, [loc.id]: Number(e.target.value) || '' }))}
+                        />
+                        <button
+                          className="btn btn-sm btn-green"
+                          disabled={busy === `list-${loc.id}`}
+                          onClick={() => listForSale(loc.id)}
+                        >
+                          {busy === `list-${loc.id}` ? '...' : 'List for Sale'}
+                        </button>
+                      </div>
+                      <button
+                        className="btn btn-sm btn-outline btn-full mt-4"
+                        style={{ color: 'var(--red)' }}
+                        disabled={busy === `sell-${loc.id}`}
+                        onClick={() => sellShop(loc.id)}
+                      >
+                        {busy === `sell-${loc.id}` ? 'Selling...' : `Quick Sell (60% = $${fmt(Math.round((city ? shopCost(city) : 120000) * 0.6))})`}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="row-between mb-4">
+                        <span className="badge-listed">LISTED FOR SALE</span>
+                        <span className="text-xs text-dim">Asking: ${fmt(listing.askingPrice)}</span>
+                      </div>
+                      {bids.length === 0 && (
+                        <div className="text-xs text-dim mb-4">No bids yet. Check back tomorrow.</div>
+                      )}
+                      {bids.map(bid => {
+                        const isPlayerBid = !!bid.bidderId;
+                        const sharedListing = sharedListings.find(l => l.locationId === loc.id);
+                        const cf = counterForm[bid.id] || {};
+
+                        return (
+                          <div key={bid.id} className="bid-card">
+                            <div className="row-between text-xs">
+                              <span className="font-bold">{bid.bidderName}{isPlayerBid ? ' (Player)' : ' (AI)'}</span>
+                              <span className="font-bold text-green">${fmt(bid.bidPrice)}</span>
+                            </div>
+                            <div className="text-xs text-dim">{describeBid(bid)}</div>
+                            <div className="text-xs text-dim">Expires day {bid.day + 7}</div>
+                            {bid.isCounter && <div className="text-xs text-accent">Counter-offer</div>}
+                            <div className="row gap-8 mt-4">
+                              {isPlayerBid && sharedListing ? (
+                                <>
+                                  <button
+                                    className="btn btn-sm btn-green" style={{ flex: 1 }}
+                                    disabled={busy === `accept-${bid.id}`}
+                                    onClick={async () => {
+                                      setBusy(`accept-${bid.id}`);
+                                      await acceptShopOffer({ listingId: sharedListing.id, offerId: bid.id });
+                                      refreshState();
+                                      setBusy(null);
+                                    }}
+                                  >
+                                    {busy === `accept-${bid.id}` ? '...' : 'Accept'}
+                                  </button>
+                                  <button
+                                    className="btn btn-sm btn-outline" style={{ flex: 1 }}
+                                    disabled={busy === `reject-${bid.id}`}
+                                    onClick={async () => {
+                                      setBusy(`reject-${bid.id}`);
+                                      await rejectShopOffer({ listingId: sharedListing.id, offerId: bid.id });
+                                      refreshState();
+                                      setBusy(null);
+                                    }}
+                                  >
+                                    {busy === `reject-${bid.id}` ? '...' : 'Reject'}
+                                  </button>
+                                  <button
+                                    className="btn btn-sm btn-outline" style={{ flex: 1 }}
+                                    onClick={() => setCounterForm(p => ({ ...p, [bid.id]: { open: !cf.open, bidPrice: bid.bidPrice, paymentType: bid.paymentType || 'cash' } }))}
+                                  >
+                                    Counter
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    className="btn btn-sm btn-green" style={{ flex: 1 }}
+                                    disabled={busy === `accept-${bid.id}`}
+                                    onClick={() => acceptBid(bid.id)}
+                                  >
+                                    {busy === `accept-${bid.id}` ? '...' : 'Accept'}
+                                  </button>
+                                  <button
+                                    className="btn btn-sm btn-outline" style={{ flex: 1 }}
+                                    disabled={busy === `reject-${bid.id}`}
+                                    onClick={() => rejectBid(bid.id)}
+                                  >
+                                    {busy === `reject-${bid.id}` ? '...' : 'Reject'}
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                            {/* Counter-offer form */}
+                            {cf.open && isPlayerBid && sharedListing && (
+                              <div className="mt-4">
+                                <div className="row gap-8 mb-4">
+                                  <input type="number" className="input input-sm" style={{ flex: 1 }}
+                                    placeholder="Counter price"
+                                    value={cf.bidPrice || ''}
+                                    onChange={e => setCounterForm(p => ({ ...p, [bid.id]: { ...p[bid.id], bidPrice: Number(e.target.value) || 0 } }))}
+                                  />
+                                  <select className="input input-sm" style={{ flex: 1 }}
+                                    value={cf.paymentType || 'cash'}
+                                    onChange={e => setCounterForm(p => ({ ...p, [bid.id]: { ...p[bid.id], paymentType: e.target.value } }))}
+                                  >
+                                    <option value="cash">Cash</option>
+                                    <option value="installment">Installment</option>
+                                    <option value="revShare">RevShare</option>
+                                  </select>
+                                </div>
+                                <button
+                                  className="btn btn-sm btn-full"
+                                  disabled={!cf.bidPrice || busy === `counter-${bid.id}`}
+                                  onClick={async () => {
+                                    setBusy(`counter-${bid.id}`);
+                                    await counterShopOffer({
+                                      listingId: sharedListing.id,
+                                      offerId: bid.id,
+                                      bidPrice: cf.bidPrice,
+                                      paymentType: cf.paymentType,
+                                    });
+                                    setCounterForm(p => ({ ...p, [bid.id]: { open: false } }));
+                                    refreshState();
+                                    setBusy(null);
+                                  }}
+                                >
+                                  {busy === `counter-${bid.id}` ? '...' : 'Send Counter'}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      <button
+                        className="btn btn-sm btn-outline btn-full mt-4"
+                        style={{ color: 'var(--red)' }}
+                        disabled={busy === `delist-${loc.id}`}
+                        onClick={() => delistShop(loc.id)}
+                      >
+                        {busy === `delist-${loc.id}` ? '...' : 'Delist'}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Incoming Payments */}
+      {((g.shopInstallments || []).length > 0 || (g.shopRevenueShares || []).length > 0) && (
+        <div className="card">
+          <div className="card-title">Incoming Payments</div>
+          {(g.shopInstallments || []).map((inst, i) => (
+            <div key={`inst-${i}`} style={{ borderBottom: '1px solid var(--border)', paddingBottom: 4, marginBottom: 4 }}>
+              <div className="row-between text-xs">
+                <span className="font-bold">{inst.buyerName}</span>
+                <span className="text-green">${fmt(inst.monthlyPayment)}/mo</span>
+              </div>
+              <div className="text-xs text-dim">Installment &middot; {inst.remaining}mo remaining</div>
+            </div>
+          ))}
+          {(g.shopRevenueShares || []).map((rs, i) => (
+            <div key={`rs-${i}`} style={{ borderBottom: '1px solid var(--border)', paddingBottom: 4, marginBottom: 4 }}>
+              <div className="row-between text-xs">
+                <span className="font-bold">{rs.buyerName}</span>
+                <span className="text-green">{Math.round(rs.revSharePct * 100)}% rev share</span>
+              </div>
+              <div className="text-xs text-dim">Revenue share &middot; {rs.remaining}mo remaining</div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -331,26 +645,70 @@ export default function ShopPanel() {
                   <span className="text-dim">Shops: {competitors}/{city.mx}</span>
                   <span className={`font-bold ${satColor}`}>{satPct}% saturated</span>
                 </div>
-                {hasShop ? (
-                  <div className="text-sm text-green font-bold">You have a shop here</div>
-                ) : (
-                  <div className="col gap-8">
-                    <button
-                      className="btn btn-full btn-sm btn-green"
-                      disabled={cantAfford || lowRep || busy === city.id}
-                      onClick={() => open(city.id)}
-                    >
-                      {lowRep ? `Need Rep 15 (yours: ${g.reputation.toFixed(1)})` : cantAfford && !canFinance ? `Need $${fmt(cost)}` : `Open Shop ($${fmt(cost)})`}
-                    </button>
-                    {canFinance && !lowRep && (
+                {hasShop && (
+                  <div className="text-sm text-green font-bold mb-4">You have a shop here</div>
+                )}
+                <div className="col gap-8">
+                  {!hasShop && (
+                    <>
                       <button
-                        className="btn btn-full btn-sm btn-outline"
-                        disabled={busy === `fin-${city.id}`}
-                        onClick={() => financeShop(city.id)}
+                        className="btn btn-full btn-sm btn-green"
+                        disabled={cantAfford || lowRep || busy === city.id}
+                        onClick={() => open(city.id)}
                       >
-                        {busy === `fin-${city.id}` ? '...' : `Finance (20% down = $${fmt(downPayment)})`}
+                        {lowRep ? `Need Rep 15 (yours: ${g.reputation.toFixed(1)})` : cantAfford && !canFinance ? `Need $${fmt(cost)}` : `Open New Shop ($${fmt(cost)})`}
                       </button>
-                    )}
+                      {canFinance && !lowRep && (
+                        <button
+                          className="btn btn-full btn-sm btn-outline"
+                          disabled={busy === `fin-${city.id}`}
+                          onClick={() => financeShop(city.id)}
+                        >
+                          {busy === `fin-${city.id}` ? '...' : `Finance (20% down = $${fmt(downPayment)})`}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* AI Shops in this city */}
+                {(cityAIShops[city.id] || []).length > 0 && (
+                  <div className="card-section">
+                    <div className="text-xs font-bold mb-4">Existing Shops ({(cityAIShops[city.id] || []).length})</div>
+                    {(cityAIShops[city.id] || []).map(shop => (
+                      <div key={shop.id} className="bid-card">
+                        <div className="row-between text-xs mb-4">
+                          <span className="font-bold">{shop.icon} {shop.name}</span>
+                          <span className="text-dim">{shop.personality}</span>
+                        </div>
+                        <div className="row gap-8 text-xs text-dim mb-4">
+                          <span>Rep: {shop.reputation}</span>
+                          <span>Value: ~${fmt(shop.wealth)}</span>
+                        </div>
+                        <div className="row gap-8">
+                          <input
+                            type="number"
+                            className="input input-sm"
+                            style={{ flex: 1 }}
+                            placeholder={`Offer ($${fmt(Math.round(shop.wealth * 0.8))}+)`}
+                            value={offerAmounts[shop.id] || ''}
+                            onChange={e => setOfferAmounts(prev => ({ ...prev, [shop.id]: e.target.value }))}
+                          />
+                          <button
+                            className="btn btn-sm"
+                            disabled={!offerAmounts[shop.id] || Number(offerAmounts[shop.id]) <= 0 || Number(offerAmounts[shop.id]) > g.cash || busy === `aioffer-${shop.id}`}
+                            onClick={() => sendAIOffer(shop.id, city.id)}
+                          >
+                            {busy === `aioffer-${shop.id}` ? '...' : 'Offer'}
+                          </button>
+                        </div>
+                        {offerMsg[shop.id] && (
+                          <div className={`text-xs mt-4 ${offerMsg[shop.id].includes('acquired') ? 'text-green' : 'text-gold'}`}>
+                            {offerMsg[shop.id]}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

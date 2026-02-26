@@ -17,6 +17,9 @@ export default function SupplierPanel() {
   const [importQty, setImportQty] = useState(10);
   const [exportTire, setExportTire] = useState('');
   const [exportQty, setExportQty] = useState(1);
+  const [autoTire, setAutoTire] = useState({});
+  const [autoQty, setAutoQty] = useState({});
+  const [autoThreshold, setAutoThreshold] = useState({});
 
   const unlock = async (index) => {
     setBusy(`u${index}`);
@@ -128,41 +131,117 @@ export default function SupplierPanel() {
                 {locked ? `Need Rep ${sup.rr}` : cantAfford ? `Need $${fmt(sup.c)}` : `Unlock ($${fmt(sup.c)})`}
               </button>
             ) : (
-              <div className="col gap-8">
-                <select
-                  value={orderTire}
-                  onChange={(e) => setOrderTire(e.target.value)}
-                  style={{
-                    padding: 8, borderRadius: 6, background: 'var(--surface)',
-                    color: 'var(--text)', border: '1px solid var(--border)', minHeight: 40
-                  }}
-                >
-                  {newTireTypes.map(([k, t]) => {
-                    if (sup.ag && !t.ag) return null;
-                    if (!sup.ag && t.ag) return null;
-                    return <option key={k} value={k}>{t.n} (${t.bMin}-${t.bMax})</option>;
-                  })}
-                </select>
-                <div className="row gap-8">
-                  <input
-                    type="number"
-                    value={orderQty}
-                    onChange={(e) => setOrderQty(Math.max(1, parseInt(e.target.value) || 1))}
-                    min={1}
-                    style={{
-                      flex: 1, padding: 8, borderRadius: 6, background: 'var(--surface)',
-                      color: 'var(--text)', border: '1px solid var(--border)', minHeight: 40
-                    }}
-                  />
-                  <button
-                    className="btn btn-sm btn-green"
-                    disabled={orderQty < sup.min || busy === `o${index}`}
-                    onClick={() => order(index)}
+              <>
+                <div className="col gap-8">
+                  <select
+                    value={orderTire}
+                    onChange={(e) => setOrderTire(e.target.value)}
+                    className="input"
                   >
-                    {orderQty < sup.min ? `Min ${sup.min}` : 'Order'}
-                  </button>
+                    {newTireTypes.map(([k, t]) => {
+                      if (sup.ag && !t.ag) return null;
+                      if (!sup.ag && t.ag) return null;
+                      return <option key={k} value={k}>{t.n} (${t.bMin}-${t.bMax})</option>;
+                    })}
+                  </select>
+                  <div className="row gap-8">
+                    <input
+                      type="number"
+                      className="input"
+                      style={{ flex: 1 }}
+                      value={orderQty}
+                      onChange={(e) => setOrderQty(Math.max(1, parseInt(e.target.value) || 1))}
+                      min={1}
+                    />
+                    <button
+                      className="btn btn-sm btn-green"
+                      disabled={orderQty < sup.min || busy === `o${index}`}
+                      onClick={() => order(index)}
+                    >
+                      {orderQty < sup.min ? `Min ${sup.min}` : 'Order'}
+                    </button>
+                  </div>
                 </div>
-              </div>
+
+                {/* Auto-Order Section */}
+                <div style={{ marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
+                  <div className="text-xs font-bold mb-4">Auto-Order</div>
+                  <div className="text-xs text-dim mb-4">Orders when stock drops below threshold. Uses up to 50% of cash.</div>
+
+                  {/* Active auto-orders for this supplier */}
+                  {(g.autoSuppliers || []).filter(a => a.supplierIndex === index).map(a => (
+                    <div key={`${a.supplierIndex}-${a.tire}`} className="auto-order-item row-between">
+                      <span className="text-xs">{TIRES[a.tire]?.n || a.tire} x{a.qty} when &lt; {a.threshold}</span>
+                      <button
+                        className="btn btn-sm btn-outline"
+                        style={{ color: 'var(--red)' }}
+                        disabled={busy === `rmAuto-${index}-${a.tire}`}
+                        onClick={async () => {
+                          setBusy(`rmAuto-${index}-${a.tire}`);
+                          await postAction('removeAutoSupplier', { supplierIndex: index, tire: a.tire });
+                          refreshState();
+                          setBusy(null);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+
+                  {/* Add new auto-order */}
+                  <div className="col gap-8 mt-4">
+                    <select
+                      value={autoTire[index] || ''}
+                      onChange={(e) => setAutoTire(p => ({ ...p, [index]: e.target.value }))}
+                      className="input input-sm"
+                    >
+                      <option value="">Select tire...</option>
+                      {newTireTypes.map(([k, t]) => {
+                        if (sup.ag && !t.ag) return null;
+                        if (!sup.ag && t.ag) return null;
+                        return <option key={k} value={k}>{t.n}</option>;
+                      })}
+                    </select>
+                    <div className="row gap-8">
+                      <input
+                        type="number"
+                        className="input input-sm"
+                        style={{ flex: 1 }}
+                        placeholder={`Qty (min ${sup.min})`}
+                        value={autoQty[index] || ''}
+                        onChange={(e) => setAutoQty(p => ({ ...p, [index]: Math.max(1, Number(e.target.value) || 0) }))}
+                        min={sup.min}
+                      />
+                      <input
+                        type="number"
+                        className="input input-sm"
+                        style={{ flex: 1 }}
+                        placeholder="Threshold"
+                        value={autoThreshold[index] || ''}
+                        onChange={(e) => setAutoThreshold(p => ({ ...p, [index]: Math.max(1, Number(e.target.value) || 0) }))}
+                        min={1}
+                      />
+                      <button
+                        className="btn btn-sm btn-green"
+                        disabled={!autoTire[index] || !(autoQty[index] >= sup.min) || !autoThreshold[index] || busy === `addAuto-${index}`}
+                        onClick={async () => {
+                          setBusy(`addAuto-${index}`);
+                          await postAction('addAutoSupplier', {
+                            supplierIndex: index,
+                            tire: autoTire[index],
+                            qty: autoQty[index],
+                            threshold: autoThreshold[index],
+                          });
+                          refreshState();
+                          setBusy(null);
+                        }}
+                      >
+                        Set
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </>
             )}
           </div>
         );

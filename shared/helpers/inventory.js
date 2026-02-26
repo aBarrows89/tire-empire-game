@@ -24,7 +24,12 @@ export function getLocCap(loc) {
 
 /** Capacity of central storage (van/garage/warehouse, NOT shop floors) */
 export function getStorageCap(g) {
-  return g.storage.reduce((a, s) => a + STORAGE[s.type].cap, 0);
+  const hasPremiumVan = (g.cosmetics || []).includes('premium_van');
+  return g.storage.reduce((a, s) => {
+    const base = STORAGE[s.type].cap;
+    if (s.type === 'van' && hasPremiumVan) return a + 40;
+    return a + base;
+  }, 0);
 }
 
 /**

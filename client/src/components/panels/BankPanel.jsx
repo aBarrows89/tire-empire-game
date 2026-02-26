@@ -193,7 +193,10 @@ export default function BankPanel() {
               <div key={i} style={{ borderBottom: i < g.loans.length - 1 ? '1px solid var(--border)' : 'none', paddingBottom: 8, marginBottom: 8 }}>
                 <div className="row-between text-sm mb-4">
                   <span>{loan.name}</span>
-                  <span className="text-red">${fmt(loan.remaining)} left</span>
+                  <span className="text-red">${fmt(Math.ceil(loan.remaining))} left</span>
+                </div>
+                <div className="text-xs text-dim mb-4">
+                  ${fmt(Math.round(loan.weeklyPayment || 0))}/wk &middot; Pay off: ${fmt(Math.ceil(loan.remaining))} (leaves ${fmt(Math.max(0, Math.floor(g.cash - loan.remaining)))})
                 </div>
                 <div className="row gap-8">
                   <input
@@ -215,7 +218,12 @@ export default function BankPanel() {
                   <button
                     className="btn btn-sm btn-outline"
                     disabled={g.cash < loan.remaining || busy === `repay-${i}`}
-                    onClick={() => repayLoan(i, Math.ceil(loan.remaining))}
+                    onClick={() => {
+                      const amt = Math.ceil(loan.remaining);
+                      const afterCash = Math.floor(g.cash - amt);
+                      if (afterCash < 1000 && !window.confirm(`This will leave you with $${afterCash.toLocaleString()}. Continue?`)) return;
+                      repayLoan(i, amt);
+                    }}
                     style={{ whiteSpace: 'nowrap' }}
                   >
                     Pay Off

@@ -38,6 +38,8 @@ import { getTireSeasonMult } from '../../shared/constants/tireSeasonal.js';
 import { FLEA_MARKETS, FLEA_DAILY_OPERATING, FLEA_PRICE_MULT } from '../../shared/constants/fleaMarkets.js';
 import { CAR_MEETS, CAR_MEET_SUMMER_START, CAR_MEET_SUMMER_END, CAR_MEET_PREMIUM_TIRES } from '../../shared/constants/carMeets.js';
 import { getCalendar } from '../../shared/helpers/calendar.js';
+import { getShopValuation, SHOP_BID, AI_BUYER_NAMES } from '../../shared/constants/shopSale.js';
+import { uid } from '../../shared/helpers/random.js';
 
 /**
  * Simulate one game DAY. Pure function — no side effects.
@@ -744,7 +746,7 @@ export function simDay(g, shared = {}) {
     if (loan.remaining <= 0) continue;
     const weeklyPmt = loan.weeklyPayment || (loan.amt * (1 + loan.r)) / ((loan.t || 12) * 4);
     const dailyPmt = weeklyPmt / 7;
-    const actual = Math.min(dailyPmt, loan.remaining);
+    const actual = Math.min(dailyPmt, loan.remaining, Math.max(0, s.cash));
     s.cash -= actual;
     loan.remaining -= actual;
     // Weekly loan payment log
@@ -875,6 +877,90 @@ export function simDay(g, shared = {}) {
         s._newAchievements.push({ id: ach.id, name: ach.title, reward: ach.coins });
       }
     } catch {}
+  }
+
+  // ── SHOP MARKETPLACE: AI BID GENERATION ──
+  if ((s.shopListings || []).length > 0) {
+    if (!s.shopBids) s.shopBids = [];
+    let newBidCount = 0;
+    for (const listing of s.shopListings) {
+      const loc = s.locations.find(l => l.id === listing.locationId);
+      if (!loc) continue;
+      const city = (shared.cities || CITIES || []).find(c => c.id === loc.cityId);
+      const val = getShopValuation(loc, city);
+      const numBids = R(SHOP_BID.minBidsPerDay, SHOP_BID.maxBidsPerDay);
+      for (let i = 0; i < numBids; i++) {
+        const bidPct = Rf(SHOP_BID.bidMinPct, SHOP_BID.bidMaxPct);
+        const bidPrice = Math.round(val.totalValue * bidPct);
+        const buyerName = AI_BUYER_NAMES[R(0, AI_BUYER_NAMES.length - 1)];
+        // Determine payment type
+        const roll = Math.random();
+        let paymentType, downPct = 0, months = 0, revSharePct = 0, revShareMonths = 0;
+        if (roll < SHOP_BID.paymentWeights.cash) {
+          paymentType = 'cash';
+        } else if (roll < SHOP_BID.paymentWeights.cash + SHOP_BID.paymentWeights.installment) {
+          paymentType = 'installment';
+          downPct = Rf(SHOP_BID.installmentDownMin, SHOP_BID.installmentDownMax);
+          downPct = Math.round(downPct * 100) / 100;
+          months = R(SHOP_BID.installmentMonthsMin, SHOP_BID.installmentMonthsMax);
+        } else {
+          paymentType = 'revShare';
+          revSharePct = Rf(SHOP_BID.revSharePctMin, SHOP_BID.revSharePctMax);
+          revSharePct = Math.round(revSharePct * 100) / 100;
+          revShareMonths = R(SHOP_BID.revShareMonthsMin, SHOP_BID.revShareMonthsMax);
+        }
+        s.shopBids.push({
+          id: uid(),
+          locationId: listing.locationId,
+          bidPrice,
+          bidderName: buyerName,
+          paymentType,
+          downPct,
+          months,
+          revSharePct,
+          revShareMonths,
+          day: s.day,
+        });
+        newBidCount++;
+      }
+    }
+    // Expire bids older than 7 days
+    s.shopBids = s.shopBids.filter(b => s.day - b.day < SHOP_BID.expiryDays);
+    if (newBidCount > 0) {
+      s.log.push({ msg: `${newBidCount} new bid${newBidCount > 1 ? 's' : ''} on your listed shop${s.shopListings.length > 1 ? 's' : ''}`, cat: 'event' });
+    }
+  }
+
+  // ── SHOP MARKETPLACE: INSTALLMENT PAYMENTS ──
+  if ((s.shopInstallments || []).length > 0) {
+    s.shopInstallments = s.shopInstallments.filter(inst => {
+      if (inst.remaining <= 0) return false;
+      const daysSinceStart = s.day - inst.startDay;
+      if (daysSinceStart > 0 && daysSinceStart % 30 === 0) {
+        s.cash += inst.monthlyPayment;
+        inst.remaining--;
+        s.log.push({ msg: `Installment from ${inst.buyerName}: +$${inst.monthlyPayment.toLocaleString()} (${inst.remaining}mo left)`, cat: 'bank' });
+      }
+      return inst.remaining > 0;
+    });
+  }
+
+  // ── SHOP MARKETPLACE: REVENUE SHARE PAYMENTS ──
+  if ((s.shopRevenueShares || []).length > 0) {
+    s.shopRevenueShares = s.shopRevenueShares.filter(rs => {
+      if (rs.remaining <= 0) return false;
+      const daysSinceStart = s.day - rs.startDay;
+      if (daysSinceStart > 0 && daysSinceStart % 30 === 0) {
+        // Estimate monthly revenue with +/-20% variance
+        const variance = 0.8 + Math.random() * 0.4;
+        const estimatedRev = (rs.monthlyEstimate || 5000) * variance;
+        const payment = Math.round(estimatedRev * rs.revSharePct);
+        s.cash += payment;
+        rs.remaining--;
+        s.log.push({ msg: `Rev share from ${rs.buyerName}: +$${payment.toLocaleString()} (${rs.remaining}mo left)`, cat: 'bank' });
+      }
+      return rs.remaining > 0;
+    });
   }
 
   // ── HISTORY SNAPSHOT ──

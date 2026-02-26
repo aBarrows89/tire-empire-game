@@ -1,5 +1,6 @@
 import { init } from '../engine/init.js';
 import { initAIShops } from '../engine/aiShops.js';
+import { createAIPlayers } from '../engine/aiPlayers.js';
 
 export async function seedMemoryStore(store) {
   console.log('Seeding in-memory store...');
@@ -14,4 +15,11 @@ export async function seedMemoryStore(store) {
   state.id = 'dev-player';
   await store.createPlayer('dev-player', 'Player', state);
   console.log('  Created default player (dev-player)');
+
+  // Create AI players for a populated economy
+  const aiPlayers = createAIPlayers(1, 12);
+  for (const ap of aiPlayers) {
+    await store.createPlayer(ap.id, ap.game_state.name, ap.game_state);
+  }
+  console.log(`  Created ${aiPlayers.length} AI players`);
 }

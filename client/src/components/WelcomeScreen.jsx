@@ -31,8 +31,10 @@ export default function WelcomeScreen() {
         <div className="welcome-vinnie">&#x1F9D4;</div>
         <h1 className="welcome-title">Tire Empire</h1>
         <p className="welcome-sub">
-          Hey there, kid! Name's Vinnie. I been in the tire game 40 years.
-          You wanna build an empire? First, tell me who you are.
+          Hey there, kid! Name's Vinnie. Welcome to the tire game — a live
+          multiplayer economy where real players compete, trade, and build
+          empires. You'll start from nothing and work your way up. First,
+          tell me who you are.
         </p>
 
         <form onSubmit={handleSubmit} className="welcome-form">
@@ -74,7 +76,9 @@ export default function WelcomeScreen() {
         </form>
 
         <p className="welcome-hint">
-          You'll start with $400, a van, and a dream. Vinnie will walk you through the rest.
+          You'll start with $400, a van, and a dream. Build shops, trade with
+          players, manufacture tires, and dominate the market. This is a live
+          economy — competition never sleeps.
         </p>
       </div>
     </div>

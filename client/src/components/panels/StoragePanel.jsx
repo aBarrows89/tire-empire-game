@@ -61,12 +61,36 @@ export default function StoragePanel() {
           <div className="progress-fill" style={{ width: `${cap > 0 ? (inv / cap) * 100 : 0}%` }} />
         </div>
         <div className="text-sm text-dim">Storage units:</div>
-        {g.storage.map((s, i) => (
-          <div key={i} className="row-between text-sm mt-8">
-            <span>{STORAGE[s.type]?.ic} {STORAGE[s.type]?.n}{s.type === 'van' && (g.cosmetics || []).includes('premium_van') && <span className="premium-van-badge">PREMIUM</span>}</span>
-            <span className="text-accent">{STORAGE[s.type]?.cap} cap</span>
-          </div>
-        ))}
+        {g.storage.map((s, i) => {
+          const st = STORAGE[s.type];
+          const sellValue = Math.round((st?.c || 0) * 0.5);
+          const canSell = s.type !== 'van' && st;
+          return (
+            <div key={i} className="row-between text-sm mt-8">
+              <span>{st?.ic} {st?.n}{s.type === 'van' && (g.cosmetics || []).includes('premium_van') && <span className="premium-van-badge">PREMIUM</span>}</span>
+              <div className="row gap-8">
+                <span className="text-accent">{st?.cap} cap</span>
+                {canSell && (
+                  <button
+                    className="btn btn-sm btn-outline"
+                    style={{ color: 'var(--red)' }}
+                    disabled={busy === `sell-${s.id}`}
+                    onClick={async () => {
+                      if (!window.confirm(`Sell ${st.n} for $${fmt(sellValue)} (50% of purchase price)?\n\nMake sure you have enough remaining capacity for your inventory.`)) return;
+                      setBusy(`sell-${s.id}`);
+                      const result = await postAction('sellStorage', { storageId: s.id });
+                      await refreshState();
+                      setBusy(null);
+                      if (result?.error) alert(result.error);
+                    }}
+                  >
+                    {busy === `sell-${s.id}` ? '...' : `Sell $${fmt(sellValue)}`}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Central Storage (warehouse) inventory breakdown */}

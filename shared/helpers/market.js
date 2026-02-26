@@ -4,7 +4,7 @@ export function getCitySlots(city) {
   const total = city.mx;
   const playerReserved = Math.max(2, Math.ceil(total * .3));
   const aiMax = total - playerReserved;
-  const perPlayerCap = Math.max(1, Math.floor(total * .3));
+  const perPlayerCap = Math.max(2, Math.floor(total * .4));
   return { total, playerReserved, aiMax, perPlayerCap };
 }
 

@@ -164,3 +164,54 @@ export function sendWsMessage(wsRef, data) {
     wsRef.current.send(JSON.stringify(data));
   }
 }
+
+// Shop marketplace API
+export async function fetchShopListings() {
+  const res = await fetchWithRetry(`${API_BASE}/shop-market/listings`, { headers });
+  return res.json();
+}
+
+export async function sendShopOffer(data) {
+  const res = await fetchWithRetry(`${API_BASE}/shop-market/offer`, {
+    method: 'POST', headers,
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function sendShopMessage(data) {
+  const res = await fetchWithRetry(`${API_BASE}/shop-market/message`, {
+    method: 'POST', headers,
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function fetchShopMessages(listingId) {
+  const res = await fetchWithRetry(`${API_BASE}/shop-market/messages/${listingId}`, { headers });
+  return res.json();
+}
+
+export async function acceptShopOffer(data) {
+  const res = await fetchWithRetry(`${API_BASE}/shop-market/accept-offer`, {
+    method: 'POST', headers,
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function rejectShopOffer(data) {
+  const res = await fetchWithRetry(`${API_BASE}/shop-market/reject-offer`, {
+    method: 'POST', headers,
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function counterShopOffer(data) {
+  const res = await fetchWithRetry(`${API_BASE}/shop-market/counter`, {
+    method: 'POST', headers,
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
