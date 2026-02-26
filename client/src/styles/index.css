@@ -88,6 +88,17 @@ body {
   line-height: 1;
 }
 
+/* Native banner ad offset — push bottom nav and content up */
+body.native-banner-showing .bottom-nav {
+  bottom: 50px;
+}
+body.native-banner-showing .main {
+  padding-bottom: 122px;
+}
+body.native-banner-showing .more-overlay {
+  padding-bottom: 50px;
+}
+
 /* More menu overlay */
 .more-overlay {
   position: fixed; inset: 0; z-index: 9;

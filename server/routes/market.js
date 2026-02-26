@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getGame, saveGame, getPlayer, savePlayerState, getPlayerListings, addPlayerListing, updatePlayerListing, getPlayerListingById } from '../db/queries.js';
+import { getGame, saveGame, getPlayer, savePlayerState, getPlayerListings, addPlayerListing, updatePlayerListing, getPlayerListingById, getAllActivePlayers } from '../db/queries.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { uid } from '../../shared/helpers/random.js';
 import { TIRES } from '../../shared/constants/tires.js';
@@ -51,15 +51,23 @@ router.get('/city/:cityId', async (req, res) => {
   }
 });
 
-// GET /api/market/cities — AI shop counts for all cities (summary)
+// GET /api/market/cities — shop counts for all cities (AI seed shops + all player locations)
 router.get('/cities', async (req, res) => {
   try {
     const game = await getGame();
     if (!game) return res.status(404).json({ error: 'No active game' });
 
     const counts = {};
+    // Count AI seed shops
     for (const shop of (game.ai_shops || [])) {
       counts[shop.cityId] = (counts[shop.cityId] || 0) + 1;
+    }
+    // Count all player locations (AI players + real players)
+    const players = await getAllActivePlayers();
+    for (const p of players) {
+      for (const loc of (p.game_state?.locations || [])) {
+        counts[loc.cityId] = (counts[loc.cityId] || 0) + 1;
+      }
     }
     res.json(counts);
   } catch (err) {
@@ -68,13 +76,16 @@ router.get('/cities', async (req, res) => {
   }
 });
 
-// GET /api/market/city-shops/:cityId — AI shops in a specific city
+// GET /api/market/city-shops/:cityId — all shops in a specific city
 router.get('/city-shops/:cityId', async (req, res) => {
   try {
     const game = await getGame();
     if (!game) return res.status(404).json({ error: 'No active game' });
+    const cityId = req.params.cityId;
+
+    // AI seed shops
     const shops = (game.ai_shops || [])
-      .filter(s => s.cityId === req.params.cityId)
+      .filter(s => s.cityId === cityId)
       .map(s => ({
         id: s.id,
         name: s.name,
@@ -84,7 +95,29 @@ router.get('/city-shops/:cityId', async (req, res) => {
         wealth: s.wealth,
         forSale: s.forSale || false,
         askingPrice: s.askingPrice || null,
+        type: 'ai_seed',
       }));
+
+    // AI player + real player shops in this city
+    const players = await getAllActivePlayers();
+    for (const p of players) {
+      const g = p.game_state;
+      if (!g) continue;
+      for (const loc of (g.locations || [])) {
+        if (loc.cityId !== cityId) continue;
+        shops.push({
+          id: loc.id,
+          name: g.companyName || g.name || 'Unknown',
+          personality: g.isAI ? 'AI Competitor' : 'Player',
+          icon: g.isAI ? '\u{1F916}' : '\u{1F464}',
+          reputation: Math.round((g.reputation || 0) * 10) / 10,
+          wealth: 0,
+          forSale: false,
+          type: g.isAI ? 'ai_player' : 'player',
+          playerId: p.id,
+        });
+      }
+    }
     res.json(shops);
   } catch (err) {
     console.error('GET /api/market/city-shops error:', err);

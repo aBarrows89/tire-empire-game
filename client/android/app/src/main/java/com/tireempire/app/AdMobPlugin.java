@@ -4,6 +4,7 @@ import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.webkit.WebView;
 import android.widget.FrameLayout;
 
 import com.getcapacitor.JSObject;
@@ -12,6 +13,7 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import com.google.android.gms.ads.AdListener;
 import com.google.android.gms.ads.AdRequest;
 import com.google.android.gms.ads.AdSize;
 import com.google.android.gms.ads.AdView;
@@ -32,6 +34,15 @@ public class AdMobPlugin extends Plugin {
     private AdView bannerAdView;
     private InterstitialAd interstitialAd;
 
+    private void setBannerClass(boolean show) {
+        getBridge().getWebView().post(() -> {
+            getBridge().getWebView().evaluateJavascript(
+                "document.body.classList." + (show ? "add" : "remove") + "('native-banner-showing')",
+                null
+            );
+        });
+    }
+
     @PluginMethod()
     public void initialize(PluginCall call) {
         getActivity().runOnUiThread(() -> {
@@ -48,6 +59,7 @@ public class AdMobPlugin extends Plugin {
             try {
                 if (bannerAdView != null) {
                     bannerAdView.setVisibility(View.VISIBLE);
+                    setBannerClass(true);
                     call.resolve();
                     return;
                 }
@@ -55,6 +67,13 @@ public class AdMobPlugin extends Plugin {
                 bannerAdView = new AdView(getContext());
                 bannerAdView.setAdSize(AdSize.BANNER);
                 bannerAdView.setAdUnitId(BANNER_AD_UNIT);
+
+                bannerAdView.setAdListener(new AdListener() {
+                    @Override
+                    public void onAdLoaded() {
+                        setBannerClass(true);
+                    }
+                });
 
                 FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
@@ -83,6 +102,7 @@ public class AdMobPlugin extends Plugin {
             if (bannerAdView != null) {
                 bannerAdView.setVisibility(View.GONE);
             }
+            setBannerClass(false);
             call.resolve();
         });
     }
