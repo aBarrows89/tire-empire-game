@@ -2,6 +2,8 @@
   "name": "tire-empire-game",
   "private": true,
   "scripts": {
+    "start": "cd server && node index.js",
+    "build": "cd server && npm install",
     "dev": "npx concurrently -n server,client -c blue,green \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "cd server && node --watch index.js",
     "dev:client": "cd client && npx vite",
