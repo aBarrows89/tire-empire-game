@@ -1,6 +1,8 @@
 import admin from 'firebase-admin';
 import { NODE_ENV } from '../config.js';
 
+const ALLOW_DEV_AUTH = process.env.ALLOW_DEV_AUTH === 'true';
+
 // Initialize firebase-admin once at module load
 if (!admin.apps.length) {
   const projectId = process.env.FIREBASE_PROJECT_ID;
@@ -22,7 +24,7 @@ if (!admin.apps.length) {
  */
 export async function authMiddleware(req, res, next) {
   // Dev mode fallback: allow X-Player-Id header
-  if (NODE_ENV !== 'production') {
+  if (NODE_ENV !== 'production' || ALLOW_DEV_AUTH) {
     const devId = req.headers['x-player-id'];
     if (devId) {
       req.playerId = devId;
@@ -34,7 +36,7 @@ export async function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     // In dev, also try X-Player-Id as final fallback
-    if (NODE_ENV !== 'production') {
+    if (NODE_ENV !== 'production' || ALLOW_DEV_AUTH) {
       const fallbackId = req.headers['x-player-id'];
       if (fallbackId) {
         req.playerId = fallbackId;

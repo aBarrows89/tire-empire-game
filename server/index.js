@@ -27,9 +27,11 @@ const app = express();
 
 // ── Security Middleware ──
 app.use(cors({
-  origin: NODE_ENV === 'production'
-    ? ['capacitor://localhost', 'ionic://localhost', 'http://localhost']
-    : CORS_ORIGIN,
+  origin: CORS_ORIGIN === '*' ? true : (
+    NODE_ENV === 'production'
+      ? ['capacitor://localhost', 'ionic://localhost', 'http://localhost', 'https://localhost']
+      : CORS_ORIGIN
+  ),
   credentials: true,
 }));
 app.use(express.json({ limit: '100kb' }));
