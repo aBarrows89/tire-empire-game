@@ -11,6 +11,7 @@ import { getLocInv, getLocCap } from '@shared/helpers/inventory.js';
 import { getNextUpgrade, SHOP_STORAGE_UPGRADES } from '@shared/constants/shopStorage.js';
 import { getShopValuation } from '@shared/constants/shopSale.js';
 import { postAction, API_BASE, acceptShopOffer, rejectShopOffer, counterShopOffer, fetchShopMessages, sendShopMessage, fetchShopListings } from '../../api/client.js';
+import { hapticsMedium } from '../../api/haptics.js';
 
 export default function ShopPanel() {
   const { state, refreshState } = useGame();
@@ -51,7 +52,7 @@ export default function ShopPanel() {
   const open = async (cityId) => {
     setBusy(cityId);
     const res = await postAction('openShop', { cityId });
-    if (res.ok) refreshState();
+    if (res.ok) { hapticsMedium(); refreshState(); }
     setBusy(null);
   };
 
@@ -94,6 +95,7 @@ export default function ShopPanel() {
   const acceptBid = async (bidId) => {
     setBusy(`accept-${bidId}`);
     await postAction('acceptShopBid', { bidId });
+    hapticsMedium();
     refreshState();
     setBusy(null);
   };

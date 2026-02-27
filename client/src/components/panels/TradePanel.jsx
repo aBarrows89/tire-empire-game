@@ -4,6 +4,9 @@ import { TIRES } from '@shared/constants/tires.js';
 import { fmt } from '@shared/helpers/format.js';
 import { getTrades, createTradeOffer, tradeAction, postAction, API_BASE, getHeaders } from '../../api/client.js';
 import { getUid } from '../../services/firebase.js';
+import { hapticsMedium } from '../../api/haptics.js';
+import EmptyState from '../EmptyState.jsx';
+import useSwipeTabs from '../../hooks/useSwipeTabs.js';
 
 export default function TradePanel() {
   const { state, refreshState } = useGame();
@@ -11,6 +14,8 @@ export default function TradePanel() {
   const [trades, setTrades] = useState([]);
   const [tab, setTab] = useState('active'); // active | new
   const [showVinnieWarn, setShowVinnieWarn] = useState(false);
+
+  const swipeHandlers = useSwipeTabs(['active', 'new', 'history'], tab, setTab);
 
   // Show Vinnie warning on first visit
   useEffect(() => {
@@ -59,6 +64,7 @@ export default function TradePanel() {
     }
     const res = await createTradeOffer(payload);
     if (res.ok) {
+      hapticsMedium();
       fetchTrades();
       setTab('active');
     } else if (res.error) {
@@ -71,6 +77,7 @@ export default function TradePanel() {
     setBusy(tradeId);
     const res = await tradeAction(action, tradeId);
     if (res.ok) {
+      hapticsMedium();
       fetchTrades();
       refreshState();
     } else if (res.error) {
@@ -101,7 +108,7 @@ export default function TradePanel() {
   };
 
   return (
-    <>
+    <div {...swipeHandlers}>
       {/* Vinnie first-time warning */}
       {showVinnieWarn && (
         <div className="vinnie-popup-backdrop" onClick={dismissVinnie}>
@@ -148,9 +155,13 @@ export default function TradePanel() {
       {tab === 'active' && (
         <>
           {pending.length === 0 && accepted.length === 0 && (
-            <div className="card">
-              <div className="text-sm text-dim">No active trades.</div>
-            </div>
+            <EmptyState
+              vinnie="handshake"
+              title="No Active Trades"
+              message="You don't have any trades in progress. Find a player and make a deal!"
+              actionLabel="New Offer"
+              onAction={() => setTab('new')}
+            />
           )}
 
           {/* Pending offers (waiting for accept/decline) */}
@@ -368,6 +379,6 @@ export default function TradePanel() {
           })}
         </>
       )}
-    </>
+    </div>
   );
 }

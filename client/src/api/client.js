@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { getIdToken, getUid } from '../services/firebase.js';
+import { getIdToken, getUid, hasFirebaseConfig } from '../services/firebase.js';
+import { queueAction } from '../services/offlineCache.js';
 
 // Detect if running inside a Capacitor native app
 const isNative = typeof window !== 'undefined' && window.Capacitor?.isNativePlatform();
@@ -17,18 +18,20 @@ const API_BASE = SERVER_URL ? `${SERVER_URL}/api` : '/api';
  */
 async function getHeaders() {
   const base = { 'Content-Type': 'application/json' };
+  if (!hasFirebaseConfig) {
+    // No Firebase configured — use dev player ID
+    base['X-Player-Id'] = 'dev-player';
+    return base;
+  }
   try {
     const token = await getIdToken();
     if (token) {
       base['Authorization'] = `Bearer ${token}`;
-    } else if (import.meta.env.DEV) {
+    } else {
       base['X-Player-Id'] = 'dev-player';
     }
   } catch {
-    // Firebase not initialized (missing config) — use dev fallback
-    if (import.meta.env.DEV) {
-      base['X-Player-Id'] = 'dev-player';
-    }
+    base['X-Player-Id'] = 'dev-player';
   }
   return base;
 }
@@ -80,6 +83,10 @@ export async function registerPlayer(playerName, companyName) {
 }
 
 export async function postAction(action, params = {}) {
+  if (!navigator.onLine) {
+    await queueAction(action, params);
+    return { ok: true, queued: true };
+  }
   const headers = await getHeaders();
   const res = await fetchWithRetry(`${API_BASE}/action`, {
     method: 'POST',

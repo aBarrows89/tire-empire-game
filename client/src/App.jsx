@@ -8,6 +8,8 @@ import BottomNav from './components/BottomNav.jsx';
 import VinniePopup from './components/VinniePopup.jsx';
 import AchievementToast from './components/AchievementToast.jsx';
 import ChatOverlay from './components/ChatOverlay.jsx';
+import PullToRefresh from './components/PullToRefresh.jsx';
+import PanelTransition from './components/PanelTransition.jsx';
 import AdBanner from './components/AdBanner.jsx';
 import PremiumModal from './components/PremiumModal.jsx';
 import { initAds, showBanner, hideBanner, showInterstitial } from './services/ads.js';
@@ -50,7 +52,7 @@ const PANELS = {
 };
 
 function GameLayout() {
-  const { state, sendChat } = useGame();
+  const { state, sendChat, refreshState } = useGame();
   const [chatOpen, setChatOpen] = useState(false);
   const [toastAch, setToastAch] = useState(null);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
@@ -105,9 +107,6 @@ function GameLayout() {
   // Show welcome screen if no company name set
   if (!g.companyName) return <WelcomeScreen />;
 
-  // Show tutorial if not completed
-  if (!g.tutorialDone) return <TutorialOverlay />;
-
   // Check for new achievements — deduplicated via shownRef
   if (g._newAchievements && g._newAchievements.length > 0 && !toastAch) {
     const unseen = g._newAchievements.filter(a => !shownRef.current.has(a.id));
@@ -122,13 +121,23 @@ function GameLayout() {
   return (
     <>
       <Header />
+      {state.offline && (
+        <div className="offline-banner">
+          {'\u{1F4E1}'} Offline Mode — Actions will sync when connected
+        </div>
+      )}
       {!g.isPremium && (
         <AdBanner onOpenPremium={() => setShowPremiumModal(true)} />
       )}
       <div className="main">
-        <Panel />
+        <PullToRefresh onRefresh={refreshState}>
+          <PanelTransition panelKey={state.activePanel}>
+            <Panel />
+          </PanelTransition>
+        </PullToRefresh>
       </div>
       <BottomNav />
+      {!g.tutorialDone && <TutorialOverlay />}
       <VinniePopup />
 
       {/* Premium Modal */}

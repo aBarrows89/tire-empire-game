@@ -3,6 +3,7 @@ import { useGame } from '../../context/GameContext.jsx';
 import { ACHIEVEMENTS } from '@shared/constants/achievements.js';
 import { MONET } from '@shared/constants/monetization.js';
 import { postAction } from '../../api/client.js';
+import { hapticsMedium } from '../../api/haptics.js';
 
 export default function AchievementsPanel() {
   const { state, refreshState } = useGame();
@@ -14,12 +15,22 @@ export default function AchievementsPanel() {
   const buyCosmetic = async (cosmeticId) => {
     setBusy(cosmeticId);
     await postAction('buyCosmetic', { cosmeticId });
+    hapticsMedium();
     refreshState();
     setBusy(null);
   };
 
   const cosmetics = MONET?.cosmetics || [];
   const owned = g.cosmetics || [];
+
+  // Find closest-to-complete locked achievement
+  const nextMilestone = ACHIEVEMENTS
+    .filter(a => !earned[a.id] && a.progress)
+    .map(a => {
+      const p = a.progress(g);
+      return { ...a, pct: p.target > 0 ? p.current / p.target : 0, current: p.current, target: p.target };
+    })
+    .sort((a, b) => b.pct - a.pct)[0] || null;
 
   return (
     <>
@@ -40,6 +51,30 @@ export default function AchievementsPanel() {
           />
         </div>
       </div>
+
+      {/* Next Milestone */}
+      {nextMilestone && (
+        <div className="card" style={{ borderLeft: '3px solid var(--gold)' }}>
+          <div className="card-title" style={{ fontSize: 12, color: 'var(--gold)' }}>Next Milestone</div>
+          <div className="row-between mb-4">
+            <span className="font-bold text-sm">
+              <span style={{ marginRight: 6 }}>{nextMilestone.icon}</span>
+              {nextMilestone.title}
+            </span>
+            <span className="text-gold text-xs font-bold">+{nextMilestone.coins} TC</span>
+          </div>
+          <div className="text-xs text-dim mb-4">{nextMilestone.desc}</div>
+          <div className="progress-bar mb-4" style={{ height: 6 }}>
+            <div className="progress-fill" style={{ width: `${Math.round(nextMilestone.pct * 100)}%`, background: 'var(--gold)' }} />
+          </div>
+          <div className="text-xs text-dim" style={{ textAlign: 'right' }}>
+            {typeof nextMilestone.current === 'number' && nextMilestone.current % 1 !== 0
+              ? nextMilestone.current.toFixed(1)
+              : nextMilestone.current} / {nextMilestone.target}
+            {' '}({Math.round(nextMilestone.pct * 100)}%)
+          </div>
+        </div>
+      )}
 
       {/* TireCoin Shop */}
       {cosmetics.length > 0 && (
@@ -79,6 +114,8 @@ export default function AchievementsPanel() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         {ACHIEVEMENTS.map((ach) => {
           const unlocked = !!earned[ach.id];
+          const prog = !unlocked && ach.progress ? ach.progress(g) : null;
+          const pct = prog && prog.target > 0 ? Math.round((prog.current / prog.target) * 100) : 0;
           return (
             <div
               key={ach.id}
@@ -100,8 +137,13 @@ export default function AchievementsPanel() {
               <div className="text-xs text-dim" style={{ marginBottom: 4, lineHeight: 1.3 }}>
                 {ach.desc}
               </div>
+              {!unlocked && prog && (
+                <div className="progress-bar" style={{ height: 3, marginBottom: 4 }}>
+                  <div className="progress-fill" style={{ width: `${pct}%`, background: 'var(--gold)' }} />
+                </div>
+              )}
               <div className="text-xs text-gold font-bold">
-                +{ach.coins} TC
+                {!unlocked && prog ? `${pct}% \u00B7 ` : ''}+{ach.coins} TC
               </div>
             </div>
           );

@@ -9,7 +9,8 @@ const config: CapacitorConfig = {
     // url: 'http://192.168.x.x:5173',
     // For production: remove url (uses bundled web assets)
     // Production: use https. For dev with HTTP API, change to 'http'
-    androidScheme: 'https',
+    // Use 'https' for production, 'http' for dev with local HTTP API
+    androidScheme: 'http',
   },
   plugins: {
     StatusBar: {

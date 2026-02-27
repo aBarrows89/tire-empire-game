@@ -13,6 +13,7 @@ import VinnieTip from '../VinnieTip.jsx';
 import Sparkline from '../Sparkline.jsx';
 import TrendArrow from '../TrendArrow.jsx';
 import LowStockBanner from '../LowStockBanner.jsx';
+import { hapticsLight } from '../../api/haptics.js';
 
 const QUICK_ACTIONS = [
   { id: 'source', icon: '\u{1F527}', label: 'Source' },
@@ -147,7 +148,7 @@ export default function DashboardPanel() {
           <button
             key={qa.id}
             className={`quick-action-btn${(g.cosmetics || []).includes('vip_dash') ? ' vip-action-btn' : ''}`}
-            onClick={() => dispatch({ type: 'SET_PANEL', payload: qa.id })}
+            onClick={() => { hapticsLight(); dispatch({ type: 'SET_PANEL', payload: qa.id }); }}
           >
             <span style={{ fontSize: 22 }}>{qa.icon}</span>
             <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>{qa.label}</span>
@@ -348,6 +349,55 @@ export default function DashboardPanel() {
         </div>
       )}
 
+      {/* Cash Forecast */}
+      {totalDailyExpenses > 0 && (
+        <div className="card" style={{ borderLeft: `3px solid ${netPL >= 0 ? 'var(--green)' : 'var(--red)'}` }}>
+          <div className="card-title">Cash Forecast</div>
+          <div className="row-between text-sm mb-4">
+            <span className="text-dim">Current Cash</span>
+            <span className="font-bold text-green">${fmt(g.cash)}</span>
+          </div>
+          <div className="row-between text-sm mb-4">
+            <span className="text-dim">Daily Net</span>
+            <span className={`font-bold ${netPL >= 0 ? 'text-green' : 'text-red'}`}>
+              {netPL >= 0 ? '+' : ''}${fmt(netPL)}
+            </span>
+          </div>
+          <div className="row-between text-sm mb-4">
+            <span className="text-dim">7-Day Forecast</span>
+            <span className={`font-bold ${(g.cash + netPL * 7) >= 0 ? 'text-green' : 'text-red'}`}>
+              ${fmt(g.cash + netPL * 7)}
+            </span>
+          </div>
+          <div className="row-between text-sm mb-4">
+            <span className="text-dim">30-Day Forecast</span>
+            <span className={`font-bold ${(g.cash + netPL * 30) >= 0 ? 'text-green' : 'text-red'}`}>
+              ${fmt(g.cash + netPL * 30)}
+            </span>
+          </div>
+          {netPL < 0 && (() => {
+            const daysUntilBroke = Math.floor(g.cash / Math.abs(netPL));
+            return (
+              <>
+                <div className="row-between text-sm mb-4" style={{ borderTop: '1px solid var(--border)', paddingTop: 4 }}>
+                  <span className="text-dim">Days Until Broke</span>
+                  <span className="font-bold text-red">{daysUntilBroke} day{daysUntilBroke !== 1 ? 's' : ''}</span>
+                </div>
+                {daysUntilBroke < 7 && (
+                  <button
+                    className="btn btn-full btn-sm"
+                    style={{ marginTop: 4 }}
+                    onClick={() => { hapticsLight(); dispatch({ type: 'SET_PANEL', payload: 'bank' }); }}
+                  >
+                    Go to Bank
+                  </button>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      )}
+
       {(g.history || []).length >= 2 && (
         <div className="card">
           <div className="card-title">30-Day Trends</div>
@@ -406,9 +456,11 @@ export default function DashboardPanel() {
         {Object.entries(TIRES).map(([k, t]) => {
           const qty = g.inventory[k] || 0;
           if (qty === 0) return null;
+          const ap = g.autoPrice && g.autoPrice[k];
+          const isAuto = (g.staff?.pricingAnalyst || 0) > 0 && ap && ap.strategy !== 'off';
           return (
             <div key={k} className="row-between text-sm mb-4">
-              <span>{t.n}</span>
+              <span>{t.n}{isAuto && <span className="auto-badge pulse-badge">AUTO</span>}</span>
               <span className="font-bold">{qty}</span>
             </div>
           );

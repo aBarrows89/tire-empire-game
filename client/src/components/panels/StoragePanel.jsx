@@ -6,6 +6,7 @@ import { CITIES } from '@shared/constants/cities.js';
 import { fmt } from '@shared/helpers/format.js';
 import { getCap, getInv, getLocInv, getLocCap, getStorageCap } from '@shared/helpers/inventory.js';
 import { postAction } from '../../api/client.js';
+import { hapticsMedium } from '../../api/haptics.js';
 
 export default function StoragePanel() {
   const { state, refreshState } = useGame();
@@ -21,6 +22,7 @@ export default function StoragePanel() {
   const buy = async (type) => {
     setBusy(type);
     await postAction('buyStorage', { type });
+    hapticsMedium();
     refreshState();
     setBusy(null);
   };

@@ -7,7 +7,7 @@ export default defineConfig({
   build: {
     rollupOptions: {
       // RevenueCat is a native-only plugin — external until installed
-      external: ['@revenuecat/purchases-capacitor'],
+      external: ['@revenuecat/purchases-capacitor', '@capacitor/haptics'],
     },
   },
   resolve: {

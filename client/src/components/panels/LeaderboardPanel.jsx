@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { API_BASE, getHeaders } from '../../api/client.js';
 import { fmt } from '@shared/helpers/format.js';
+import EmptyState from '../EmptyState.jsx';
+import { SkeletonLeaderboardRow } from '../SkeletonLoader.jsx';
+import useSwipeTabs from '../../hooks/useSwipeTabs.js';
 
 export default function LeaderboardPanel() {
   const { state, dispatch } = useGame();
@@ -9,6 +12,7 @@ export default function LeaderboardPanel() {
   const [rows, setRows] = useState([]);
   const [tab, setTab] = useState('allTime'); // 'allTime' or 'weekly'
   const [tournamentData, setTournamentData] = useState(null);
+  const swipeHandlers = useSwipeTabs(['allTime', 'weekly'], tab, setTab);
 
   useEffect(() => {
     getHeaders().then(h =>
@@ -39,7 +43,7 @@ export default function LeaderboardPanel() {
     : rows;
 
   return (
-    <>
+    <div {...swipeHandlers}>
       <div className="card">
         <div className="row-between mb-4">
           <div className="card-title" style={{ marginBottom: 0 }}>Leaderboard</div>
@@ -66,11 +70,17 @@ export default function LeaderboardPanel() {
       </div>
 
       {displayRows.length === 0 && (
-        <div className="card">
-          <div className="text-sm text-dim">
-            {tab === 'weekly' ? 'No tournament data yet.' : 'No players on the leaderboard yet.'}
-          </div>
-        </div>
+        rows.length === 0 ? (
+          <>
+            {[0,1,2,3,4].map(i => <SkeletonLeaderboardRow key={i} />)}
+          </>
+        ) : (
+          <EmptyState
+            vinnie="trophy"
+            title="No Rankings Yet"
+            message={tab === 'weekly' ? 'The weekly tournament hasn\'t started yet. Check back soon!' : 'No players on the leaderboard yet. Be the first!'}
+          />
+        )
       )}
 
       {displayRows.map((row, i) => {
@@ -119,6 +129,6 @@ export default function LeaderboardPanel() {
           </div>
         );
       })}
-    </>
+    </div>
   );
 }

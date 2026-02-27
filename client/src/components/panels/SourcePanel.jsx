@@ -8,6 +8,8 @@ import { getCalendar, DAY_NAMES } from '@shared/helpers/calendar.js';
 import { postAction } from '../../api/client.js';
 import { FLEA_MARKETS, FLEA_STAND_COST } from '@shared/constants/fleaMarkets.js';
 import { CAR_MEETS, CAR_MEET_SUMMER_START, CAR_MEET_SUMMER_END } from '@shared/constants/carMeets.js';
+import { hapticsMedium } from '../../api/haptics.js';
+import { playSound } from '../../api/sounds.js';
 
 export default function SourcePanel() {
   const { state, refreshState } = useGame();
@@ -24,7 +26,7 @@ export default function SourcePanel() {
   const buy = async (sourceId) => {
     setBusy(sourceId);
     const res = await postAction('buySource', { sourceId });
-    if (res.ok) refreshState();
+    if (res.ok) { hapticsMedium(); playSound('purchase'); refreshState(); }
     setBusy(null);
   };
 
@@ -63,6 +65,7 @@ export default function SourcePanel() {
   const buyFromLot = async (indices) => {
     setBusy('lotBuy');
     await postAction('buyFromLot', { indices });
+    hapticsMedium();
     setSelectedLotItems([]);
     refreshState();
     setBusy(null);

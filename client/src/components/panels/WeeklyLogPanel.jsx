@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { formatDateShort } from '@shared/helpers/calendar.js';
+import EmptyState from '../EmptyState.jsx';
 
 const FILTERS = ['All', 'Sales', 'Events', 'Costs', 'Market', 'Trades', 'Source', 'Bank'];
 
 export default function WeeklyLogPanel() {
-  const { state } = useGame();
+  const { state, dispatch } = useGame();
   const [activeFilter, setActiveFilter] = useState('All');
 
   const filteredLogs = (state.logHistory || []).filter(entry => {
@@ -38,11 +39,19 @@ export default function WeeklyLogPanel() {
       </div>
 
       {filteredLogs.length === 0 ? (
-        <div className="card">
-          <div className="text-sm text-dim">
-            {activeFilter === 'All' ? 'No activity yet. Start sourcing tires!' : `No ${activeFilter.toLowerCase()} entries yet.`}
+        activeFilter === 'All' ? (
+          <EmptyState
+            vinnie="clipboard"
+            title="No Activity Yet"
+            message="Your log is empty. Start sourcing tires to see activity here!"
+            actionLabel="Source Tires"
+            onAction={() => dispatch({ type: 'SET_PANEL', payload: 'source' })}
+          />
+        ) : (
+          <div className="card">
+            <div className="text-sm text-dim">No {activeFilter.toLowerCase()} entries yet.</div>
           </div>
-        </div>
+        )
       ) : (
         <div className="card">
           {filteredLogs.map((entry, i) => {

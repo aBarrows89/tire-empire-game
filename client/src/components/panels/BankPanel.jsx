@@ -3,6 +3,8 @@ import { useGame } from '../../context/GameContext.jsx';
 import { LOANS } from '@shared/constants/loans.js';
 import { fmt } from '@shared/helpers/format.js';
 import { postAction } from '../../api/client.js';
+import { hapticsMedium } from '../../api/haptics.js';
+import { playSound } from '../../api/sounds.js';
 
 export default function BankPanel() {
   const { state, refreshState } = useGame();
@@ -15,6 +17,7 @@ export default function BankPanel() {
   const take = async (index) => {
     setBusy(`loan-${index}`);
     await postAction('takeLoan', { index });
+    hapticsMedium(); playSound('cash');
     refreshState();
     setBusy(null);
   };
@@ -24,6 +27,7 @@ export default function BankPanel() {
     if (!amt || amt <= 0) return;
     setBusy('dep');
     await postAction('bankDeposit', { amount: amt });
+    hapticsMedium(); playSound('cash');
     setDepAmount('');
     refreshState();
     setBusy(null);

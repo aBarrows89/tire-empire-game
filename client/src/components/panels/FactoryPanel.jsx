@@ -4,6 +4,7 @@ import { postAction } from '../../api/client.js';
 import { FACTORY } from '@shared/constants/factory.js';
 import { TIRES } from '@shared/constants/tires.js';
 import { fmt } from '@shared/helpers/format.js';
+import { hapticsMedium } from '../../api/haptics.js';
 
 const PRODUCIBLE_TYPES = Object.keys(FACTORY.productionCost);
 
@@ -22,7 +23,7 @@ export default function FactoryPanel() {
   const doAction = async (action, params = {}) => {
     setBusy(true);
     const res = await postAction(action, params);
-    if (res.ok) refreshState();
+    if (res.ok) { hapticsMedium(); refreshState(); }
     setBusy(false);
   };
 

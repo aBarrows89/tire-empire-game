@@ -2,6 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { TIRES } from '@shared/constants/tires.js';
 import { postAction } from '../../api/client.js';
+import { hapticsLight } from '../../api/haptics.js';
 
 const STRATEGIES = [
   { key: 'off', label: 'Manual' },
@@ -27,6 +28,7 @@ export default function PricingPanel() {
   const setPrice = (tire, price) => {
     clearTimeout(timers.current[tire]);
     timers.current[tire] = setTimeout(async () => {
+      hapticsLight();
       await postAction('setPrice', { tire, price: Number(price) });
       refreshState();
     }, 400);

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useGame } from '../context/GameContext.jsx';
 import { getInv } from '@shared/helpers/inventory.js';
+import { hapticsLight } from '../api/haptics.js';
 
 // Primary tabs always visible in bottom bar
 const PRIMARY_TABS = [
@@ -92,6 +93,7 @@ export default function BottomNav() {
   const activeInSecondary = secondaryVisible.some(t => t.id === state.activePanel);
 
   const selectTab = (id) => {
+    hapticsLight();
     dispatch({ type: 'SET_PANEL', payload: id });
     setShowMore(false);
   };
@@ -115,6 +117,7 @@ export default function BottomNav() {
             <button
               className="more-grid-btn"
               onClick={() => {
+                hapticsLight();
                 setShowMore(false);
                 setUnreadChat(0);
                 window.dispatchEvent(new CustomEvent('toggleChat'));

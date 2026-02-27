@@ -12,6 +12,7 @@ import {
 import { fmt } from '@shared/helpers/format.js';
 import { getEcomTier } from '@shared/helpers/ecommerce.js';
 import { getCap } from '@shared/helpers/inventory.js';
+import { hapticsMedium } from '../../api/haptics.js';
 
 export default function EcommercePanel() {
   const { state, refreshState } = useGame();
@@ -29,7 +30,7 @@ export default function EcommercePanel() {
     const unlock = async () => {
       setBusy('unlock');
       const res = await postAction('unlockEcom');
-      if (res.ok) refreshState();
+      if (res.ok) { hapticsMedium(); refreshState(); }
       setBusy(null);
     };
 

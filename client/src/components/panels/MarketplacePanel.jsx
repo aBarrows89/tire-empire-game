@@ -6,6 +6,9 @@ import { P2P_FEES, MARKETPLACE_SPECIALIST } from '@shared/constants/marketplace.
 import { fmt } from '@shared/helpers/format.js';
 import { postAction, API_BASE, getHeaders, fetchShopListings, sendShopOffer, sendShopMessage, fetchShopMessages } from '../../api/client.js';
 import { getUid } from '../../services/firebase.js';
+import { hapticsMedium } from '../../api/haptics.js';
+import EmptyState from '../EmptyState.jsx';
+import useSwipeTabs from '../../hooks/useSwipeTabs.js';
 
 function getPlayerTier(g) {
   if (g.hasEcom) return 'ecommerce';
@@ -37,6 +40,7 @@ export default function MarketplacePanel() {
   const [shopMessages, setShopMessages] = useState({});
   const [msgInput, setMsgInput] = useState({});
 
+  const swipeHandlers = useSwipeTabs(['browse', 'sell', 'mine', 'realestate'], tab, setTab);
   const PLAYER_ID = getUid() || g?.id;
   const tier = getPlayerTier(g);
   const fees = tier ? P2P_FEES[tier] : null;
@@ -63,6 +67,7 @@ export default function MarketplacePanel() {
     });
     const res = await response.json();
     if (response.ok && res.ok) {
+      hapticsMedium();
       refreshState();
       fetchListings();
       setTab('mine');
@@ -81,7 +86,7 @@ export default function MarketplacePanel() {
       body: JSON.stringify({ listingId, pricePerTire: price }),
     });
     const res = await response.json();
-    if (response.ok && res.ok) fetchListings();
+    if (response.ok && res.ok) { hapticsMedium(); fetchListings(); }
     setBusy(null);
   };
 
@@ -138,7 +143,7 @@ export default function MarketplacePanel() {
   activeListings.sort((a, b) => a.askPrice - b.askPrice);
 
   return (
-    <>
+    <div {...swipeHandlers}>
       <div className="card">
         <div className="card-title">Player Marketplace</div>
         <div className="text-xs text-dim mb-4">
@@ -184,9 +189,13 @@ export default function MarketplacePanel() {
           </div>
 
           {activeListings.length === 0 && (
-            <div className="card">
-              <div className="text-sm text-dim">No active listings{filter !== 'all' ? ' matching filter' : ' from other players'}.</div>
-            </div>
+            <EmptyState
+              vinnie="shrug"
+              title="No Listings Yet"
+              message={filter !== 'all' ? 'No listings match your filter. Try a different one!' : 'The marketplace is empty. Be the first to list your tires!'}
+              actionLabel="List Your Tires"
+              onAction={() => setTab('sell')}
+            />
           )}
           {activeListings.map(listing => {
             const t = TIRES[listing.tireType];
@@ -676,6 +685,6 @@ export default function MarketplacePanel() {
           })}
         </>
       )}
-    </>
+    </div>
   );
 }

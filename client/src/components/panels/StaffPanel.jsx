@@ -4,6 +4,7 @@ import { PAY } from '@shared/constants/staff.js';
 import { MARKETPLACE_SPECIALIST } from '@shared/constants/marketplace.js';
 import { fmt } from '@shared/helpers/format.js';
 import { postAction } from '../../api/client.js';
+import { hapticsMedium } from '../../api/haptics.js';
 
 const ROLES = [
   { key: 'techs', label: 'Technicians', desc: 'Install tires, service capacity' },
@@ -23,11 +24,13 @@ export default function StaffPanel() {
 
   const hire = async (role) => {
     await postAction('hireStaff', { role });
+    hapticsMedium();
     refreshState();
   };
 
   const fire = async (role) => {
     await postAction('fireStaff', { role });
+    hapticsMedium();
     refreshState();
   };
 

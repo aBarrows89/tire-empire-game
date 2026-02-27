@@ -1,8 +1,11 @@
 import React, { useEffect } from 'react';
+import { hapticsHeavy } from '../api/haptics.js';
+import { playSound } from '../api/sounds.js';
 
 export default function AchievementToast({ achievements, onDismiss, hasCelebration }) {
   useEffect(() => {
     if (!achievements || achievements.length === 0) return;
+    hapticsHeavy(); playSound('achievement');
     const timer = setTimeout(() => {
       if (onDismiss) onDismiss();
     }, 3000);

@@ -6,6 +6,7 @@ import { TIRES } from '@shared/constants/tires.js';
 import { fmt } from '@shared/helpers/format.js';
 import { getVolTier } from '@shared/helpers/wholesale.js';
 import { getCap } from '@shared/helpers/inventory.js';
+import { hapticsMedium } from '../../api/haptics.js';
 
 const TIRE_KEYS = Object.keys(TIRES);
 
@@ -23,7 +24,7 @@ export default function WholesalePanel() {
   const unlockWholesale = async () => {
     setBusy(true);
     const res = await postAction('unlockWholesale');
-    if (res.ok) refreshState();
+    if (res.ok) { hapticsMedium(); refreshState(); }
     setBusy(false);
   };
 

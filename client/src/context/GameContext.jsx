@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
 import { getState, useWebSocket, sendWsMessage } from '../api/client.js';
+import { cacheGameState, getCachedGameState, getPendingActions, clearPendingActions } from '../services/offlineCache.js';
+import { postAction } from '../api/client.js';
 
 const GameContext = createContext();
 
@@ -24,6 +26,7 @@ function gameReducer(state, action) {
         chatMessages: [...(state.chatMessages || []), action.payload].slice(-200),
       };
     case 'SET_PANEL':
+      try { localStorage.setItem('te_activePanel', action.payload); } catch {}
       return { ...state, activePanel: action.payload, viewingProfile: null };
     case 'SET_VIEWING_PROFILE':
       return { ...state, viewingProfile: action.payload, activePanel: 'profile' };
@@ -31,19 +34,24 @@ function gameReducer(state, action) {
       return { ...state, loading: action.payload };
     case 'SET_ERROR':
       return { ...state, error: action.payload };
+    case 'SET_OFFLINE':
+      return { ...state, offline: action.payload };
     default:
       return state;
   }
 }
 
+const savedPanel = (() => { try { return localStorage.getItem('te_activePanel'); } catch { return null; } })();
+
 const initialState = {
   game: null,
-  activePanel: 'dashboard',
+  activePanel: savedPanel || 'dashboard',
   loading: true,
   error: null,
   logHistory: [],
   viewingProfile: null,
   chatMessages: [],
+  offline: false,
 };
 
 export function GameProvider({ children }) {
@@ -53,8 +61,29 @@ export function GameProvider({ children }) {
     try {
       const data = await getState();
       dispatch({ type: 'SET_STATE', payload: data });
+      dispatch({ type: 'SET_OFFLINE', payload: false });
+      cacheGameState(data);
+      // Replay queued offline actions
+      const pending = await getPendingActions();
+      if (pending.length > 0) {
+        for (const item of pending) {
+          try { await postAction(item.action, item.params || {}); } catch {}
+        }
+        await clearPendingActions();
+        // Re-fetch after replaying
+        const fresh = await getState();
+        dispatch({ type: 'SET_STATE', payload: fresh });
+        cacheGameState(fresh);
+      }
     } catch (err) {
-      dispatch({ type: 'SET_ERROR', payload: err.message });
+      // Try loading cached state if network fails
+      const cached = await getCachedGameState();
+      if (cached) {
+        dispatch({ type: 'SET_STATE', payload: cached });
+        dispatch({ type: 'SET_OFFLINE', payload: true });
+      } else {
+        dispatch({ type: 'SET_ERROR', payload: err.message });
+      }
     }
   }, []);
 
@@ -72,8 +101,8 @@ export function GameProvider({ children }) {
 
   const wsRef = useWebSocket(onTick, onChat);
 
-  const sendChat = useCallback((text) => {
-    sendWsMessage(wsRef, { type: 'chat', text });
+  const sendChat = useCallback((text, channel = 'global') => {
+    sendWsMessage(wsRef, { type: 'chat', text, channel });
   }, [wsRef]);
 
   // Refresh state when app returns from background

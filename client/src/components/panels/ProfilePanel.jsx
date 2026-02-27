@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { API_BASE, getHeaders, postAction } from '../../api/client.js';
 import { getCalendar, DAYS_PER_YEAR } from '@shared/helpers/calendar.js';
+import { SkeletonProfileCard } from '../SkeletonLoader.jsx';
+import { isMuted, toggleMute } from '../../api/sounds.js';
 
 export default function ProfilePanel() {
   const { state, dispatch, refreshState } = useGame();
@@ -13,6 +15,7 @@ export default function ProfilePanel() {
   const [showReset, setShowReset] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [showPremium, setShowPremium] = useState(false);
+  const [muted, setMuted] = useState(isMuted);
 
   const targetId = isOther ? viewingId : g?.id;
 
@@ -39,7 +42,7 @@ export default function ProfilePanel() {
     dispatch({ type: 'SET_PANEL', payload: 'leaderboard' });
   };
 
-  if (!profile) return <div className="card"><div className="text-sm text-dim">Loading profile...</div></div>;
+  if (!profile) return <SkeletonProfileCard />;
 
   // For own profile, use live game context for volatile stats
   const rep = isOther ? (profile.reputation || 0) : g.reputation;
@@ -141,6 +144,21 @@ export default function ProfilePanel() {
           </button>
           <div className="text-xs text-dim" style={{ marginTop: 4, textAlign: 'center' }}>
             Direct trade — no escrow, no protection
+          </div>
+        </div>
+      )}
+
+      {/* Sound settings (own profile only) */}
+      {!isOther && (
+        <div className="card">
+          <div className="row-between">
+            <span className="text-sm">Sound Effects</span>
+            <button
+              className={`btn btn-sm ${muted ? 'btn-outline' : 'btn-green'}`}
+              onClick={() => setMuted(toggleMute())}
+            >
+              {muted ? '\u{1F507} Muted' : '\u{1F50A} On'}
+            </button>
           </div>
         </div>
       )}

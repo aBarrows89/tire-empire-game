@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useGame } from '../context/GameContext.jsx';
 import { TUTORIAL_STEPS } from '@shared/helpers/tutorial.js';
 import { postAction } from '../api/client.js';
+import { hapticsMedium } from '../api/haptics.js';
 
 const VINNIE_EMOTIONS = {
   smirk: "\u{1F60F}",
@@ -15,16 +16,24 @@ const VINNIE_EMOTIONS = {
 };
 
 export default function TutorialOverlay() {
-  const { state, refreshState } = useGame();
+  const { state, dispatch, refreshState } = useGame();
   const g = state.game;
   const step = g.tutorialStep || 0;
   const current = TUTORIAL_STEPS[step];
+
+  // Auto-navigate to the panel the current step references
+  useEffect(() => {
+    if (current?.panel) {
+      dispatch({ type: 'SET_PANEL', payload: current.panel });
+    }
+  }, [step, current?.panel, dispatch]);
 
   if (!current) return null;
 
   const isLast = step >= TUTORIAL_STEPS.length - 1;
 
   const advance = async () => {
+    hapticsMedium();
     if (isLast) {
       await postAction('tutorialDone');
     } else {
@@ -39,22 +48,29 @@ export default function TutorialOverlay() {
   };
 
   return (
-    <div className="tutorial-overlay">
-      <div className="tutorial-card">
+    <div className="tutorial-spotlight-backdrop">
+      <div className="tutorial-spotlight-card">
         <div className="tutorial-vinnie">
           {VINNIE_EMOTIONS[current.vinnieEmotion] || "\u{1F9D4}"}
-        </div>
-        <div className="tutorial-step-count">
-          {step + 1} / {TUTORIAL_STEPS.length}
         </div>
         <h2 className="tutorial-title">{current.title}</h2>
         <p className="tutorial-text">{current.text}</p>
 
         {current.panel && (
           <div className="tutorial-hint">
-            Tab: <span className="text-accent font-bold">{current.panel.toUpperCase()}</span>
+            Look at the <span className="text-accent font-bold">{current.panel.toUpperCase()}</span> tab behind this card
           </div>
         )}
+
+        <div className="tutorial-progress-bar">
+          <div
+            className="tutorial-progress-fill"
+            style={{ width: `${((step + 1) / TUTORIAL_STEPS.length) * 100}%` }}
+          />
+        </div>
+        <div className="tutorial-step-count">
+          {step + 1} / {TUTORIAL_STEPS.length}
+        </div>
 
         <div className="tutorial-actions">
           <button className="btn btn-full" onClick={advance}>
