@@ -1,5 +1,5 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
-import { signInAnon, onAuthChange } from '../services/firebase.js';
+import { signInAnon, onAuthChange, hasFirebaseConfig } from '../services/firebase.js';
 
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
@@ -9,6 +9,12 @@ export default function AuthGate({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!hasFirebaseConfig) {
+      // No Firebase configured — skip auth, run in dev mode
+      setLoading(false);
+      return;
+    }
+
     const unsub = onAuthChange(async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);

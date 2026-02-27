@@ -18,17 +18,26 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+const hasFirebaseConfig = !!firebaseConfig.apiKey;
+
+let app = null;
+let auth = null;
+
+if (hasFirebaseConfig) {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+}
 
 /** Sign in anonymously (zero-friction onboarding) */
 export async function signInAnon() {
+  if (!auth) return null;
   const cred = await signInAnonymously(auth);
   return cred.user;
 }
 
 /** Get a fresh Firebase ID token (auto-refreshes if near expiry) */
 export async function getIdToken() {
+  if (!auth) return null;
   const user = auth.currentUser;
   if (!user) return null;
   return user.getIdToken();
@@ -36,16 +45,23 @@ export async function getIdToken() {
 
 /** Get the current user's UID synchronously (for WebSocket) */
 export function getUid() {
+  if (!auth) return null;
   return auth.currentUser?.uid || null;
 }
 
 /** Subscribe to auth state changes */
 export function onAuthChange(callback) {
+  if (!auth) {
+    // No Firebase — immediately call back with null (triggers dev-mode fallback)
+    callback(null);
+    return () => {};
+  }
   return onAuthStateChanged(auth, callback);
 }
 
 /** Link anonymous account to Google (upgrade) */
 export async function linkGoogle() {
+  if (!auth) return null;
   const provider = new GoogleAuthProvider();
   const cred = GoogleAuthProvider.credential();
   return linkWithCredential(auth.currentUser, cred);
@@ -53,10 +69,11 @@ export async function linkGoogle() {
 
 /** Link anonymous account to Apple (upgrade) */
 export async function linkApple() {
+  if (!auth) return null;
   const provider = new OAuthProvider('apple.com');
   // Apple Sign-In linking requires a native plugin in Capacitor
   // This is a placeholder for the credential flow
   return null;
 }
 
-export { auth };
+export { auth, hasFirebaseConfig };
