@@ -1,7 +1,7 @@
 import { TICK_MS } from '../config.js';
 import { getAllActivePlayers, savePlayerState, getGame, saveGame, upsertLeaderboard, getPlayerListings, updatePlayerListing, getPlayer, removePlayer } from '../db/queries.js';
 import { simDay } from '../engine/simDay.js';
-import { simAIPlayerDay } from '../engine/aiPlayers.js';
+import { simAIPlayerDay, createAIPlayers } from '../engine/aiPlayers.js';
 import { getWealth } from '../../shared/helpers/wealth.js';
 import { getStorageCap, getLocInv, getLocCap, rebuildGlobalInv, getCap, getInv } from '../../shared/helpers/inventory.js';
 import { getCalendar } from '../../shared/helpers/calendar.js';
@@ -370,9 +370,20 @@ export async function runTick(clients) {
     const game = await getGame();
     if (!game) return;
 
-    const players = await getAllActivePlayers();
+    let players = await getAllActivePlayers();
     // Support both day-based and legacy week-based game state
     const day = (game.day || game.week || 0) + 1;
+
+    // Seed AI players on first tick if none exist
+    const hasAI = players.some(p => p.game_state.isAI);
+    if (!hasAI) {
+      console.log('[AI Init] No AI players found — seeding 12 AI players');
+      const aiPlayers = createAIPlayers(day, 12);
+      for (const ai of aiPlayers) {
+        await savePlayerState(ai.id, ai.game_state);
+      }
+      players = await getAllActivePlayers();
+    }
 
     const playerPriceAvg = aggregatePlayerPrices(players);
     const aiPriceAvg = aggregateAIPrices(game.ai_shops || []);

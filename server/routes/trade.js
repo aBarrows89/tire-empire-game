@@ -48,9 +48,35 @@ router.post('/offer', authMiddleware, async (req, res) => {
     if (!sender) return res.status(404).json({ error: 'Player not found' });
     const sg = sender.game_state;
 
-    // offerType: 'sellTires' (sender sends tires, expects cash) or 'buyTires' (sender sends cash, expects tires)
-    if (!['sellTires', 'buyTires'].includes(offerType)) {
-      return res.status(400).json({ error: 'offerType must be sellTires or buyTires' });
+    // offerType: 'sellTires', 'buyTires', or 'revShare'
+    if (!['sellTires', 'buyTires', 'revShare'].includes(offerType)) {
+      return res.status(400).json({ error: 'offerType must be sellTires, buyTires, or revShare' });
+    }
+
+    // Revenue share offers don't need tires
+    if (offerType === 'revShare') {
+      const { upfrontCash, revSharePct, revShareDays } = req.body;
+      const upfront = Math.floor(Number(upfrontCash) || 0);
+      const pct = Math.max(0.01, Math.min(0.50, Number(revSharePct) || 0.05));
+      const days = Math.max(7, Math.min(365, Math.floor(Number(revShareDays) || 30)));
+
+      const trade = {
+        id: uid(),
+        senderId: req.playerId,
+        senderName: sg.companyName || sg.name || 'Unknown',
+        receiverId,
+        receiverName: receiver.game_state.companyName || receiver.game_state.name || 'Unknown',
+        offerType: 'revShare',
+        upfrontCash: upfront,
+        revSharePct: pct,
+        revShareDays: days,
+        status: 'pending',
+        senderFulfilled: false,
+        receiverFulfilled: false,
+        createdAt: Date.now(),
+      };
+      await addDirectTrade(trade);
+      return res.json({ ok: true, trade });
     }
 
     if (!TIRES[tireType]) return res.status(400).json({ error: 'Invalid tire type' });
@@ -164,6 +190,42 @@ router.post('/fulfill', authMiddleware, async (req, res) => {
 
     const player = await getPlayer(req.playerId);
     const g = player.game_state;
+
+    // Handle revenue share trades
+    if (trade.offerType === 'revShare') {
+      // Receiver accepts: pays upfront cash to sender, sets up rev share on receiver
+      if (isReceiver && !trade.receiverFulfilled) {
+        if (g.cash < (trade.upfrontCash || 0)) return res.status(400).json({ error: 'Not enough cash for upfront payment' });
+        // Pay upfront
+        if (trade.upfrontCash > 0) {
+          g.cash -= trade.upfrontCash;
+          const sender = await getPlayer(trade.senderId);
+          if (sender) {
+            sender.game_state.cash += trade.upfrontCash;
+            sender.game_state.log = sender.game_state.log || [];
+            sender.game_state.log.push(`Received $${trade.upfrontCash.toLocaleString()} upfront from rev share deal with ${g.companyName || g.name}`);
+            await savePlayerState(trade.senderId, sender.game_state);
+          }
+        }
+        // Set up rev share entry on the receiver (they pay % of daily rev to sender)
+        if (!g.tradeRevShares) g.tradeRevShares = [];
+        g.tradeRevShares.push({
+          partnerId: trade.senderId,
+          partnerName: trade.senderName,
+          revSharePct: trade.revSharePct,
+          daysLeft: trade.revShareDays,
+          startDay: g.day || 0,
+        });
+        trade.receiverFulfilled = true;
+        trade.senderFulfilled = true; // auto-complete both sides
+        trade.status = 'completed';
+        g.log = g.log || [];
+        g.log.push(`Rev share deal: paying ${Math.round(trade.revSharePct * 100)}% revenue to ${trade.senderName} for ${trade.revShareDays} days`);
+      }
+      await updateDirectTrade(tradeId, trade);
+      await savePlayerState(req.playerId, g);
+      return res.json({ ok: true, trade });
+    }
 
     // Determine what this party needs to send
     // sellTires: sender sends tires, receiver sends cash

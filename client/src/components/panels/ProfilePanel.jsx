@@ -117,6 +117,18 @@ export default function ProfilePanel() {
         </div>
       )}
 
+      {/* Other player's store locations */}
+      {isOther && (profile.storeCities || []).length > 0 && (
+        <div className="card">
+          <div className="card-title">Store Locations</div>
+          {profile.storeCities.map((city, i) => (
+            <div key={i} className="text-sm mb-4">
+              {'\u{1F3EA}'} {city}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Trade button when viewing other player */}
       {isOther && (g.locations || []).length > 0 && (
         <div className="card">

@@ -20,6 +20,8 @@ const SECONDARY_TABS = [
   { id: 'staff', icon: '\u{1F465}', label: 'Staff' },
   { id: 'trade', icon: '\u{1F91D}', label: 'Trade' },
   { id: 'factory', icon: '\u{1F3ED}', label: 'Factory' },
+  { id: 'ecommerce', icon: '\u{1F4BB}', label: 'E-Com' },
+  { id: 'wholesale', icon: '\u{1F4E6}', label: 'Wholesale' },
   { id: 'achievements', icon: '\u{1F3C5}', label: 'Awards' },
   { id: 'profile', icon: '\u{1F464}', label: 'Profile' },
   { id: 'log', icon: '\u{1F4CB}', label: 'Log' },
@@ -53,6 +55,12 @@ function getUnlockedTabs(g) {
   unlocked.add('achievements');
 
   if (g.hasFactory || g.reputation >= 70) unlocked.add('factory');
+
+  // E-commerce: show if unlocked or meets requirements
+  if (g.hasEcom || (g.reputation >= 30 && g.cash >= 50000)) unlocked.add('ecommerce');
+
+  // Wholesale: show if unlocked or meets requirements
+  if (g.hasWholesale || (g.reputation >= 25 && g.locations.length >= 2)) unlocked.add('wholesale');
 
   return unlocked;
 }

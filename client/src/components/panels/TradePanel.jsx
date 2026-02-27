@@ -27,6 +27,9 @@ export default function TradePanel() {
   const [tireType, setTireType] = useState('');
   const [qty, setQty] = useState(10);
   const [cashAmount, setCashAmount] = useState(100);
+  const [revSharePct, setRevSharePct] = useState(5);
+  const [revShareDays, setRevShareDays] = useState(30);
+  const [upfrontCash, setUpfrontCash] = useState(0);
 
   // Leaderboard for receiver picker
   const [players, setPlayers] = useState([]);
@@ -44,9 +47,16 @@ export default function TradePanel() {
   }, []);
 
   const submitOffer = async () => {
-    if (!receiverId || !tireType || qty <= 0 || cashAmount <= 0) return;
+    if (!receiverId) return;
     setBusy('offer');
-    const res = await createTradeOffer({ receiverId, offerType, tireType, qty, cashAmount });
+    let payload;
+    if (offerType === 'revShare') {
+      payload = { receiverId, offerType, upfrontCash, revSharePct: revSharePct / 100, revShareDays };
+    } else {
+      if (!tireType || qty <= 0 || cashAmount <= 0) { setBusy(null); return; }
+      payload = { receiverId, offerType, tireType, qty, cashAmount };
+    }
+    const res = await createTradeOffer(payload);
     if (res.ok) {
       fetchTrades();
       setTab('active');
@@ -251,48 +261,78 @@ export default function TradePanel() {
             <select className="autoprice-select" style={{ width: '100%' }} value={offerType} onChange={e => setOfferType(e.target.value)}>
               <option value="sellTires">I send tires, they send cash</option>
               <option value="buyTires">I send cash, they send tires</option>
+              <option value="revShare">Revenue share deal</option>
             </select>
           </div>
 
-          <div className="mb-4">
-            <div className="text-xs text-dim mb-4">Tire Type</div>
-            <select className="autoprice-select" style={{ width: '100%' }} value={tireType} onChange={e => setTireType(e.target.value)}>
-              <option value="">Select tire...</option>
-              {offerType === 'sellTires' ? (
-                availTires.map(t => (
-                  <option key={t.key} value={t.key}>{t.name} ({t.qty} in stock)</option>
-                ))
-              ) : (
-                Object.entries(TIRES).map(([k, t]) => (
-                  <option key={k} value={k}>{t.n}</option>
-                ))
-              )}
-            </select>
-          </div>
+          {offerType !== 'revShare' && (
+            <>
+              <div className="mb-4">
+                <div className="text-xs text-dim mb-4">Tire Type</div>
+                <select className="autoprice-select" style={{ width: '100%' }} value={tireType} onChange={e => setTireType(e.target.value)}>
+                  <option value="">Select tire...</option>
+                  {offerType === 'sellTires' ? (
+                    availTires.map(t => (
+                      <option key={t.key} value={t.key}>{t.name} ({t.qty} in stock)</option>
+                    ))
+                  ) : (
+                    Object.entries(TIRES).map(([k, t]) => (
+                      <option key={k} value={k}>{t.n}</option>
+                    ))
+                  )}
+                </select>
+              </div>
 
-          <div className="row gap-8 mb-4">
-            <div style={{ flex: 1 }}>
-              <div className="text-xs text-dim mb-4">Quantity</div>
-              <input type="number" className="autoprice-offset" style={{ width: '100%' }} min={1} value={qty} onChange={e => setQty(Math.max(1, Number(e.target.value)))} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div className="text-xs text-dim mb-4">Cash Amount ($)</div>
-              <input type="number" className="autoprice-offset" style={{ width: '100%' }} min={1} value={cashAmount} onChange={e => setCashAmount(Math.max(1, Number(e.target.value)))} />
-            </div>
-          </div>
+              <div className="row gap-8 mb-4">
+                <div style={{ flex: 1 }}>
+                  <div className="text-xs text-dim mb-4">Quantity</div>
+                  <input type="number" className="autoprice-offset" style={{ width: '100%' }} min={1} value={qty} onChange={e => setQty(Math.max(1, Number(e.target.value)))} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div className="text-xs text-dim mb-4">Cash Amount ($)</div>
+                  <input type="number" className="autoprice-offset" style={{ width: '100%' }} min={1} value={cashAmount} onChange={e => setCashAmount(Math.max(1, Number(e.target.value)))} />
+                </div>
+              </div>
 
-          <div className="text-xs text-dim mb-4">
-            {offerType === 'sellTires'
-              ? `You'll ship ${qty} tires and expect $${fmt(cashAmount)} in return.`
-              : `You'll wire $${fmt(cashAmount)} and expect ${qty} tires in return.`
-            }
-            {' '}No guarantees.
-          </div>
+              <div className="text-xs text-dim mb-4">
+                {offerType === 'sellTires'
+                  ? `You'll ship ${qty} tires and expect $${fmt(cashAmount)} in return.`
+                  : `You'll wire $${fmt(cashAmount)} and expect ${qty} tires in return.`
+                }
+                {' '}No guarantees.
+              </div>
+            </>
+          )}
+
+          {offerType === 'revShare' && (
+            <>
+              <div className="text-xs text-dim mb-4">
+                Propose a revenue share: they pay you upfront + a percentage of their daily revenue for a set period.
+              </div>
+              <div className="row gap-8 mb-4">
+                <div style={{ flex: 1 }}>
+                  <div className="text-xs text-dim mb-4">Upfront Cash ($)</div>
+                  <input type="number" className="autoprice-offset" style={{ width: '100%' }} min={0} value={upfrontCash} onChange={e => setUpfrontCash(Math.max(0, Number(e.target.value)))} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div className="text-xs text-dim mb-4">Rev Share (%)</div>
+                  <input type="number" className="autoprice-offset" style={{ width: '100%' }} min={1} max={50} value={revSharePct} onChange={e => setRevSharePct(Math.max(1, Math.min(50, Number(e.target.value))))} />
+                </div>
+              </div>
+              <div className="mb-4">
+                <div className="text-xs text-dim mb-4">Duration (days)</div>
+                <input type="number" className="autoprice-offset" style={{ width: '100%' }} min={7} max={365} value={revShareDays} onChange={e => setRevShareDays(Math.max(7, Math.min(365, Number(e.target.value))))} />
+              </div>
+              <div className="text-xs text-dim mb-4">
+                They pay ${fmt(upfrontCash)} upfront + {revSharePct}% of their daily revenue for {revShareDays} days.
+              </div>
+            </>
+          )}
 
           <button
             className="btn btn-full btn-sm"
             style={{ background: 'var(--accent)', color: '#000' }}
-            disabled={!receiverId || !tireType || qty <= 0 || cashAmount <= 0 || busy === 'offer'}
+            disabled={!receiverId || (offerType !== 'revShare' && (!tireType || qty <= 0 || cashAmount <= 0)) || busy === 'offer'}
             onClick={submitOffer}
           >
             {busy === 'offer' ? 'Sending...' : 'Send Trade Offer'}

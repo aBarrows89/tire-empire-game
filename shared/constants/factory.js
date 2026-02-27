@@ -20,4 +20,26 @@ export const FACTORY = {
   },
 
   monthlyOverhead: 50000,
+
+  // Asset values for wealth calculation
+  factoryValue: [0, 5000000, 7000000, 17000000], // index = level
+
+  // Factory staffing
+  staff: {
+    lineWorkers: { salary: 3200, capacityBoost: 10, label: 'Line Worker' },
+    inspectors: { salary: 4500, defectReduce: 0.02, label: 'Quality Inspector' },
+    engineers: { salary: 6500, qualityBoost: 0.005, label: 'R&D Engineer' },
+    manager: { salary: 7000, efficiencyBoost: 0.20, max: 1, label: 'Factory Manager' },
+  },
+
+  // R&D system
+  baseDefectRate: 0.15,
+  minDefectRate: 0.01,
+
+  // Volume discounts on production cost
+  volumeDiscounts: [
+    { minQty: 100, discount: 0.10 },
+    { minQty: 200, discount: 0.20 },
+    { minQty: 300, discount: 0.30 },
+  ],
 };

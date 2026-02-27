@@ -1,6 +1,7 @@
 import { TIRES } from '../constants/tires.js';
 import { CITIES } from '../constants/cities.js';
 import { shopCost } from '../constants/shop.js';
+import { FACTORY } from '../constants/factory.js';
 
 export function getWealth(g) {
   const debt = (g.loans || []).reduce((a, l) => a + (l.remaining || 0), 0);
@@ -42,6 +43,11 @@ export function getWealth(g) {
     (a, r) => a + ((r.monthlyEstimate || 0) * (r.revSharePct || 0)) * (r.remaining || 0), 0
   );
 
+  // Factory asset value
+  const factoryValue = g.hasFactory && g.factory
+    ? (FACTORY.factoryValue[g.factory.level] || 0)
+    : 0;
+
   return Math.floor(
     g.cash
     + (g.bankBalance || 0)
@@ -49,6 +55,7 @@ export function getWealth(g) {
     + locValue
     + installmentValue
     + revShareValue
+    + factoryValue
     - debt
   );
 }

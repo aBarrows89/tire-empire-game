@@ -27,7 +27,7 @@ export function getStorageCap(g) {
   const hasPremiumVan = (g.cosmetics || []).includes('premium_van');
   return g.storage.reduce((a, s) => {
     const base = STORAGE[s.type].cap;
-    if (s.type === 'van' && hasPremiumVan) return a + 40;
+    if (s.type === 'van' && hasPremiumVan) return a + 50;
     return a + base;
   }, 0);
 }

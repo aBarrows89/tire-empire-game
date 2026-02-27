@@ -20,6 +20,7 @@ export default function SupplierPanel() {
   const [autoTire, setAutoTire] = useState({});
   const [autoQty, setAutoQty] = useState({});
   const [autoThreshold, setAutoThreshold] = useState({});
+  const [importMsg, setImportMsg] = useState(null);
 
   const unlock = async (index) => {
     setBusy(`u${index}`);
@@ -161,6 +162,19 @@ export default function SupplierPanel() {
                       {orderQty < sup.min ? `Min ${sup.min}` : 'Order'}
                     </button>
                   </div>
+                  {(() => {
+                    const ot = TIRES[orderTire];
+                    if (!ot) return null;
+                    const perTire = Math.round(ot.bMin * (1 - sup.disc) * 100) / 100;
+                    const relDisc = currentTier.discBonus || 0;
+                    const effectivePerTire = Math.round(perTire * (1 - relDisc) * 100) / 100;
+                    const total = Math.round(effectivePerTire * orderQty);
+                    return (
+                      <div className="text-xs text-dim" style={{ marginTop: 4 }}>
+                        ${effectivePerTire}/tire {relDisc > 0 ? `(incl. ${(relDisc*100).toFixed(0)}% loyalty)` : ''} = <span className="font-bold">${fmt(total)} total</span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Auto-Order Section */}
@@ -279,7 +293,11 @@ export default function SupplierPanel() {
             disabled={importQty <= 0 || busy === 'import'}
             onClick={async () => {
               setBusy('import');
-              await postAction('importOrder', { tire: importTire, qty: importQty });
+              setImportMsg(null);
+              const res = await postAction('importOrder', { tire: importTire, qty: importQty });
+              if (res.ok) {
+                setImportMsg(`Order placed! ${importQty} ${TIRES[importTire]?.n || importTire} arriving in 5-7 days`);
+              }
               refreshState();
               setBusy(null);
             }}
@@ -288,6 +306,11 @@ export default function SupplierPanel() {
           </button>
         </div>
         <div className="text-xs text-dim">Lead time: 5-7 days</div>
+        {importMsg && (
+          <div className="text-xs text-green font-bold" style={{ marginTop: 6 }}>
+            {importMsg}
+          </div>
+        )}
       </div>
 
       {/* Pending Imports */}

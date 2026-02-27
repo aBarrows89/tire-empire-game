@@ -289,6 +289,56 @@ export function simAIPlayerDay(g) {
     }
   }
 
+  // ── INVENTORY REPLENISHMENT ──
+  // AI players restock their locations periodically
+  if (Math.random() < 0.3) {
+    const tireKeys = Object.keys(TIRES).filter(k => !TIRES[k].used);
+    for (const loc of (g.locations || [])) {
+      if (!loc.inventory) loc.inventory = {};
+      const locTotal = Object.values(loc.inventory).reduce((a, b) => a + b, 0);
+      const locCap = 50 + (loc.locStorage || 0);
+      if (locTotal < locCap * 0.5) {
+        // Restock with random tires
+        const toAdd = Ri(5, Math.min(20, locCap - locTotal));
+        for (let j = 0; j < toAdd; j++) {
+          const k = tireKeys[Ri(0, tireKeys.length)];
+          loc.inventory[k] = (loc.inventory[k] || 0) + 1;
+        }
+      }
+    }
+  }
+
+  // ── PRICE ADJUSTMENTS ──
+  // AI players occasionally adjust prices toward market competitive range
+  if (Math.random() < 0.1) {
+    for (const [k, t] of Object.entries(TIRES)) {
+      if (!g.prices[k]) continue;
+      // Drift toward default ±15%
+      const target = t.def * R(0.85, 1.15);
+      g.prices[k] = Math.round(g.prices[k] * 0.9 + target * 0.1);
+      g.prices[k] = Math.max(t.lo, Math.min(t.hi, g.prices[k]));
+    }
+  }
+
+  // ── WAREHOUSE INVENTORY ──
+  // AI players restock their warehouse
+  if (Math.random() < 0.2 && g.cash > 10000) {
+    const tireKeys = Object.keys(TIRES).filter(k => !TIRES[k].used);
+    if (!g.warehouseInventory) g.warehouseInventory = {};
+    const whTotal = Object.values(g.warehouseInventory).reduce((a, b) => a + b, 0);
+    if (whTotal < 100) {
+      const toAdd = Ri(10, 30);
+      const cost = toAdd * 50; // ~$50/tire avg
+      if (g.cash > cost) {
+        g.cash -= cost;
+        for (let j = 0; j < toAdd; j++) {
+          const k = tireKeys[Ri(0, tireKeys.length)];
+          g.warehouseInventory[k] = (g.warehouseInventory[k] || 0) + 1;
+        }
+      }
+    }
+  }
+
   // Bank interest
   if (g.bankBalance > 0) {
     const interest = Math.round(g.bankBalance * (g.bankRate || 0.042) / 360);
@@ -317,6 +367,21 @@ export function simAIPlayerDay(g) {
         dailyStats: { rev: 0, sold: 0, profit: 0 },
         staff: { techs: 1, sales: 1, managers: 0 },
       });
+    }
+  }
+
+  // Occasionally hire staff for understaffed locations
+  if (Math.random() < 0.05) {
+    for (const loc of (g.locations || [])) {
+      if (!loc.staff) loc.staff = { techs: 1, sales: 1, managers: 0 };
+      if (loc.staff.techs < 3 && g.cash > 10000) {
+        loc.staff.techs++;
+        g.cash -= 3000;
+      }
+      if (loc.staff.sales < 2 && g.cash > 8000) {
+        loc.staff.sales++;
+        g.cash -= 2500;
+      }
     }
   }
 

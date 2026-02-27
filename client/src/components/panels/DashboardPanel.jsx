@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { fmt } from '@shared/helpers/format.js';
 import { TIRES } from '@shared/constants/tires.js';
+import { CITIES } from '@shared/constants/cities.js';
 import { getWealth } from '@shared/helpers/wealth.js';
 import { getInv, getCap } from '@shared/helpers/inventory.js';
 import { PAY } from '@shared/constants/staff.js';
 import { MARKETING } from '@shared/constants/marketing.js';
 import { INSURANCE } from '@shared/constants/insurance.js';
+import { FACTORY } from '@shared/constants/factory.js';
 import VinnieTip from '../VinnieTip.jsx';
 import Sparkline from '../Sparkline.jsx';
 import TrendArrow from '../TrendArrow.jsx';
@@ -20,6 +22,17 @@ const QUICK_ACTIONS = [
   { id: 'supplier', icon: '\u{1F69A}', label: 'Supply' },
   { id: 'staff', icon: '\u{1F465}', label: 'Staff' },
 ];
+
+const CHANNEL_LABELS = {
+  shops: 'Shops',
+  flea: 'Flea Markets',
+  carMeets: 'Car Meets',
+  ecom: 'E-Commerce',
+  wholesale: 'Wholesale',
+  gov: 'Gov Contracts',
+  van: 'Van Sales',
+  services: 'Services',
+};
 
 export default function DashboardPanel() {
   const { state, dispatch } = useGame();
@@ -39,7 +52,7 @@ export default function DashboardPanel() {
 
   // Daily expense estimates
   const staffCost = Object.entries(g.staff || {}).reduce((a, [k, v]) => a + (PAY[k] || 0) * v, 0) / 30;
-  const shopRentEst = (g.locations || []).length * 4500 / 30; // rough estimate
+  const shopRentEst = (g.locations || []).length * 4500 / 30;
   const marketingCost = (g.locations || []).reduce((a, loc) => {
     const mktg = loc.marketing && MARKETING[loc.marketing];
     return a + (mktg ? (mktg.costPerDay || mktg.dailyCost || 0) : 0);
@@ -49,7 +62,34 @@ export default function DashboardPanel() {
     const wkPmt = l.weeklyPayment || 0;
     return a + wkPmt / 7;
   }, 0);
-  const totalDailyExpenses = staffCost + shopRentEst + marketingCost + insuranceCost + loanCost;
+
+  // Factory costs
+  const factoryOverhead = g.hasFactory ? FACTORY.monthlyOverhead / 30 : 0;
+  const factoryStaff = g.factory?.staff || {};
+  const factoryPayroll = g.hasFactory
+    ? Object.entries(factoryStaff).reduce((a, [role, count]) => {
+        const def = FACTORY.staff?.[role];
+        return a + (def ? def.salary * count : 0);
+      }, 0) / 30
+    : 0;
+
+  const totalDailyExpenses = staffCost + shopRentEst + marketingCost + insuranceCost + loanCost + factoryOverhead + factoryPayroll;
+
+  // Staff capacity calculations
+  const techs = g.staff?.techs || 0;
+  const sales = g.staff?.sales || 0;
+  const managers = g.staff?.managers || 0;
+  const drivers = g.staff?.drivers || 0;
+  const techCap = techs * 8 * (1 + managers * 0.15);
+  const salesCap = sales * 5 * (1 + managers * 0.15);
+  const effectiveCap = Math.min(techCap, salesCap);
+
+  // Channel data
+  const channels = g.dayRevByChannel || {};
+  const hasChannelData = Object.values(channels).some(v => v > 0);
+
+  // Net daily P&L
+  const netPL = (g.dayRev || 0) - totalDailyExpenses;
 
   return (
     <>
@@ -82,6 +122,12 @@ export default function DashboardPanel() {
                 <span className="text-dim">Profit</span>
                 <span className={`font-bold ${(g.dayProfit || 0) >= 0 ? 'text-green' : 'text-red'}`}>
                   ${fmt(g.dayProfit || 0)}
+                </span>
+              </div>
+              <div className="row-between text-sm mb-4">
+                <span className="text-dim">Net P&L</span>
+                <span className={`font-bold ${netPL >= 0 ? 'text-green' : 'text-red'}`}>
+                  ${fmt(netPL)}
                 </span>
               </div>
             </div>
@@ -150,13 +196,106 @@ export default function DashboardPanel() {
         )}
       </div>
 
+      {/* Sales Channel Breakdown */}
+      {hasChannelData && (
+        <div className="card">
+          <div className="card-title">Revenue by Channel</div>
+          {Object.entries(CHANNEL_LABELS).map(([key, label]) => {
+            const rev = channels[key] || 0;
+            if (rev <= 0) return null;
+            const pctOfTotal = (g.dayRev || 0) > 0 ? Math.round((rev / g.dayRev) * 100) : 0;
+            return (
+              <div key={key} className="row-between text-sm mb-4">
+                <span className="text-dim">{label}</span>
+                <span>
+                  <span className="font-bold text-green">${fmt(rev)}</span>
+                  <span className="text-dim" style={{ marginLeft: 6 }}>{pctOfTotal}%</span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Per-Location Performance */}
+      {(g.locations || []).length > 0 && (
+        <div className="card">
+          <div className="card-title">Store Performance</div>
+          {g.locations.map((loc, i) => {
+            const city = CITIES.find(c => c.id === loc.cityId);
+            const cityName = city ? `${city.name}, ${city.state}` : (loc.cityId || 'Unknown');
+            const locInvNow = Object.values(loc.inventory || {}).reduce((a, b) => a + b, 0);
+            const locCap = loc.capacity || 500;
+            const fillPct = locCap > 0 ? Math.round((locInvNow / locCap) * 100) : 0;
+            const stats = loc.dailyStats || { rev: 0, sold: 0, profit: 0 };
+            const loyalty = Math.round(loc.loyalty || 0);
+            const isProfitable = stats.profit >= 0;
+            return (
+              <div key={loc.id || i} style={{ marginBottom: i < g.locations.length - 1 ? 10 : 0, paddingBottom: i < g.locations.length - 1 ? 10 : 0, borderBottom: i < g.locations.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                <div className="row-between mb-4">
+                  <span className="font-bold text-sm">{cityName}</span>
+                  <span className={`font-bold text-sm ${isProfitable ? 'text-green' : 'text-red'}`}>
+                    ${fmt(stats.rev)}
+                  </span>
+                </div>
+                <div className="row-between text-xs mb-4">
+                  <span className="text-dim">Sold: {stats.sold}</span>
+                  <span className="text-dim">Loyalty: {loyalty}</span>
+                  <span className="text-dim">Stock: {fillPct}%</span>
+                </div>
+                <div className="progress-bar" style={{ height: 3 }}>
+                  <div className="progress-fill" style={{ width: `${fillPct}%`, background: fillPct < 20 ? 'var(--red)' : fillPct < 50 ? 'var(--accent)' : 'var(--green)' }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Staff Efficiency */}
+      {(techs > 0 || sales > 0 || drivers > 0) && (
+        <div className="card">
+          <div className="card-title">Staff Efficiency</div>
+          {techs > 0 && (
+            <div className="row-between text-sm mb-4">
+              <span className="text-dim">Tech Utilization</span>
+              <span className={`font-bold ${techCap > 0 && (g.daySold || 0) / techCap > 0.7 ? 'text-green' : 'text-accent'}`}>
+                {g.daySold || 0}/{Math.round(techCap)} ({techCap > 0 ? Math.round(((g.daySold || 0) / techCap) * 100) : 0}%)
+              </span>
+            </div>
+          )}
+          {sales > 0 && (
+            <div className="row-between text-sm mb-4">
+              <span className="text-dim">Sales Coverage</span>
+              <span className={`font-bold ${salesCap > 0 && (g.daySold || 0) / salesCap > 0.7 ? 'text-green' : 'text-accent'}`}>
+                {g.daySold || 0}/{Math.round(salesCap)} ({salesCap > 0 ? Math.round(((g.daySold || 0) / salesCap) * 100) : 0}%)
+              </span>
+            </div>
+          )}
+          {drivers > 0 && (
+            <div className="row-between text-sm mb-4">
+              <span className="text-dim">Driver Capacity</span>
+              <span className="font-bold">{drivers * 40} tires/day</span>
+            </div>
+          )}
+          {effectiveCap > 0 && (
+            <div className="row-between text-sm mb-4">
+              <span className="text-dim">Bottleneck</span>
+              <span className="font-bold text-accent">
+                {techCap <= salesCap ? 'Techs (hire more techs)' : 'Sales (hire more sales)'}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Daily Expenses Breakdown */}
       {totalDailyExpenses > 0 && (
         <div className="card">
           <div className="card-title">Daily Expenses</div>
           {staffCost > 0 && (
             <div className="row-between text-sm mb-4">
-              <span className="text-dim">Staff</span>
+              <span className="text-dim">Store Staff</span>
               <span className="text-red">-${fmt(staffCost)}</span>
             </div>
           )}
@@ -184,9 +323,27 @@ export default function DashboardPanel() {
               <span className="text-red">-${fmt(loanCost)}</span>
             </div>
           )}
+          {factoryOverhead > 0 && (
+            <div className="row-between text-sm mb-4">
+              <span className="text-dim">Factory Overhead</span>
+              <span className="text-red">-${fmt(factoryOverhead)}</span>
+            </div>
+          )}
+          {factoryPayroll > 0 && (
+            <div className="row-between text-sm mb-4">
+              <span className="text-dim">Factory Staff</span>
+              <span className="text-red">-${fmt(factoryPayroll)}</span>
+            </div>
+          )}
           <div className="row-between text-sm font-bold" style={{ borderTop: '1px solid var(--border)', paddingTop: 4, marginTop: 4 }}>
-            <span>Total</span>
+            <span>Total Expenses</span>
             <span className="text-red">-${fmt(totalDailyExpenses)}/day</span>
+          </div>
+          <div className="row-between text-sm font-bold" style={{ marginTop: 6 }}>
+            <span>Net P&L</span>
+            <span className={netPL >= 0 ? 'text-green' : 'text-red'}>
+              {netPL >= 0 ? '+' : ''}${fmt(netPL)}/day
+            </span>
           </div>
         </div>
       )}

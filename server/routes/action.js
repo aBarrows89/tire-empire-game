@@ -177,6 +177,7 @@ router.post('/', authMiddleware, async (req, res) => {
         if (!t) return res.status(400).json({ error: 'Invalid tire type' });
         const sup = SUPPLIERS[supplierIndex];
         if (!sup) return res.status(400).json({ error: 'Invalid supplier' });
+        if (qty < sup.min) return res.status(400).json({ error: `Minimum order is ${sup.min} tires` });
         const orderCost = qty * t.bMin * (1 - sup.disc);
         if (g.cash < orderCost) return res.status(400).json({ error: 'Not enough cash' });
         if (getInv(g) + qty > getCap(g)) return res.status(400).json({ error: 'Not enough storage' });
@@ -981,6 +982,179 @@ router.post('/', authMiddleware, async (req, res) => {
         if (!g.cosmetics) g.cosmetics = [];
         if (!g.cosmetics.includes('gold_name')) g.cosmetics.push('gold_name');
         g.log.push('[DEV] Premium membership activated');
+        break;
+      }
+
+      // ── E-COMMERCE UNLOCK & MANAGEMENT ──
+      case 'unlockEcom': {
+        if (g.hasEcom) return res.status(400).json({ error: 'Already unlocked' });
+        const { ECOM_UNLOCK_COST, ECOM_MIN_REP, ECOM_MIN_STORAGE } = await import('../../shared/constants/ecommerce.js');
+        if (g.reputation < ECOM_MIN_REP) return res.status(400).json({ error: `Need reputation ${ECOM_MIN_REP}+` });
+        const totalCap = getCap(g);
+        if (totalCap < ECOM_MIN_STORAGE) return res.status(400).json({ error: `Need ${ECOM_MIN_STORAGE}+ storage capacity` });
+        if (g.cash < ECOM_UNLOCK_COST) return res.status(400).json({ error: 'Not enough cash' });
+        g.cash -= ECOM_UNLOCK_COST;
+        g.hasEcom = true;
+        if (!g.ecomStaff) g.ecomStaff = {};
+        if (!g.ecomUpgrades) g.ecomUpgrades = [];
+        g.ecomTotalSpent = (g.ecomTotalSpent || 0) + ECOM_UNLOCK_COST;
+        g.log.push('Launched online tire store!');
+        break;
+      }
+
+      case 'hireEcomStaff': {
+        const { role } = params;
+        const { ECOM_STAFF: ESTAFF } = await import('../../shared/constants/ecommerce.js');
+        if (!ESTAFF[role]) return res.status(400).json({ error: 'Invalid role' });
+        if (g.ecomStaff[role]) return res.status(400).json({ error: 'Already hired' });
+        const staff = ESTAFF[role];
+        if (staff.req) {
+          for (const [req2, val] of Object.entries(staff.req)) {
+            if (!g.ecomStaff[req2]) return res.status(400).json({ error: `Requires ${ESTAFF[req2]?.title || req2} first` });
+          }
+        }
+        if (g.cash < staff.salary) return res.status(400).json({ error: 'Not enough cash for first month salary' });
+        g.cash -= staff.salary;
+        g.ecomStaff[role] = true;
+        g.ecomTotalSpent = (g.ecomTotalSpent || 0) + staff.salary;
+        break;
+      }
+
+      case 'fireEcomStaff': {
+        const { role } = params;
+        if (!g.ecomStaff || !g.ecomStaff[role]) return res.status(400).json({ error: 'Staff not hired' });
+        g.ecomStaff[role] = false;
+        break;
+      }
+
+      case 'buyEcomUpgrade': {
+        const { upgradeId } = params;
+        const { ECOM_UPGRADES: EUPG } = await import('../../shared/constants/ecommerce.js');
+        if (!EUPG[upgradeId]) return res.status(400).json({ error: 'Invalid upgrade' });
+        if ((g.ecomUpgrades || []).includes(upgradeId)) return res.status(400).json({ error: 'Already purchased' });
+        const up = EUPG[upgradeId];
+        if (up.req) {
+          for (const [req2, val] of Object.entries(up.req)) {
+            if (!g.ecomStaff?.[req2]) return res.status(400).json({ error: `Requires ${req2} first` });
+          }
+        }
+        if (g.cash < up.cost) return res.status(400).json({ error: 'Not enough cash' });
+        g.cash -= up.cost;
+        if (!g.ecomUpgrades) g.ecomUpgrades = [];
+        g.ecomUpgrades.push(upgradeId);
+        g.ecomTotalSpent = (g.ecomTotalSpent || 0) + up.cost;
+        break;
+      }
+
+      // ── WHOLESALE UNLOCK & MANAGEMENT ──
+      case 'unlockWholesale': {
+        if (g.hasWholesale) return res.status(400).json({ error: 'Already unlocked' });
+        const { WS_MIN_REP, WS_MIN_STORAGE } = await import('../../shared/constants/wholesale.js');
+        if (g.reputation < WS_MIN_REP) return res.status(400).json({ error: `Need reputation ${WS_MIN_REP}+` });
+        const wsCap = getCap(g);
+        if (wsCap < WS_MIN_STORAGE) return res.status(400).json({ error: `Need ${WS_MIN_STORAGE}+ storage capacity` });
+        g.hasWholesale = true;
+        if (!g.wsClients) g.wsClients = [];
+        g.log.push('Opened wholesale distribution channel!');
+        break;
+      }
+
+      case 'addWsClient': {
+        if (!g.hasWholesale) return res.status(400).json({ error: 'Wholesale not unlocked' });
+        const { name, preferredTire, minOrder, maxOrder } = params;
+        if (!name) return res.status(400).json({ error: 'Client name required' });
+        if (!TIRES[preferredTire]) return res.status(400).json({ error: 'Invalid tire type' });
+        if (!g.wsClients) g.wsClients = [];
+        g.wsClients.push({
+          id: uid(),
+          name,
+          preferredTire,
+          minOrder: Math.max(5, Math.floor(Number(minOrder) || 5)),
+          maxOrder: Math.max(10, Math.floor(Number(maxOrder) || 20)),
+          joinedDay: g.day,
+        });
+        break;
+      }
+
+      // ── FACTORY BRAND SYSTEM ──
+      case 'setFactoryBrandName': {
+        if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });
+        const { brandName } = params;
+        if (!brandName || brandName.length < 2) return res.status(400).json({ error: 'Brand name too short' });
+        g.factory.brandName = brandName.slice(0, 40);
+        break;
+      }
+
+      case 'hireFactoryStaff': {
+        if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });
+        const { role } = params;
+        const factStaff = FACTORY.staff[role];
+        if (!factStaff) return res.status(400).json({ error: 'Invalid factory staff role' });
+        if (!g.factory.staff) g.factory.staff = { lineWorkers: 0, inspectors: 0, engineers: 0, manager: 0 };
+        if (role === 'manager' && g.factory.staff.manager >= (factStaff.max || 1)) {
+          return res.status(400).json({ error: 'Max 1 factory manager' });
+        }
+        if (g.cash < factStaff.salary) return res.status(400).json({ error: 'Not enough cash' });
+        g.cash -= factStaff.salary;
+        g.factory.staff[role] = (g.factory.staff[role] || 0) + 1;
+        break;
+      }
+
+      case 'fireFactoryStaff': {
+        if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });
+        const { role } = params;
+        if (!g.factory.staff || !g.factory.staff[role] || g.factory.staff[role] <= 0) {
+          return res.status(400).json({ error: 'No staff to fire' });
+        }
+        g.factory.staff[role]--;
+        break;
+      }
+
+      case 'setFactoryWholesalePrice': {
+        if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });
+        const { tire, price: fwPrice } = params;
+        if (!FACTORY.productionCost[tire]) return res.status(400).json({ error: 'Invalid factory tire type' });
+        if (!g.factory.wholesalePrices) g.factory.wholesalePrices = {};
+        g.factory.wholesalePrices[tire] = Math.max(1, Math.floor(Number(fwPrice) || 0));
+        break;
+      }
+
+      case 'setFactoryMinOrder': {
+        if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });
+        const { tire, minQty } = params;
+        if (!FACTORY.productionCost[tire]) return res.status(400).json({ error: 'Invalid factory tire type' });
+        if (!g.factory.minOrders) g.factory.minOrders = {};
+        g.factory.minOrders[tire] = Math.max(1, Math.floor(Number(minQty) || 10));
+        break;
+      }
+
+      case 'upgradeFactory': {
+        if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });
+        const currentLevel = g.factory.level || 1;
+        const nextLevel = FACTORY.levels.find(l => l.level === currentLevel + 1);
+        if (!nextLevel) return res.status(400).json({ error: 'Already at max level' });
+        if (g.cash < nextLevel.upgradeCost) return res.status(400).json({ error: 'Not enough cash' });
+        g.cash -= nextLevel.upgradeCost;
+        g.factory.level = nextLevel.level;
+        g.factory.dailyCapacity = nextLevel.dailyCapacity;
+        g.log.push(`Factory upgraded to ${nextLevel.name}!`);
+        break;
+      }
+
+      case 'listFactoryForSale': {
+        if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });
+        const { askingPrice: factAskPrice } = params;
+        g.factoryListing = {
+          askingPrice: Math.max(1, Math.floor(Number(factAskPrice) || FACTORY.factoryValue[g.factory.level] || 5000000)),
+          listedDay: g.day,
+        };
+        g.log.push(`Listed factory for sale at $${fmt(g.factoryListing.askingPrice)}`);
+        break;
+      }
+
+      case 'delistFactory': {
+        g.factoryListing = null;
+        g.log.push('Delisted factory from sale');
         break;
       }
 

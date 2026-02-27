@@ -75,7 +75,7 @@ function pullFromStock(s, tire, qty) {
 }
 
 export function simDay(g, shared = {}) {
-  let s = { ...g, day: g.day + 1, dayRev: 0, dayProfit: 0, daySold: 0, log: [], _events: [] };
+  let s = { ...g, day: g.day + 1, dayRev: 0, dayProfit: 0, daySold: 0, log: [], _events: [], dayRevByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0, services: 0 } };
 
   // Save previous day values for trend arrows
   s.prevDayRev = g.dayRev || 0;
@@ -138,14 +138,47 @@ export function simDay(g, shared = {}) {
 
   // ── FACTORY PRODUCTION ──
   if (s.hasFactory && s.factory) {
-    s.factory = { ...s.factory, productionQueue: [...(s.factory.productionQueue || [])] };
+    s.factory = { ...s.factory, productionQueue: [...(s.factory.productionQueue || [])], staff: { ...(s.factory.staff || { lineWorkers: 0, inspectors: 0, engineers: 0, manager: 0 }) } };
+    const fStaff = s.factory.staff;
+    const managerBoost = 1 + (fStaff.manager || 0) * 0.20;
+
+    // Production completions — apply defect rate
     const completed = s.factory.productionQueue.filter(q => s.day >= q.completionDay);
     s.factory.productionQueue = s.factory.productionQueue.filter(q => s.day < q.completionDay);
+    let producedTotal = 0;
     for (const q of completed) {
-      s.warehouseInventory[q.tire] = (s.warehouseInventory[q.tire] || 0) + q.qty;
-      s.log.push({ msg: `🏭 Factory produced ${q.qty} ${TIRES[q.tire]?.n || q.tire}`, cat: 'sale' });
+      // Defect rate: base 15%, reduced by inspectors (2% each), min 1%
+      const defectRate = Math.max(FACTORY.minDefectRate, FACTORY.baseDefectRate - (fStaff.inspectors || 0) * 0.02);
+      const goodQty = Math.max(1, Math.floor(q.qty * (1 - defectRate)));
+      s.warehouseInventory[q.tire] = (s.warehouseInventory[q.tire] || 0) + goodQty;
+      producedTotal += goodQty;
+      if (goodQty < q.qty) {
+        s.log.push({ msg: `\u{1F3ED} Factory produced ${goodQty}/${q.qty} ${TIRES[q.tire]?.n || q.tire} (${q.qty - goodQty} defective)`, cat: 'sale' });
+      } else {
+        s.log.push({ msg: `\u{1F3ED} Factory produced ${goodQty} ${TIRES[q.tire]?.n || q.tire}`, cat: 'sale' });
+      }
     }
+
+    // R&D: passive quality improvement from engineers + production experience
+    const qualityCap = (FACTORY.levels.find(l => l.level === s.factory.level) || FACTORY.levels[0]).qualityMax;
+    const qualityGain = ((fStaff.engineers || 0) * 0.0002 + producedTotal * 0.00001) * managerBoost;
+    s.factory.qualityRating = Math.min(qualityCap, (s.factory.qualityRating || 0.80) + qualityGain);
+
+    // Brand reputation grows with sales volume and quality
+    s.factory.brandReputation = Math.min(100, (s.factory.brandReputation || 0) + producedTotal * 0.01 * (s.factory.qualityRating || 0.80));
+
+    // Effective daily capacity = level base + line workers
+    s.factory.dailyCapacity = (FACTORY.levels.find(l => l.level === s.factory.level) || FACTORY.levels[0]).dailyCapacity + (fStaff.lineWorkers || 0) * 10;
+
+    // Factory overhead
     s.cash -= (FACTORY.monthlyOverhead || 50000) / 30;
+
+    // Factory staff payroll
+    const factoryPayroll = Object.entries(fStaff).reduce((a, [role, count]) => {
+      const staffDef = FACTORY.staff[role];
+      return a + (staffDef ? staffDef.salary * count : 0);
+    }, 0) / 30;
+    s.cash -= factoryPayroll;
   }
 
   const season = getSeason(s.day);
@@ -197,12 +230,42 @@ export function simDay(g, shared = {}) {
     }
   }
 
+  // ── AUTO-FILL STORES FROM WAREHOUSE (requires drivers) ──
+  const driverCount = s.staff.drivers || 0;
+  if (driverCount > 0 && s.locations.length > 0) {
+    const driverCap = driverCount * 40; // 40 tires per driver per day
+    let moved = 0;
+    for (const loc of s.locations) {
+      if (moved >= driverCap) break;
+      if (!loc.inventory) loc.inventory = {};
+      const locFree = getLocCap(loc) - getLocInv(loc);
+      if (locFree <= 0) continue;
+      const toMove = Math.min(locFree, driverCap - moved);
+      // Move tires from warehouse to this location
+      for (const [k, whQty] of Object.entries(s.warehouseInventory)) {
+        if (moved >= driverCap || toMove <= 0) break;
+        if (whQty <= 0) continue;
+        const take = Math.min(whQty, toMove - (getLocCap(loc) - getLocInv(loc) < 0 ? 0 : getLocCap(loc) - getLocInv(loc)), driverCap - moved);
+        if (take <= 0) continue;
+        s.warehouseInventory[k] -= take;
+        loc.inventory[k] = (loc.inventory[k] || 0) + take;
+        moved += take;
+      }
+    }
+    if (moved > 0) {
+      s.log.push({ msg: `\u{1F69A} Drivers moved ${moved} tires from warehouse to stores`, cat: 'source' });
+    }
+  }
+
   // ── RETAIL SALES (per-location inventory) — daily ──
   let newTiresSold = 0;
   const locTakeOffSources = {};
   if (s.locations.length > 0) {
-    // Daily staff capacity (was techs*8 + sales*5 weekly)
-    const staffCap = (s.staff.techs * 1.5 + s.staff.sales * 0.7) * (1 + s.staff.managers * .15);
+    // Staff capacity: techs = output (installs), sales = demand (customers)
+    // Cap is min of both — need techs to install AND sales to bring customers
+    const techCap = s.staff.techs * 8;
+    const salesCap = s.staff.sales * 5;
+    const staffCap = Math.min(techCap, salesCap) * (1 + s.staff.managers * .15);
     const demandMult = sDem * (1 + s.reputation * .01) * (s._tB || 1);
     const whPenalty = 1 - getWhShortage(s) * .08;
 
@@ -285,6 +348,7 @@ export function simDay(g, shared = {}) {
         loc.dailyStats.rev += rev;
         loc.dailyStats.sold += qty;
         loc.dailyStats.profit += rev - cost;
+        s.dayRevByChannel.shops += rev;
         if (!t.used) {
           newTiresSold += qty;
           locNewSold += qty;
@@ -299,8 +363,8 @@ export function simDay(g, shared = {}) {
   s.dayServiceRev = 0;
   s.dayServiceJobs = 0;
   if (s.locations.length > 0 && s.staff.techs > 0) {
-    // Daily tech capacity (was techs*8 weekly)
-    const totalTechCap = s.staff.techs * 1.5 * (1 + s.staff.managers * .15);
+    // Daily tech capacity (8 per tech)
+    const totalTechCap = s.staff.techs * 8 * (1 + s.staff.managers * .15);
     const usedByTires = s.daySold;
     const spareCap = Math.max(0, totalTechCap - usedByTires);
 
@@ -323,6 +387,7 @@ export function simDay(g, shared = {}) {
       s.dayProfit += rev;
       s.dayServiceRev += rev;
       s.dayServiceJobs += jobs;
+      s.dayRevByChannel.services += rev;
       if (svcKey === 'install') s._installJobs = (s._installJobs || 0) + jobs;
       s.reputation = C(s.reputation + jobs * svc.repBoost, 0, 100);
       capLeft -= jobs * svc.time;
@@ -425,6 +490,7 @@ export function simDay(g, shared = {}) {
         s.dayProfit += qty * (price - (t.bMin + t.bMax) / 2);
         s.daySold += qty;
         s.vanTotalSold = (s.vanTotalSold || 0) + qty;
+        s.dayRevByChannel.van += qty * price;
         sold += qty;
       }
       // Track van-only profitable days
@@ -444,7 +510,7 @@ export function simDay(g, shared = {}) {
     s.cash -= numStands * FLEA_DAILY_OPERATING;
 
     // Van capacity divided among stands
-    const vanCap = 20; // base van capacity
+    const vanCap = 30; // base flea van capacity
     const capsPerStand = Math.floor(vanCap / numStands);
 
     for (const stand of s.fleaMarketStands) {
@@ -464,7 +530,7 @@ export function simDay(g, shared = {}) {
         const tireSeasonM = getTireSeasonMult(k, season);
         const sellQty = Math.min(
           whStock,
-          Math.max(1, Math.floor((standDemand - standSold) * 0.2 * usedBonus * tireSeasonM)),
+          Math.max(1, Math.floor((standDemand - standSold) * 0.5 * usedBonus * tireSeasonM)),
           capsPerStand - standSold
         );
         if (sellQty <= 0) continue;
@@ -476,6 +542,7 @@ export function simDay(g, shared = {}) {
         s.dayProfit += sellQty * (price - (t.bMin + t.bMax) / 2);
         s.daySold += sellQty;
         s.fleaMarketTotalSold = (s.fleaMarketTotalSold || 0) + sellQty;
+        s.dayRevByChannel.flea += sellQty * price;
         standSold += sellQty;
       }
       if (standSold > 0) {
@@ -488,28 +555,34 @@ export function simDay(g, shared = {}) {
   if ((s.carMeetAttendance || []).length > 0 && isWeekend) {
     const dayOfYear = cal.dayOfYear;
     if (dayOfYear >= CAR_MEET_SUMMER_START && dayOfYear <= CAR_MEET_SUMMER_END) {
-      const todayMeets = s.carMeetAttendance.filter(a => a.day === s.day);
-      const halfVanCap = 10; // half van capacity per meet
+      // Attendance covers the whole weekend (Fri/Sat/Sun) — check if any attendance within last 2 days
+      const todayMeets = s.carMeetAttendance.filter(a => a.day >= s.day - 2 && a.day <= s.day);
+      // Deduplicate by meetId (don't sell twice for same meet on same day)
+      const seenMeets = new Set();
+      const vanCapPerMeet = 25; // increased from 10
 
       for (const attendance of todayMeets) {
+        if (seenMeets.has(attendance.meetId)) continue;
+        seenMeets.add(attendance.meetId);
         const meet = CAR_MEETS.find(m => m.id === attendance.meetId);
         if (!meet) continue;
 
         let meetSold = 0;
-        const meetDemand = Math.max(1, Math.floor(15 * meet.demandMult * holidayMult));
+        const meetDemand = Math.max(1, Math.floor(25 * meet.demandMult * holidayMult));
 
         for (const [k, t] of Object.entries(TIRES)) {
-          if (meetSold >= halfVanCap) break;
+          if (meetSold >= vanCapPerMeet) break;
           const whStock = s.warehouseInventory[k] || 0;
           if (whStock <= 0) continue;
 
           const isPremium = CAR_MEET_PREMIUM_TIRES.includes(k);
           const premiumMult = isPremium ? meet.premiumPct : 1.0;
           const tireSeasonM = getTireSeasonMult(k, season);
+          // All tires sell well at car meets; premium gets 1.5x bonus
           const sellQty = Math.min(
             whStock,
-            Math.max(1, Math.floor((meetDemand - meetSold) * 0.25 * (isPremium ? 1.5 : 0.5) * tireSeasonM)),
-            halfVanCap - meetSold
+            Math.max(1, Math.floor((meetDemand - meetSold) * 0.25 * (isPremium ? 1.5 : 1.0) * tireSeasonM)),
+            vanCapPerMeet - meetSold
           );
           if (sellQty <= 0) continue;
 
@@ -520,6 +593,7 @@ export function simDay(g, shared = {}) {
           s.dayProfit += sellQty * (price - (t.bMin + t.bMax) / 2);
           s.daySold += sellQty;
           s.carMeetTotalSold = (s.carMeetTotalSold || 0) + sellQty;
+          s.dayRevByChannel.carMeets += sellQty * price;
           meetSold += sellQty;
         }
         if (meetSold > 0) {
@@ -553,6 +627,7 @@ export function simDay(g, shared = {}) {
       s.dayRev += rev;
       s.dayProfit += rev - deliveryCost;
       s.daySold += pulled;
+      s.dayRevByChannel.wholesale += rev;
     }
   }
 
@@ -603,6 +678,7 @@ export function simDay(g, shared = {}) {
     s.ecomDailyRev = ecomRev;
     s.dayRev += ecomRev;
     s.daySold += ecomSold;
+    s.dayRevByChannel.ecom += ecomRev;
 
     const returnRate = Math.max(.02, ECOM_BASE_RETURN_RATE -
       ((s.ecomUpgrades || []).includes("fitmentDb") ? ECOM_UPGRADES.fitmentDb.returnReduce * ECOM_BASE_RETURN_RATE : 0));
@@ -657,8 +733,10 @@ export function simDay(g, shared = {}) {
     if ((gc.daysLeft || gc.weeksLeft * 7 || 0) <= 0) continue;
     const t = TIRES[gc.tire];
     if (!t) continue;
-    // Daily target (was weekly)
-    const dailyTarget = Math.max(1, Math.floor((gc.weeklyTarget || gc.dailyTarget || 1) / 7));
+    // Daily target (was weekly) — scales with drivers
+    const baseDailyTarget = Math.max(1, Math.floor((gc.weeklyTarget || gc.dailyTarget || 1) / 7));
+    const driverBoost = 1 + (s.staff.drivers || 0) * 0.5;
+    const dailyTarget = Math.max(1, Math.floor(baseDailyTarget * driverBoost));
     const totalStock = (s.warehouseInventory?.[gc.tire] || 0) +
       s.locations.reduce((a, l) => a + (l.inventory?.[gc.tire] || 0), 0);
     const canDeliver = Math.min(dailyTarget, totalStock);
@@ -668,6 +746,7 @@ export function simDay(g, shared = {}) {
       s.cash += rev;
       s.dayRev += rev;
       s.daySold += canDeliver;
+      s.dayRevByChannel.gov += rev;
       gc.delivered += canDeliver;
     }
     gc.daysLeft = (gc.daysLeft || (gc.weeksLeft || 0) * 7) - 1;
@@ -960,6 +1039,21 @@ export function simDay(g, shared = {}) {
         s.log.push({ msg: `Rev share from ${rs.buyerName}: +$${payment.toLocaleString()} (${rs.remaining}mo left)`, cat: 'bank' });
       }
       return rs.remaining > 0;
+    });
+  }
+
+  // ── TRADE REVENUE SHARES ──
+  if ((s.tradeRevShares || []).length > 0) {
+    s.tradeRevShares = s.tradeRevShares.filter(rs => {
+      if ((rs.daysLeft || 0) <= 0) return false;
+      const payment = Math.round(s.dayRev * (rs.revSharePct || 0));
+      if (payment > 0) {
+        s.cash -= payment;
+        // Note: partner cash credited in their own tick via shared state
+        // For simplicity, we just deduct from this player
+      }
+      rs.daysLeft--;
+      return rs.daysLeft > 0;
     });
   }
 

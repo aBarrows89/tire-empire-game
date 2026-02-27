@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getPlayer } from '../db/queries.js';
 import { DAYS_PER_YEAR } from '../../shared/helpers/calendar.js';
+import { CITIES } from '../../shared/constants/cities.js';
 
 const router = Router();
 
@@ -16,6 +17,12 @@ router.get('/:playerId', async (req, res) => {
     const currentYear = Math.floor((daysInBusiness - 1) / DAYS_PER_YEAR) + 1;
     const yearStarted = currentYear - yearsInBusiness + 1; // always 1 from player perspective
 
+    // Build city names list for stores
+    const storeCities = (g.locations || []).map(loc => {
+      const city = CITIES.find(c => c.id === loc.cityId);
+      return city ? city.name : 'Unknown';
+    });
+
     res.json({
       name: g.name || 'Unknown',
       companyName: g.companyName || 'Unnamed Co.',
@@ -26,6 +33,7 @@ router.get('/:playerId', async (req, res) => {
       reputation: Math.round((g.reputation || 0) * 10) / 10,
       isPremium: !!g.isPremium,
       cosmetics: g.cosmetics || [],
+      storeCities,
     });
   } catch (err) {
     console.error('GET /api/profile error:', err);

@@ -25,6 +25,8 @@ import LeaderboardPanel from './components/panels/LeaderboardPanel.jsx';
 import TradePanel from './components/panels/TradePanel.jsx';
 import AchievementsPanel from './components/panels/AchievementsPanel.jsx';
 import FactoryPanel from './components/panels/FactoryPanel.jsx';
+import EcommercePanel from './components/panels/EcommercePanel.jsx';
+import WholesalePanel from './components/panels/WholesalePanel.jsx';
 
 const PANELS = {
   dashboard: DashboardPanel,
@@ -42,6 +44,8 @@ const PANELS = {
   profile: ProfilePanel,
   achievements: AchievementsPanel,
   factory: FactoryPanel,
+  ecommerce: EcommercePanel,
+  wholesale: WholesalePanel,
 };
 
 function GameLayout() {
