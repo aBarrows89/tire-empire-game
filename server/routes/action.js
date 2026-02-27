@@ -348,6 +348,7 @@ router.post('/', authMiddleware, async (req, res) => {
       }
 
       case 'resetGame': {
+        if (NODE_ENV === 'production') return res.status(403).json({ error: 'Game reset not available in production' });
         const { init: initFn } = await import('../engine/init.js');
         const game = await getGame();
         const globalDay = game?.day || game?.week || 1;
@@ -978,10 +979,19 @@ router.post('/', authMiddleware, async (req, res) => {
         if (NODE_ENV === 'production') return res.status(403).json({ error: 'Use in-app purchase' });
         g.isPremium = true;
         g.premiumSince = g.day;
-        // Premium includes gold_name cosmetic for free
         if (!g.cosmetics) g.cosmetics = [];
         if (!g.cosmetics.includes('gold_name')) g.cosmetics.push('gold_name');
         g.log.push('[DEV] Premium membership activated');
+        break;
+      }
+
+      case 'activatePremium': {
+        // Production IAP activation — called after successful RevenueCat purchase
+        g.isPremium = true;
+        g.premiumSince = g.day;
+        if (!g.cosmetics) g.cosmetics = [];
+        if (!g.cosmetics.includes('gold_name')) g.cosmetics.push('gold_name');
+        g.log.push('Premium membership activated!');
         break;
       }
 
@@ -1159,6 +1169,7 @@ router.post('/', authMiddleware, async (req, res) => {
       }
 
       case 'devSetState': {
+        if (NODE_ENV === 'production') return res.status(403).json({ error: 'Not available' });
         if (params.cash != null) g.cash = Number(params.cash);
         if (params.reputation != null) g.reputation = Number(params.reputation);
         if (params.day != null) g.day = Number(params.day);

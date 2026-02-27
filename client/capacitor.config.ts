@@ -8,8 +8,8 @@ const config: CapacitorConfig = {
     // For dev testing: uncomment and use your computer's LAN IP
     // url: 'http://192.168.x.x:5173',
     // For production: remove url (uses bundled web assets)
-    // Use http scheme to avoid mixed-content blocking when API is HTTP
-    androidScheme: 'http',
+    // Production: use https. For dev with HTTP API, change to 'http'
+    androidScheme: 'https',
   },
   plugins: {
     StatusBar: {

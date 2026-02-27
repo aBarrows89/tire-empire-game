@@ -1,26 +1,40 @@
 import { useEffect, useRef } from 'react';
+import { getIdToken, getUid } from '../services/firebase.js';
 
 // Detect if running inside a Capacitor native app
 const isNative = typeof window !== 'undefined' && window.Capacitor?.isNativePlatform();
 
 // For native builds: set VITE_SERVER_URL to your hosted server
-// e.g. VITE_SERVER_URL=http://192.168.1.50:3000 (dev LAN)
-// e.g. VITE_SERVER_URL=https://tireempire.example.com (production)
+// e.g. VITE_SERVER_URL=https://tireempire.up.railway.app (production)
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || '';
 
 // If SERVER_URL is set (native builds), use full URL; otherwise relative /api (browser dev)
 const API_BASE = SERVER_URL ? `${SERVER_URL}/api` : '/api';
 
-const PLAYER_ID = 'dev-player';
+/**
+ * Build auth headers dynamically using Firebase ID token.
+ * Falls back to X-Player-Id in dev mode if no Firebase is configured.
+ */
+async function getHeaders() {
+  const base = { 'Content-Type': 'application/json' };
+  try {
+    const token = await getIdToken();
+    if (token) {
+      base['Authorization'] = `Bearer ${token}`;
+    } else if (import.meta.env.DEV) {
+      base['X-Player-Id'] = 'dev-player';
+    }
+  } catch {
+    // Firebase not initialized (missing config) — use dev fallback
+    if (import.meta.env.DEV) {
+      base['X-Player-Id'] = 'dev-player';
+    }
+  }
+  return base;
+}
 
-const headers = {
-  'Content-Type': 'application/json',
-  'X-Player-Id': PLAYER_ID,
-  'ngrok-skip-browser-warning': 'true',
-};
-
-// Export for components that make direct fetch calls
-export { API_BASE, headers };
+// Export for components that need to make direct fetch calls
+export { API_BASE, getHeaders };
 
 /**
  * Fetch with automatic retry on failure.
@@ -48,12 +62,14 @@ async function fetchWithRetry(url, opts = {}, retries = 2) {
 }
 
 export async function getState() {
+  const headers = await getHeaders();
   const res = await fetchWithRetry(`${API_BASE}/state`, { headers });
   if (!res.ok) throw new Error(`GET /api/state failed: ${res.status}`);
   return res.json();
 }
 
 export async function registerPlayer(playerName, companyName) {
+  const headers = await getHeaders();
   const res = await fetchWithRetry(`${API_BASE}/state/register`, {
     method: 'POST',
     headers,
@@ -64,6 +80,7 @@ export async function registerPlayer(playerName, companyName) {
 }
 
 export async function postAction(action, params = {}) {
+  const headers = await getHeaders();
   const res = await fetchWithRetry(`${API_BASE}/action`, {
     method: 'POST',
     headers,
@@ -73,21 +90,25 @@ export async function postAction(action, params = {}) {
 }
 
 export async function getMarket() {
+  const headers = await getHeaders();
   const res = await fetchWithRetry(`${API_BASE}/market`, { headers });
   return res.json();
 }
 
 export async function getLeaderboard() {
+  const headers = await getHeaders();
   const res = await fetchWithRetry(`${API_BASE}/leaderboard`, { headers });
   return res.json();
 }
 
 export async function getTrades() {
+  const headers = await getHeaders();
   const res = await fetchWithRetry(`${API_BASE}/trade`, { headers });
   return res.json();
 }
 
 export async function createTradeOffer(params) {
+  const headers = await getHeaders();
   const res = await fetchWithRetry(`${API_BASE}/trade/offer`, {
     method: 'POST', headers,
     body: JSON.stringify(params),
@@ -96,6 +117,7 @@ export async function createTradeOffer(params) {
 }
 
 export async function tradeAction(action, tradeId) {
+  const headers = await getHeaders();
   const res = await fetchWithRetry(`${API_BASE}/trade/${action}`, {
     method: 'POST', headers,
     body: JSON.stringify({ tradeId }),
@@ -126,8 +148,19 @@ export function useWebSocket(onTick, onChat) {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
-      ws.onopen = () => {
-        ws.send(JSON.stringify({ type: 'subscribe', playerId: PLAYER_ID }));
+      ws.onopen = async () => {
+        // Send Firebase token for production auth, or UID for dev
+        try {
+          const token = await getIdToken();
+          if (token) {
+            ws.send(JSON.stringify({ type: 'subscribe', token }));
+          } else {
+            const uid = getUid();
+            ws.send(JSON.stringify({ type: 'subscribe', playerId: uid || 'dev-player' }));
+          }
+        } catch {
+          ws.send(JSON.stringify({ type: 'subscribe', playerId: getUid() || 'dev-player' }));
+        }
       };
 
       ws.onmessage = (e) => {
@@ -167,11 +200,13 @@ export function sendWsMessage(wsRef, data) {
 
 // Shop marketplace API
 export async function fetchShopListings() {
+  const headers = await getHeaders();
   const res = await fetchWithRetry(`${API_BASE}/shop-market/listings`, { headers });
   return res.json();
 }
 
 export async function sendShopOffer(data) {
+  const headers = await getHeaders();
   const res = await fetchWithRetry(`${API_BASE}/shop-market/offer`, {
     method: 'POST', headers,
     body: JSON.stringify(data),
@@ -180,6 +215,7 @@ export async function sendShopOffer(data) {
 }
 
 export async function sendShopMessage(data) {
+  const headers = await getHeaders();
   const res = await fetchWithRetry(`${API_BASE}/shop-market/message`, {
     method: 'POST', headers,
     body: JSON.stringify(data),
@@ -188,11 +224,13 @@ export async function sendShopMessage(data) {
 }
 
 export async function fetchShopMessages(listingId) {
+  const headers = await getHeaders();
   const res = await fetchWithRetry(`${API_BASE}/shop-market/messages/${listingId}`, { headers });
   return res.json();
 }
 
 export async function acceptShopOffer(data) {
+  const headers = await getHeaders();
   const res = await fetchWithRetry(`${API_BASE}/shop-market/accept-offer`, {
     method: 'POST', headers,
     body: JSON.stringify(data),
@@ -201,6 +239,7 @@ export async function acceptShopOffer(data) {
 }
 
 export async function rejectShopOffer(data) {
+  const headers = await getHeaders();
   const res = await fetchWithRetry(`${API_BASE}/shop-market/reject-offer`, {
     method: 'POST', headers,
     body: JSON.stringify(data),
@@ -209,6 +248,7 @@ export async function rejectShopOffer(data) {
 }
 
 export async function counterShopOffer(data) {
+  const headers = await getHeaders();
   const res = await fetchWithRetry(`${API_BASE}/shop-market/counter`, {
     method: 'POST', headers,
     body: JSON.stringify(data),

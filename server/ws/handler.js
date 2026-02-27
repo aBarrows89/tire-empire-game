@@ -1,4 +1,6 @@
 import { getPlayer, addChatMessage } from '../db/queries.js';
+import admin from 'firebase-admin';
+import { NODE_ENV } from '../config.js';
 
 /**
  * Handle a new WebSocket connection.
@@ -18,11 +20,25 @@ export function handleConnection(ws, clients) {
           ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
           break;
 
-        case 'subscribe':
-          // Player subscribes to tick updates — already receiving via broadcast
-          ws.playerId = msg.playerId;
-          ws.send(JSON.stringify({ type: 'subscribed', playerId: msg.playerId }));
+        case 'subscribe': {
+          // Verify Firebase token in production, or accept playerId in dev
+          if (msg.token && admin.apps.length > 0) {
+            try {
+              const decoded = await admin.auth().verifyIdToken(msg.token);
+              ws.playerId = decoded.uid;
+            } catch {
+              ws.send(JSON.stringify({ type: 'error', message: 'Invalid token' }));
+              break;
+            }
+          } else if (NODE_ENV !== 'production' && msg.playerId) {
+            ws.playerId = msg.playerId;
+          } else {
+            ws.send(JSON.stringify({ type: 'error', message: 'Authentication required' }));
+            break;
+          }
+          ws.send(JSON.stringify({ type: 'subscribed', playerId: ws.playerId }));
           break;
+        }
 
         case 'chat': {
           if (!ws.playerId) {

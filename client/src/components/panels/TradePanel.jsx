@@ -2,9 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { TIRES } from '@shared/constants/tires.js';
 import { fmt } from '@shared/helpers/format.js';
-import { getTrades, createTradeOffer, tradeAction, postAction, API_BASE, headers } from '../../api/client.js';
-
-const PLAYER_ID = 'dev-player';
+import { getTrades, createTradeOffer, tradeAction, postAction, API_BASE, getHeaders } from '../../api/client.js';
+import { getUid } from '../../services/firebase.js';
 
 export default function TradePanel() {
   const { state, refreshState } = useGame();
@@ -40,10 +39,12 @@ export default function TradePanel() {
 
   useEffect(() => { fetchTrades(); }, [g?.day]);
   useEffect(() => {
-    fetch(`${API_BASE}/leaderboard?limit=50`, { headers })
-      .then(r => r.json())
-      .then(data => setPlayers(Array.isArray(data) ? data.filter(p => p.player_id !== PLAYER_ID) : []))
-      .catch(() => {});
+    getHeaders().then(h =>
+      fetch(`${API_BASE}/leaderboard?limit=50`, { headers: h })
+        .then(r => r.json())
+        .then(data => setPlayers(Array.isArray(data) ? data.filter(p => p.player_id !== (getUid() || g?.id)) : []))
+        .catch(() => {})
+    );
   }, []);
 
   const submitOffer = async () => {
@@ -154,7 +155,7 @@ export default function TradePanel() {
 
           {/* Pending offers (waiting for accept/decline) */}
           {pending.map(trade => {
-            const isSender = trade.senderId === PLAYER_ID;
+            const isSender = trade.senderId === (getUid() || g?.id);
             const t = TIRES[trade.tireType];
             return (
               <div key={trade.id} className="card" style={{ borderLeft: '3px solid var(--accent)' }}>
@@ -189,7 +190,7 @@ export default function TradePanel() {
 
           {/* Accepted trades (need fulfillment) */}
           {accepted.map(trade => {
-            const isSender = trade.senderId === PLAYER_ID;
+            const isSender = trade.senderId === (getUid() || g?.id);
             const t = TIRES[trade.tireType];
             const myFulfilled = isSender ? trade.senderFulfilled : trade.receiverFulfilled;
             const theirFulfilled = isSender ? trade.receiverFulfilled : trade.senderFulfilled;
@@ -348,7 +349,7 @@ export default function TradePanel() {
             </div>
           )}
           {completed.map(trade => {
-            const isSender = trade.senderId === PLAYER_ID;
+            const isSender = trade.senderId === (getUid() || g?.id);
             const t = TIRES[trade.tireType];
             const statusColor = trade.status === 'completed' ? 'text-green' : 'text-dim';
             return (

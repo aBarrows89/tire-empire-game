@@ -1,9 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
-import { spawn } from 'child_process';
+import rateLimit from 'express-rate-limit';
 import { WebSocketServer } from 'ws';
-import { PORT, CORS_ORIGIN, NODE_ENV, NGROK_DOMAIN } from './config.js';
+import { PORT, CORS_ORIGIN, NODE_ENV } from './config.js';
 import { startTickLoop } from './tick/tickLoop.js';
 import { handleConnection } from './ws/handler.js';
 import { getAllActivePlayers, addShopSaleListing, getShopSaleListings } from './db/queries.js';
@@ -24,8 +24,34 @@ import chatRouter from './routes/chat.js';
 import shopMarketRouter from './routes/shopMarket.js';
 
 const app = express();
-app.use(cors({ origin: CORS_ORIGIN }));
-app.use(express.json());
+
+// ── Security Middleware ──
+app.use(cors({
+  origin: NODE_ENV === 'production'
+    ? ['capacitor://localhost', 'ionic://localhost', 'http://localhost']
+    : CORS_ORIGIN,
+  credentials: true,
+}));
+app.use(express.json({ limit: '100kb' }));
+
+// Rate limiting
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,  // 1 minute
+  max: 60,               // 60 requests per minute per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, slow down' },
+});
+const actionLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,  // 30 game actions per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many actions, slow down' },
+});
+
+app.use('/api/', apiLimiter);
+app.use('/api/action', actionLimiter);
 
 // ── Routes ──
 app.get('/api/health', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
@@ -38,6 +64,12 @@ app.use('/api/trade', tradeRouter);
 app.use('/api/tournament', tournamentRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/shop-market', shopMarketRouter);
+
+// ── Global Error Handler ──
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
 
 // ── HTTP + WebSocket Server ──
 const server = createServer(app);
@@ -58,18 +90,13 @@ server.listen(PORT, () => {
     if (n > 0) console.log(`  Synced ${n} shop sale listings to shared store`);
   }).catch(err => console.error('Shop listing sync error:', err));
 
-  // Start ngrok tunnel (dev mode)
-  if (NODE_ENV !== 'production' && NGROK_DOMAIN) {
-    startNgrok();
-  }
-
   // Start the game tick loop
   startTickLoop(clients);
 });
 
 async function syncShopListings() {
   const existing = await getShopSaleListings({});
-  if (existing.length > 0) return 0; // already populated
+  if (existing.length > 0) return 0;
   const players = await getAllActivePlayers();
   let count = 0;
   for (const p of players) {
@@ -102,44 +129,4 @@ async function syncShopListings() {
     }
   }
   return count;
-}
-
-function startNgrok() {
-  // Kill any existing ngrok processes first
-  try { spawn('pkill', ['-f', 'ngrok'], { stdio: 'ignore' }); } catch {}
-
-  setTimeout(() => {
-    const ngrok = spawn('ngrok', ['http', String(PORT), '--url', NGROK_DOMAIN], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: false,
-    });
-
-    ngrok.stdout.on('data', (d) => {
-      const line = d.toString().trim();
-      if (line) console.log(`  [ngrok] ${line}`);
-    });
-
-    ngrok.stderr.on('data', (d) => {
-      const line = d.toString().trim();
-      if (line && !line.includes('deprecated')) console.error(`  [ngrok] ${line}`);
-    });
-
-    ngrok.on('error', (err) => {
-      console.error(`  [ngrok] Failed to start: ${err.message}`);
-    });
-
-    ngrok.on('close', (code) => {
-      if (code && code !== 0) {
-        console.error(`  [ngrok] Exited with code ${code}, retrying in 5s...`);
-        setTimeout(startNgrok, 5000);
-      }
-    });
-
-    console.log(`  [ngrok] Tunnel starting → https://${NGROK_DOMAIN}`);
-
-    // Clean up ngrok when server exits
-    process.on('exit', () => { try { ngrok.kill(); } catch {} });
-    process.on('SIGINT', () => { try { ngrok.kill(); } catch {} process.exit(); });
-    process.on('SIGTERM', () => { try { ngrok.kill(); } catch {} process.exit(); });
-  }, 1000); // small delay to let old ngrok die
 }

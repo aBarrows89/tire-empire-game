@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
-import { API_BASE, headers, postAction } from '../../api/client.js';
+import { API_BASE, getHeaders, postAction } from '../../api/client.js';
 import { getCalendar, DAYS_PER_YEAR } from '@shared/helpers/calendar.js';
 
 export default function ProfilePanel() {
@@ -19,7 +19,7 @@ export default function ProfilePanel() {
   useEffect(() => {
     if (!targetId) return;
     setProfile(null);
-    fetch(`${API_BASE}/profile/${targetId}`, { headers })
+    getHeaders().then(h => fetch(`${API_BASE}/profile/${targetId}`, { headers: h }))
       .then(r => r.json())
       .then(data => setProfile(data))
       .catch(() => {});

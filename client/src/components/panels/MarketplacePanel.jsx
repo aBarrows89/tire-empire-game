@@ -4,9 +4,8 @@ import { TIRES } from '@shared/constants/tires.js';
 import { MAP_FLOOR } from '@shared/constants/wholesale.js';
 import { P2P_FEES, MARKETPLACE_SPECIALIST } from '@shared/constants/marketplace.js';
 import { fmt } from '@shared/helpers/format.js';
-import { postAction, API_BASE, headers as apiHeaders, fetchShopListings, sendShopOffer, sendShopMessage, fetchShopMessages } from '../../api/client.js';
-
-const PLAYER_ID = 'dev-player';
+import { postAction, API_BASE, getHeaders, fetchShopListings, sendShopOffer, sendShopMessage, fetchShopMessages } from '../../api/client.js';
+import { getUid } from '../../services/firebase.js';
 
 function getPlayerTier(g) {
   if (g.hasEcom) return 'ecommerce';
@@ -38,14 +37,16 @@ export default function MarketplacePanel() {
   const [shopMessages, setShopMessages] = useState({});
   const [msgInput, setMsgInput] = useState({});
 
-  const headers = apiHeaders;
+  const PLAYER_ID = getUid() || g?.id;
   const tier = getPlayerTier(g);
   const fees = tier ? P2P_FEES[tier] : null;
   const hasAccess = tier !== null;
 
   const fetchAllListings = () => {
-    fetch(`${API_BASE}/market/listings`, { headers }).then(r => r.json()).then(setListings).catch(() => {});
-    fetch(`${API_BASE}/market/my-listings`, { headers }).then(r => r.json()).then(setMyListings).catch(() => {});
+    getHeaders().then(h => {
+      fetch(`${API_BASE}/market/listings`, { headers: h }).then(r => r.json()).then(setListings).catch(() => {});
+      fetch(`${API_BASE}/market/my-listings`, { headers: h }).then(r => r.json()).then(setMyListings).catch(() => {});
+    });
     fetchShopListings().then(setShopListings).catch(() => {});
   };
 

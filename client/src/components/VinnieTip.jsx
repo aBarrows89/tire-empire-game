@@ -4,133 +4,140 @@ import { VINNIE_TIPS } from '@shared/constants/vinnieTips.js';
 import { getCap, getInv } from '@shared/helpers/inventory.js';
 import { getCalendar } from '@shared/helpers/calendar.js';
 
+/**
+ * Build a lookup map from VINNIE_TIPS for fast access by condKey.
+ * Multiple tips can share a condKey — we collect all of them.
+ */
+const tipsByKey = {};
+for (const t of VINNIE_TIPS) {
+  if (!tipsByKey[t.condKey]) tipsByKey[t.condKey] = [];
+  tipsByKey[t.condKey].push(t);
+}
+
+/** Push all tips matching a condKey into the results array. */
+function pushTip(tips, key) {
+  const arr = tipsByKey[key];
+  if (arr) {
+    for (const t of arr) tips.push(t);
+  }
+}
+
 function collectMatchingTips(g) {
   const inv = getInv(g);
   const cap = getCap(g);
   const tips = [];
-
-  if (inv === 0) {
-    const t = VINNIE_TIPS.find(t => t.condKey === 'noTires');
-    if (t) tips.push(t);
-  }
-  if (g.cash < 0) {
-    const t = VINNIE_TIPS.find(t => t.condKey === 'cashNeg');
-    if (t) tips.push(t);
-  }
-  if (g.cash < 100 && inv < 3) {
-    const t = VINNIE_TIPS.find(t => t.condKey === 'lowCash');
-    if (t) tips.push(t);
-  }
-  if (inv >= cap - 2 && cap > 0) {
-    const t = VINNIE_TIPS.find(t => t.condKey === 'storFull');
-    if (t) tips.push(t);
-  }
-  if (inv < 5 && cap > 20) {
-    const t = VINNIE_TIPS.find(t => t.condKey === 'storEmpty');
-    if (t) tips.push(t);
-  }
-  if ((g.daySold || g.weekSold || 0) === 0 && inv > 0) {
-    const t = VINNIE_TIPS.find(t => t.condKey === 'noSales');
-    if (t) tips.push(t);
-  }
-  if ((g.daySold || g.weekSold || 0) > 0 && (g.day || g.week || 1) < 5) {
-    const t = VINNIE_TIPS.find(t => t.condKey === 'firstSale');
-    if (t) tips.push(t);
-  }
-  if ((g.inventory?.used_junk || 0) > 15) {
-    const t = VINNIE_TIPS.find(t => t.condKey === 'junkHeavy');
-    if (t) tips.push(t);
-  }
-  if (g.cash >= 137500 && g.locations.length === 0) {
-    const t = VINNIE_TIPS.find(t => t.condKey === 'canShop');
-    if (t) tips.push(t);
-  }
-  if (g.locations.length > 0 && g.staff.techs === 0) {
-    const t = VINNIE_TIPS.find(t => t.condKey === 'hasShop');
-    if (t) tips.push(t);
-  }
-  if (g.locations.length > 0 && (g.staff.techs + g.staff.sales) < 2) {
-    const t = VINNIE_TIPS.find(t => t.condKey === 'noStaff');
-    if (t) tips.push(t);
-  }
-  if (g.cash > 50000 && g.locations.length === 0) {
-    const t = VINNIE_TIPS.find(t => t.condKey === 'highCash');
-    if (t) tips.push(t);
-  }
-  if (g.reputation < 5) {
-    const t = VINNIE_TIPS.find(t => t.condKey === 'repLow');
-    if (t) tips.push(t);
-  }
-  if (g.reputation >= 15 && g.locations.length === 0) {
-    const t = VINNIE_TIPS.find(t => t.condKey === 'repMid');
-    if (t) tips.push(t);
-  }
-  if ((g.loans || []).length > 2) {
-    const t = VINNIE_TIPS.find(t => t.condKey === 'loanHeavy');
-    if (t) tips.push(t);
-  }
-
-  // New contextual conditions
-  // overstockedJunk: junk tires > 50% of inventory
-  const junkCount = (g.inventory?.used_junk || 0) + (g.warehouseInventory?.used_junk || 0);
-  if (inv > 0 && junkCount > inv * 0.5) {
-    tips.push({ condKey: 'overstockedJunk', tip: "Lots of junk tires sitting around. Ever thought about retreading them?" });
-  }
-
-  // winterComing: month approaching winter (Oct-Nov)
   const day = g.day || g.week || 1;
   const cal = getCalendar(day);
+  const locCount = (g.locations || []).length;
+  const totalStaff = (g.staff?.techs || 0) + (g.staff?.sales || 0) + (g.staff?.managers || 0);
+  const loanCount = (g.loans || []).length;
+  const dayOfYear = cal.dayOfYear || (day % 360) || 1;
+  const junkCount = (g.inventory?.used_junk || 0) + (g.warehouseInventory?.used_junk || 0);
+  const sold = g.daySold || g.weekSold || 0;
+
+  // ─── BOOTSTRAP (day 1-30, no shops) ───
+  if (day <= 30 && locCount === 0) {
+    if (inv === 0) pushTip(tips, 'noTires');
+    if (g.cash < 100) pushTip(tips, 'lowCash');
+    if (sold > 0 && day < 10) pushTip(tips, 'firstSale');
+    if (g.reputation < 5) pushTip(tips, 'repLow');
+    if (inv > 0 && g.cash < 500) pushTip(tips, 'vanLife');
+    if (day < 10) pushTip(tips, 'scrappyStart');
+    if (junkCount > 0 && g.cash < 300) pushTip(tips, 'garageGold');
+    if (inv > 3 && sold === 0) pushTip(tips, 'pricingBasics');
+    if (day > 5 && day < 20) pushTip(tips, 'cashflow101');
+    if (g.cash >= 1000 && g.cash < 5000) pushTip(tips, 'firstGrand');
+  }
+
+  // ─── FIRST SHOP (1 location) ───
+  if (locCount === 1) {
+    if ((g.staff?.techs || 0) === 0) pushTip(tips, 'hasShop');
+    if (totalStaff < 2) pushTip(tips, 'noStaff');
+    if (inv < 10 && cap > 20) pushTip(tips, 'shopStocking');
+    if ((g.staff?.techs || 0) > 0 && !g.weekServiceRev) pushTip(tips, 'serviceMoney');
+    if (g.reputation >= 8 && g.reputation < 20) pushTip(tips, 'loyaltyTip');
+    if (g.reputation >= 3 && g.reputation < 12) pushTip(tips, 'marketingIntro');
+    if (g.reputation >= 10 && (g.unlockedSuppliers || []).length > 0) pushTip(tips, 'supplierUnlock');
+    if (g.cash < 5000 && totalStaff >= 3) pushTip(tips, 'shopRentWarning');
+    if (sold > 0 && (g.staff?.techs || 0) > 0) pushTip(tips, 'takeoffGold');
+    if (g.cash > 10000 && (g.bankBalance || 0) === 0) pushTip(tips, 'bankDeposit');
+  }
+
+  // ─── GROWTH (2-4 shops) ───
+  if (locCount >= 2 && locCount <= 4) {
+    if (locCount === 1 && g.cash > 100000) pushTip(tips, 'multiShop'); // won't fire here, but kept for logic
+    if (g.cash >= 137500) pushTip(tips, 'canShop');
+    if (g.cash > 50000) pushTip(tips, 'highCash');
+    if (g.reputation >= 15) pushTip(tips, 'repMid');
+    if (locCount >= 2) pushTip(tips, 'autoPricing');
+    if (locCount >= 2) pushTip(tips, 'transferTip');
+    if (g.cash >= 50000 && loanCount < 2) pushTip(tips, 'loanStrategy');
+    // Seasonal prep during shoulder months
+    if (cal.monthName === 'September' || cal.monthName === 'March') pushTip(tips, 'seasonalPrep');
+    if (g.cash >= 100000) pushTip(tips, 'cityPicking');
+    if (totalStaff > locCount * 4) pushTip(tips, 'staffBalance');
+    if (g.cash > 20000 && locCount >= 3) pushTip(tips, 'insuranceTip');
+  }
+
+  // ─── EMPIRE (5+ shops) ───
+  if (locCount >= 5) {
+    if (!g.hasWholesale) pushTip(tips, 'wholesaleReady');
+    if (!g.hasEcom && g.reputation >= 20) pushTip(tips, 'ecomReady');
+    if (g.reputation >= 15 && !(g.govContracts || []).length) pushTip(tips, 'govContract');
+    if (!g.hasFactory && g.cash > 500000) pushTip(tips, 'factoryDream');
+    if (locCount >= 6) pushTip(tips, 'diversify');
+    if (g.reputation >= 40) pushTip(tips, 'brandPower');
+    if (g.cash > 100000) pushTip(tips, 'cashRich');
+    if (junkCount > 20 && !g.hasFactory) pushTip(tips, 'retreadBiz');
+    if (g.reputation >= 30 && g.cash > 200000) pushTip(tips, 'importGame');
+  }
+
+  // ─── FACTORY ───
+  if (g.hasFactory) {
+    if ((g.factoryOutput || 0) === 0) pushTip(tips, 'factoryFirst');
+    if ((g.factoryStaff || 0) < 3) pushTip(tips, 'factoryStaff');
+    if (g.reputation >= 25) pushTip(tips, 'factoryBrand');
+    if ((g.factoryLevel || 1) < 3) pushTip(tips, 'factoryUpgrade');
+    if ((g.factoryLevel || 1) >= 2 && g.reputation >= 35) pushTip(tips, 'factoryExport');
+  }
+
+  // ─── SEASONAL (calendar-based) ───
+  // Winter approaching: Oct-Nov (dayOfYear ~271-330 in 360-day calendar)
   if (cal.monthName === 'October' || cal.monthName === 'November') {
-    tips.push({ condKey: 'winterComing', tip: "Winter's coming! Stock up on winter tires \u2014 prices go up." });
+    pushTip(tips, 'winterComing');
   }
-
-  // summerComing: month approaching summer (Mar-Apr)
+  // Summer approaching: Mar-Apr (dayOfYear ~61-120)
   if (cal.monthName === 'March' || cal.monthName === 'April') {
-    tips.push({ condKey: 'summerComing', tip: "Summer driving season ahead. All-season and performance tires will be hot." });
+    pushTip(tips, 'summerComing');
   }
-
-  // profitNegative: dayProfit < 0
-  if ((g.dayProfit || 0) < 0) {
-    tips.push({ condKey: 'profitNegative', tip: "Ouch, we lost money today. Check your prices \u2014 might be selling below cost." });
-  }
-
-  // cashRich: cash > 100000
-  if (g.cash > 100000) {
-    tips.push({ condKey: 'cashRich', tip: "Sitting on a lot of cash! Maybe open a new location or invest in marketing." });
-  }
-
-  // Holiday awareness
+  // Black Friday: November
   if (cal.monthName === 'November') {
-    tips.push({ condKey: 'blackFriday', tip: "Black Friday is coming! Demand will spike 3x \u2014 stock up now and raise prices." });
+    pushTip(tips, 'blackFriday');
   }
+  // Christmas: December
   if (cal.monthName === 'December') {
-    tips.push({ condKey: 'christmas', tip: "Christmas week is slow. Use this time to retread tires and restock." });
+    pushTip(tips, 'christmas');
   }
 
-  // Multi-shop tip
-  if (g.locations.length === 1 && g.cash > 100000) {
-    tips.push({ condKey: 'multiShop', tip: "One shop is a start. Two shops doubles your empire. Look at cities with low competition!" });
-  }
+  // ─── SITUATIONAL (reactive to current state) ───
+  if ((g.dayProfit || g.weekProfit || 0) < 0) pushTip(tips, 'profitNegative');
+  if (loanCount > 0 && g.cash > 50000) pushTip(tips, 'payLoan');
+  if (g.cash < -5000) pushTip(tips, 'deepDebt');
+  if (loanCount > 2) pushTip(tips, 'loanHeavy');
+  if (cap > 0 && inv >= cap - 2) pushTip(tips, 'storFull');
+  if (inv < 5 && cap > 20) pushTip(tips, 'storEmpty');
+  if (junkCount > 15) pushTip(tips, 'junkHeavy');
+  if (g.cash < 0) pushTip(tips, 'cashNeg');
+  if (inv > 10 && sold === 0 && day > 7) pushTip(tips, 'overpriced');
+  if (sold === 0 && inv > 0) pushTip(tips, 'noSales');
 
-  // Loan awareness
-  if ((g.loans || []).length > 0 && g.cash > 50000) {
-    tips.push({ condKey: 'payLoan', tip: "Got spare cash? Paying off loans early saves interest and boosts your reputation." });
-  }
-
-  // Negative cash warning
-  if (g.cash < -5000) {
-    tips.push({ condKey: 'deepDebt', tip: "Deep in the red! Sell some inventory, cut staff, or use TireCoins for a Vinnie bailout." });
-  }
-
-  // Contract opportunity
-  if (g.reputation >= 15 && !(g.govContracts || []).length && g.locations.length > 0) {
-    tips.push({ condKey: 'govContract', tip: "Your reputation is solid! Check Shops for government contracts \u2014 steady guaranteed revenue." });
-  }
-
-  // Fallback
+  // ─── DEFAULTS (multiple fallbacks for variety) ───
   if (tips.length === 0) {
-    const t = VINNIE_TIPS.find(t => t.condKey === 'default');
-    if (t) tips.push(t);
+    pushTip(tips, 'default');
+    pushTip(tips, 'defaultB');
+    pushTip(tips, 'defaultC');
+    pushTip(tips, 'defaultD');
+    pushTip(tips, 'defaultE');
   }
 
   return tips;

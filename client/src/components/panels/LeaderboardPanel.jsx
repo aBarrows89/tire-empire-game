@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
-import { API_BASE, headers } from '../../api/client.js';
+import { API_BASE, getHeaders } from '../../api/client.js';
 import { fmt } from '@shared/helpers/format.js';
 
 export default function LeaderboardPanel() {
@@ -11,18 +11,22 @@ export default function LeaderboardPanel() {
   const [tournamentData, setTournamentData] = useState(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/leaderboard?limit=50`, { headers })
-      .then(r => r.json())
-      .then(data => setRows(Array.isArray(data) ? data : []))
-      .catch(() => {});
+    getHeaders().then(h =>
+      fetch(`${API_BASE}/leaderboard?limit=50`, { headers: h })
+        .then(r => r.json())
+        .then(data => setRows(Array.isArray(data) ? data : []))
+        .catch(() => {})
+    );
   }, [g?.day]);
 
   useEffect(() => {
     if (tab === 'weekly') {
-      fetch(`${API_BASE}/tournament`, { headers })
-        .then(r => r.json())
-        .then(data => setTournamentData(data))
-        .catch(() => setTournamentData(null));
+      getHeaders().then(h =>
+        fetch(`${API_BASE}/tournament`, { headers: h })
+          .then(r => r.json())
+          .then(data => setTournamentData(data))
+          .catch(() => setTournamentData(null))
+      );
     }
   }, [tab, g?.day]);
 

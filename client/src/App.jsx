@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import AuthGate from './components/AuthGate.jsx';
 import { GameProvider, useGame } from './context/GameContext.jsx';
 import WelcomeScreen from './components/WelcomeScreen.jsx';
 import TutorialOverlay from './components/TutorialOverlay.jsx';
@@ -155,10 +156,42 @@ function GameLayout() {
   );
 }
 
+class ErrorBoundary extends React.Component {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('React Error Boundary:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="error-screen">
+          <div style={{ fontSize: 48, marginBottom: 16 }}>&#x1F6A8;</div>
+          <h2 style={{ margin: '0 0 8px' }}>Something went wrong</h2>
+          <p style={{ color: 'var(--text-dim)', marginBottom: 16 }}>The app hit an unexpected error.</p>
+          <button className="btn btn-green" onClick={() => window.location.reload()}>
+            Restart App
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   return (
-    <GameProvider>
-      <GameLayout />
-    </GameProvider>
+    <ErrorBoundary>
+      <AuthGate>
+        <GameProvider>
+          <GameLayout />
+        </GameProvider>
+      </AuthGate>
+    </ErrorBoundary>
   );
 }

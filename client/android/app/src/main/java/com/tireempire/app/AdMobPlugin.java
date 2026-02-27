@@ -27,7 +27,8 @@ import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback;
 public class AdMobPlugin extends Plugin {
     private static final String TAG = "AdMobPlugin";
 
-    // Test ad unit IDs (replace with real IDs before production)
+    // TODO: Replace with real AdMob ad unit IDs from your AdMob dashboard before publishing
+    // Test IDs below are Google's official test IDs (safe for development)
     private static final String BANNER_AD_UNIT = "ca-app-pub-3940256099942544/6300978111";
     private static final String INTERSTITIAL_AD_UNIT = "ca-app-pub-3940256099942544/1033173712";
 
