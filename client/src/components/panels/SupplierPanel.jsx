@@ -45,7 +45,7 @@ export default function SupplierPanel() {
     setBusy(null);
   };
 
-  const newTireTypes = Object.entries(TIRES).filter(([, t]) => !t.used);
+  const newTireTypes = Object.entries(TIRES).filter(([, t]) => !t.used && (!t.premium || g.isPremium));
   const freeSpace = getCap(g) - getInv(g);
 
   const tierLabels = { 0: 'New', 1: 'Regular', 2: 'Preferred', 3: 'Key Account', 4: 'Strategic', 5: 'Elite' };
@@ -180,6 +180,26 @@ export default function SupplierPanel() {
                 {/* Auto-Order Section */}
                 <div style={{ marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
                   <div className="text-xs font-bold mb-4">Auto-Order</div>
+                  {!g.hasAutoRestock && !g.isPremium ? (
+                    <div style={{ textAlign: 'center', padding: '8px 0' }}>
+                      <div className="text-xs text-dim mb-4">Auto-restock is locked. Unlock to automate supplier orders.</div>
+                      <button
+                        className="btn btn-sm btn-full"
+                        style={{ background: 'linear-gradient(135deg, #ffd54f, #ff8f00)', color: '#1a1a2e', fontWeight: 700 }}
+                        disabled={busy === 'unlockAutoRestock'}
+                        onClick={async () => {
+                          setBusy('unlockAutoRestock');
+                          await postAction('activateAutoRestock', {});
+                          refreshState();
+                          setBusy(null);
+                        }}
+                      >
+                        Unlock Auto-Restock ($0.99)
+                      </button>
+                      {g.isPremium && <div className="text-xs text-green mt-4">PRO members get this free!</div>}
+                    </div>
+                  ) : (
+                  <>
                   <div className="text-xs text-dim mb-4">Orders when stock drops below threshold. Uses up to 50% of cash.</div>
 
                   {/* Active auto-orders for this supplier */}
@@ -254,6 +274,8 @@ export default function SupplierPanel() {
                       </button>
                     </div>
                   </div>
+                  </>
+                  )}
                 </div>
               </>
             )}

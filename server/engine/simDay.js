@@ -75,7 +75,7 @@ function pullFromStock(s, tire, qty) {
 }
 
 export function simDay(g, shared = {}) {
-  let s = { ...g, day: g.day + 1, dayRev: 0, dayProfit: 0, daySold: 0, log: [], _events: [], dayRevByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0, services: 0 } };
+  let s = { ...g, day: g.day + 1, dayRev: 0, dayProfit: 0, daySold: 0, log: [], _events: [], dayRevByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0, services: 0 }, daySoldByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0 } };
 
   // Save previous day values for trend arrows
   s.prevDayRev = g.dayRev || 0;
@@ -314,7 +314,8 @@ export function simDay(g, shared = {}) {
       // Monopoly bonus: fewer AI shops = more demand
       const aiShopsInCity = (shared.aiShops || []).filter(a => a.cityId === loc.cityId).length;
       const monopolyMult = aiShopsInCity === 0 ? 1.5 : aiShopsInCity <= 2 ? 1.2 : 1.0;
-      let locDemand = Math.max(1, Math.floor(city.dem * .08 * demandMult * whPenalty * earlyBoostShop * loyaltyMult * marketingMult * marketShareMult * monopolyMult * holidayMult));
+      const premiumTrafficMult = s.isPremium ? 1.08 : 1;
+      let locDemand = Math.max(1, Math.floor(city.dem * .08 * demandMult * whPenalty * earlyBoostShop * loyaltyMult * marketingMult * marketShareMult * monopolyMult * holidayMult * premiumTrafficMult));
       let locNewSold = 0;
 
       for (const [k, t] of Object.entries(TIRES)) {
@@ -349,6 +350,7 @@ export function simDay(g, shared = {}) {
         loc.dailyStats.sold += qty;
         loc.dailyStats.profit += rev - cost;
         s.dayRevByChannel.shops += rev;
+        s.daySoldByChannel.shops += qty;
         if (!t.used) {
           newTiresSold += qty;
           locNewSold += qty;
@@ -491,6 +493,7 @@ export function simDay(g, shared = {}) {
         s.daySold += qty;
         s.vanTotalSold = (s.vanTotalSold || 0) + qty;
         s.dayRevByChannel.van += qty * price;
+        s.daySoldByChannel.van += qty;
         sold += qty;
       }
       // Track van-only profitable days
@@ -543,6 +546,7 @@ export function simDay(g, shared = {}) {
         s.daySold += sellQty;
         s.fleaMarketTotalSold = (s.fleaMarketTotalSold || 0) + sellQty;
         s.dayRevByChannel.flea += sellQty * price;
+        s.daySoldByChannel.flea += sellQty;
         standSold += sellQty;
       }
       if (standSold > 0) {
@@ -594,6 +598,7 @@ export function simDay(g, shared = {}) {
           s.daySold += sellQty;
           s.carMeetTotalSold = (s.carMeetTotalSold || 0) + sellQty;
           s.dayRevByChannel.carMeets += sellQty * price;
+          s.daySoldByChannel.carMeets += sellQty;
           meetSold += sellQty;
         }
         if (meetSold > 0) {
@@ -628,6 +633,7 @@ export function simDay(g, shared = {}) {
       s.dayProfit += rev - deliveryCost;
       s.daySold += pulled;
       s.dayRevByChannel.wholesale += rev;
+      s.daySoldByChannel.wholesale += pulled;
     }
   }
 
@@ -679,6 +685,7 @@ export function simDay(g, shared = {}) {
     s.dayRev += ecomRev;
     s.daySold += ecomSold;
     s.dayRevByChannel.ecom += ecomRev;
+    s.daySoldByChannel.ecom += ecomSold;
 
     const returnRate = Math.max(.02, ECOM_BASE_RETURN_RATE -
       ((s.ecomUpgrades || []).includes("fitmentDb") ? ECOM_UPGRADES.fitmentDb.returnReduce * ECOM_BASE_RETURN_RATE : 0));
@@ -747,6 +754,7 @@ export function simDay(g, shared = {}) {
       s.dayRev += rev;
       s.daySold += canDeliver;
       s.dayRevByChannel.gov += rev;
+      s.daySoldByChannel.gov += canDeliver;
       gc.delivered += canDeliver;
     }
     gc.daysLeft = (gc.daysLeft || (gc.weeksLeft || 0) * 7) - 1;
@@ -843,12 +851,13 @@ export function simDay(g, shared = {}) {
   // ── BANK DEPOSITS — daily interest ──
   if (s.bankBalance > 0) {
     const dailyRate = (s.bankRate || 0.042) / 360;
-    const interest = Math.round(s.bankBalance * dailyRate * 100) / 100;
+    const premiumBankBonus = s.isPremium ? 1.10 : 1;
+    const interest = Math.round(s.bankBalance * dailyRate * premiumBankBonus * 100) / 100;
     s.bankBalance += interest;
     s.bankInterestEarned = interest;
     s.bankTotalInterest = (s.bankTotalInterest || 0) + interest;
     if (interest >= 1) {
-      s.log.push({ msg: `\u{1F3E6} Bank paid $${Math.floor(interest)} interest`, cat: 'bank' });
+      s.log.push({ msg: `\u{1F3E6} Bank paid $${Math.floor(interest)} interest${s.isPremium ? ' (PRO +10%)' : ''}`, cat: 'bank' });
     }
   } else {
     s.bankInterestEarned = 0;
@@ -857,8 +866,14 @@ export function simDay(g, shared = {}) {
   if (s.day % 7 === 0) {
     const rateSeasonMult = { Spring: 0.92, Summer: 0.88, Fall: 1.08, Winter: 1.12 }[season] || 1;
     const rateNoise = 1 + (Math.random() - 0.5) * 0.10;
-    s.bankRate = Math.round(0.042 * rateSeasonMult * rateNoise * 10000) / 10000;
-    s.bankRate = Math.max(0.015, Math.min(0.065, s.bankRate));
+    const baseRate = 0.042 * rateSeasonMult * rateNoise;
+    // TC scarcity bonus: less TC in circulation = higher rates (max +2% bonus)
+    const tcScarcityBonus = shared.totalTC != null
+      ? Math.min(0.02, Math.max(0, (1 - shared.totalTC / 50000) * 0.02))
+      : 0;
+    s.bankRate = Math.round((baseRate + tcScarcityBonus) * 10000) / 10000;
+    s.bankRate = Math.max(0.015, Math.min(0.085, s.bankRate));
+    s.tcScarcityBonus = Math.round(tcScarcityBonus * 10000) / 10000;
   }
 
   // ── SUPPLIER FREE SAMPLES ──
@@ -873,6 +888,50 @@ export function simDay(g, shared = {}) {
         s.log.push({ msg: `🎁 Free sample: ${qty} ${TIRES[k].n} from supplier!`, cat: 'source' });
       }
     }
+  }
+
+  // ── PREMIUM: BONUS SOURCE FINDS ──
+  if (s.isPremium && Math.random() < 0.5) {
+    const freeSpace = getCap(s) - getInv(s);
+    if (freeSpace > 0) {
+      const usedTypes = ['used_good', 'used_premium'];
+      const bonusQty = Math.min(freeSpace, R(2, 5));
+      for (let i = 0; i < bonusQty; i++) {
+        const k = usedTypes[R(0, usedTypes.length - 1)];
+        s.warehouseInventory[k] = (s.warehouseInventory[k] || 0) + 1;
+      }
+      s.log.push({ msg: `\u{1F451} Vinnie's connections found ${bonusQty} quality used tires`, cat: 'source' });
+    }
+  }
+
+  // ── PREMIUM: WEEKLY VINNIE INSIDER TIP ──
+  if (s.isPremium && s.day % 7 === 0) {
+    // Find highest-margin tire type based on current market
+    let bestTire = null, bestMargin = 0;
+    for (const [k, t] of Object.entries(TIRES)) {
+      if (t.used) continue;
+      const mkt = (s.marketPrices && s.marketPrices[k]) || t.def;
+      const cost = (t.bMin + t.bMax) / 2;
+      const margin = mkt - cost;
+      if (margin > bestMargin) { bestMargin = margin; bestTire = k; }
+    }
+    // Find best-performing city
+    let bestCity = null, bestCityRev = 0;
+    for (const loc of s.locations) {
+      const rev = loc.dailyStats?.rev || 0;
+      if (rev > bestCityRev) {
+        bestCityRev = rev;
+        const city = CITIES.find(c => c.id === loc.cityId);
+        bestCity = city?.name || loc.cityId;
+      }
+    }
+    const tips = [];
+    if (bestTire) tips.push(`${TIRES[bestTire].n} has the best margins right now ($${Math.round(bestMargin)}/tire)`);
+    if (bestCity) tips.push(`${bestCity} is your top performer`);
+    const nextSeason = { Spring: 'Summer', Summer: 'Fall', Fall: 'Winter', Winter: 'Spring' }[season];
+    tips.push(`${nextSeason} is coming — adjust your stock accordingly`);
+    const tip = tips[R(0, tips.length - 1)];
+    s.log.push({ msg: `\u{1F451} Vinnie's Insider Tip: ${tip}`, cat: 'vinnie' });
   }
 
   // ── WEEKLY TOURNAMENT SNAPSHOT ──
@@ -929,8 +988,8 @@ export function simDay(g, shared = {}) {
     s.marketPrices = mktPrices;
   }
 
-  // ── TIRE COINS — 1/day (was 5/week) ──
-  s.tireCoins = (s.tireCoins || 0) + 1;
+  // ── TIRE COINS — 1 every other day (reduced from 1/day to limit inflation) ──
+  if (s.day % 2 === 0) s.tireCoins = (s.tireCoins || 0) + 1;
 
   // Clean up temp event flags
   delete s._tB;

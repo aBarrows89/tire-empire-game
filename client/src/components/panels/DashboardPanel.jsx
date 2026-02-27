@@ -87,6 +87,7 @@ export default function DashboardPanel() {
 
   // Channel data
   const channels = g.dayRevByChannel || {};
+  const soldByChannel = g.daySoldByChannel || {};
   const hasChannelData = Object.values(channels).some(v => v > 0);
 
   // Net daily P&L
@@ -204,12 +205,14 @@ export default function DashboardPanel() {
           {Object.entries(CHANNEL_LABELS).map(([key, label]) => {
             const rev = channels[key] || 0;
             if (rev <= 0) return null;
+            const sold = soldByChannel[key] || 0;
             const pctOfTotal = (g.dayRev || 0) > 0 ? Math.round((rev / g.dayRev) * 100) : 0;
             return (
               <div key={key} className="row-between text-sm mb-4">
                 <span className="text-dim">{label}</span>
                 <span>
                   <span className="font-bold text-green">${fmt(rev)}</span>
+                  {sold > 0 && <span className="text-dim" style={{ marginLeft: 6 }}>{sold} tires</span>}
                   <span className="text-dim" style={{ marginLeft: 6 }}>{pctOfTotal}%</span>
                 </span>
               </div>

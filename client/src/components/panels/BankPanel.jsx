@@ -106,6 +106,18 @@ export default function BankPanel() {
           <span className="text-sm text-dim">Annual Rate</span>
           <span className="text-accent font-bold">{annualRate}%</span>
         </div>
+        {(g.tcScarcityBonus || 0) > 0 && (
+          <div className="row-between mb-4">
+            <span className="text-sm text-dim">TC Scarcity Bonus</span>
+            <span className="text-green text-xs font-bold">+{((g.tcScarcityBonus || 0) * 100).toFixed(2)}%</span>
+          </div>
+        )}
+        {g.isPremium && (
+          <div className="row-between mb-4">
+            <span className="text-sm text-dim">PRO Interest Bonus</span>
+            <span className="text-gold text-xs font-bold">+10%</span>
+          </div>
+        )}
         <div className="row-between mb-4">
           <span className="text-sm text-dim">Weekly Rate</span>
           <span className="text-xs">{weeklyRate}%</span>

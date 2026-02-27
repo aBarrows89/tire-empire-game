@@ -388,12 +388,16 @@ export async function runTick(clients) {
     const playerPriceAvg = aggregatePlayerPrices(players);
     const aiPriceAvg = aggregateAIPrices(game.ai_shops || []);
 
+    // Calculate total TireCoins in circulation across all players
+    const totalTC = players.reduce((sum, p) => sum + (p.game_state.tireCoins || 0), 0);
+
     const shared = {
       cities: CITIES,
       aiShops: game.ai_shops || [],
       liquidation: game.liquidation || [],
       playerPriceAvg,
       aiPriceAvg,
+      totalTC,
     };
 
     const cal = getCalendar(day);
@@ -417,7 +421,7 @@ export async function runTick(clients) {
       }
       applyAutoPrice(state);
       applyAutoSource(state);
-      applyAutoSupplier(state);
+      if (state.hasAutoRestock || state.isPremium) applyAutoSupplier(state);
       const newState = simDay(state, shared);
       await savePlayerState(player.id, newState);
 
@@ -464,7 +468,7 @@ export async function runTick(clients) {
           }))
           .sort((a, b) => b.revGrowth - a.revGrowth);
 
-        const prizes = [50, 25, 10];
+        const prizes = [20, 10, 5];
         for (let i = 0; i < Math.min(ranked.length, prizes.length); i++) {
           const winner = players.find(p => p.id === ranked[i].id);
           if (winner) {

@@ -13,4 +13,6 @@ export const TIRES = {
   tractor: { n: "Tractor/AG", bMin: 200, bMax: 400, def: 550, lo: 380, hi: 800, ag: 1 },
   evTire: { n: "EV Tire", bMin: 95, bMax: 155, def: 195, lo: 140, hi: 280 },
   runFlat: { n: "Run-Flat", bMin: 80, bMax: 130, def: 170, lo: 120, hi: 250 },
+  luxuryTouring: { n: "Luxury Touring", bMin: 120, bMax: 190, def: 250, lo: 180, hi: 350, premium: true },
+  premiumAllWeather: { n: "Premium All-Weather", bMin: 100, bMax: 160, def: 210, lo: 150, hi: 300, premium: true },
 };

@@ -115,7 +115,23 @@ export default function ProfilePanel() {
             {'\u{1F451}'} Go Premium — $4.99/mo
           </button>
           <div className="text-xs text-dim" style={{ marginTop: 4 }}>
-            No ads, premium badge, gold name effect
+            Unlock gameplay advantages + cosmetics
+          </div>
+        </div>
+      )}
+
+      {/* Premium Perks (own profile, is premium) */}
+      {!isOther && g.isPremium && (
+        <div className="card" style={{ borderLeft: '3px solid var(--gold, #ffd54f)' }}>
+          <div className="card-title" style={{ color: 'var(--gold, #ffd54f)' }}>{'\u{1F451}'} PRO Perks Active</div>
+          <div className="text-xs mb-4" style={{ lineHeight: 1.6 }}>
+            <div>{'\u2705'} +10% Bank Interest Bonus</div>
+            <div>{'\u2705'} +8% Shop Foot Traffic</div>
+            <div>{'\u2705'} Daily Bonus Used Tire Finds</div>
+            <div>{'\u2705'} Exclusive Supplier Tires (Luxury Touring, Premium All-Weather)</div>
+            <div>{'\u2705'} Weekly Vinnie Insider Tips</div>
+            <div>{'\u2705'} Free Auto-Restock (no IAP needed)</div>
+            <div>{'\u2705'} Gold Name + Premium Badge</div>
           </div>
         </div>
       )}

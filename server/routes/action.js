@@ -995,6 +995,13 @@ router.post('/', authMiddleware, async (req, res) => {
         break;
       }
 
+      case 'activateAutoRestock': {
+        // One-time $0.99 IAP — unlocks auto-supplier system. Resets on game restart.
+        g.hasAutoRestock = true;
+        g.log.push('Auto-Restock unlocked! Set up automatic supplier orders.');
+        break;
+      }
+
       // ── E-COMMERCE UNLOCK & MANAGEMENT ──
       case 'unlockEcom': {
         if (g.hasEcom) return res.status(400).json({ error: 'Already unlocked' });

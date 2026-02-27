@@ -34,6 +34,8 @@ export default function TradePanel() {
   const [revSharePct, setRevSharePct] = useState(5);
   const [revShareDays, setRevShareDays] = useState(30);
   const [upfrontCash, setUpfrontCash] = useState(0);
+  const [tcAmount, setTcAmount] = useState(10);
+  const [tcCashAmount, setTcCashAmount] = useState(100);
 
   // Leaderboard for receiver picker
   const [players, setPlayers] = useState([]);
@@ -56,7 +58,10 @@ export default function TradePanel() {
     if (!receiverId) return;
     setBusy('offer');
     let payload;
-    if (offerType === 'revShare') {
+    if (offerType === 'tradeTireCoins') {
+      if (tcAmount <= 0 || tcCashAmount <= 0) { setBusy(null); return; }
+      payload = { receiverId, offerType, tcAmount, cashAmount: tcCashAmount };
+    } else if (offerType === 'revShare') {
       payload = { receiverId, offerType, upfrontCash, revSharePct: revSharePct / 100, revShareDays };
     } else {
       if (!tireType || qty <= 0 || cashAmount <= 0) { setBusy(null); return; }
@@ -175,7 +180,9 @@ export default function TradePanel() {
                   <span className="text-xs text-dim">{isSender ? 'You sent' : 'You received'}</span>
                 </div>
                 <div className="text-sm mb-4">
-                  {trade.offerType === 'sellTires' ? (
+                  {trade.offerType === 'tradeTireCoins' ? (
+                    <>{trade.senderName} offers <span className="font-bold text-gold">{trade.tcAmount} TC</span> for <span className="text-green font-bold">${fmt(trade.cashAmount)}</span></>
+                  ) : trade.offerType === 'sellTires' ? (
                     <>{trade.senderName} offers <span className="font-bold">{trade.qty} {t?.n}</span> for <span className="text-green font-bold">${fmt(trade.cashAmount)}</span></>
                   ) : (
                     <>{trade.senderName} offers <span className="text-green font-bold">${fmt(trade.cashAmount)}</span> for <span className="font-bold">{trade.qty} {t?.n}</span></>
@@ -221,15 +228,26 @@ export default function TradePanel() {
                   </span>
                 </div>
                 <div className="text-sm mb-4">
-                  {trade.offerType === 'sellTires' ? (
+                  {trade.offerType === 'tradeTireCoins' ? (
+                    <><span className="text-gold">{trade.tcAmount} TC</span> for ${fmt(trade.cashAmount)}</>
+                  ) : trade.offerType === 'sellTires' ? (
                     <>{trade.qty} {t?.n} for ${fmt(trade.cashAmount)}</>
                   ) : (
                     <>${fmt(trade.cashAmount)} for {trade.qty} {t?.n}</>
                   )}
                 </div>
                 <div className="text-xs mb-4">
-                  <div>You: {myFulfilled ? '\u2705 Fulfilled' : `\u23F3 ${myAction}`}</div>
-                  <div>Them: {theirFulfilled ? '\u2705 Fulfilled' : `\u23F3 ${theirAction}`}</div>
+                  {trade.offerType === 'tradeTireCoins' ? (
+                    <>
+                      <div>Sender: {trade.senderFulfilled ? '\u2705 TC sent' : '\u23F3 Pending'}</div>
+                      <div>Receiver: {trade.receiverFulfilled ? '\u2705 Cash sent' : `\u23F3 Wire $${fmt(trade.cashAmount)}`}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div>You: {myFulfilled ? '\u2705 Fulfilled' : `\u23F3 ${myAction}`}</div>
+                      <div>Them: {theirFulfilled ? '\u2705 Fulfilled' : `\u23F3 ${theirAction}`}</div>
+                    </>
+                  )}
                 </div>
                 {!myFulfilled && (
                   <button
@@ -273,11 +291,33 @@ export default function TradePanel() {
             <select className="autoprice-select" style={{ width: '100%' }} value={offerType} onChange={e => setOfferType(e.target.value)}>
               <option value="sellTires">I send tires, they send cash</option>
               <option value="buyTires">I send cash, they send tires</option>
+              <option value="tradeTireCoins">I send TireCoins, they send cash</option>
               <option value="revShare">Revenue share deal</option>
             </select>
           </div>
 
-          {offerType !== 'revShare' && (
+          {offerType === 'tradeTireCoins' && (
+            <>
+              <div className="text-xs text-dim mb-4">
+                Trade your TireCoins for cash. You send TC, they send dollars.
+              </div>
+              <div className="row gap-8 mb-4">
+                <div style={{ flex: 1 }}>
+                  <div className="text-xs text-dim mb-4">TC Amount</div>
+                  <input type="number" className="autoprice-offset" style={{ width: '100%' }} min={1} max={g.tireCoins || 0} value={tcAmount} onChange={e => setTcAmount(Math.max(1, Number(e.target.value)))} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div className="text-xs text-dim mb-4">Cash Amount ($)</div>
+                  <input type="number" className="autoprice-offset" style={{ width: '100%' }} min={1} value={tcCashAmount} onChange={e => setTcCashAmount(Math.max(1, Number(e.target.value)))} />
+                </div>
+              </div>
+              <div className="text-xs text-dim mb-4">
+                You'll send {tcAmount} TC and receive ${fmt(tcCashAmount)} when they accept. You have {g.tireCoins || 0} TC.
+              </div>
+            </>
+          )}
+
+          {offerType !== 'revShare' && offerType !== 'tradeTireCoins' && (
             <>
               <div className="mb-4">
                 <div className="text-xs text-dim mb-4">Tire Type</div>
@@ -344,7 +384,7 @@ export default function TradePanel() {
           <button
             className="btn btn-full btn-sm"
             style={{ background: 'var(--accent)', color: '#000' }}
-            disabled={!receiverId || (offerType !== 'revShare' && (!tireType || qty <= 0 || cashAmount <= 0)) || busy === 'offer'}
+            disabled={!receiverId || (offerType === 'tradeTireCoins' ? (tcAmount <= 0 || tcCashAmount <= 0) : offerType !== 'revShare' && (!tireType || qty <= 0 || cashAmount <= 0)) || busy === 'offer'}
             onClick={submitOffer}
           >
             {busy === 'offer' ? 'Sending...' : 'Send Trade Offer'}
@@ -372,7 +412,10 @@ export default function TradePanel() {
                   </span>
                 </div>
                 <div className="text-sm">
-                  {trade.qty} {t?.n} for ${fmt(trade.cashAmount)}
+                  {trade.offerType === 'tradeTireCoins'
+                    ? <><span className="text-gold">{trade.tcAmount} TC</span> for ${fmt(trade.cashAmount)}</>
+                    : <>{trade.qty} {t?.n} for ${fmt(trade.cashAmount)}</>
+                  }
                 </div>
               </div>
             );

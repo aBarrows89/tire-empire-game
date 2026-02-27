@@ -48,9 +48,9 @@ router.post('/offer', authMiddleware, async (req, res) => {
     if (!sender) return res.status(404).json({ error: 'Player not found' });
     const sg = sender.game_state;
 
-    // offerType: 'sellTires', 'buyTires', or 'revShare'
-    if (!['sellTires', 'buyTires', 'revShare'].includes(offerType)) {
-      return res.status(400).json({ error: 'offerType must be sellTires, buyTires, or revShare' });
+    // offerType: 'sellTires', 'buyTires', 'revShare', or 'tradeTireCoins'
+    if (!['sellTires', 'buyTires', 'revShare', 'tradeTireCoins'].includes(offerType)) {
+      return res.status(400).json({ error: 'offerType must be sellTires, buyTires, revShare, or tradeTireCoins' });
     }
 
     // Revenue share offers don't need tires
@@ -70,6 +70,31 @@ router.post('/offer', authMiddleware, async (req, res) => {
         upfrontCash: upfront,
         revSharePct: pct,
         revShareDays: days,
+        status: 'pending',
+        senderFulfilled: false,
+        receiverFulfilled: false,
+        createdAt: Date.now(),
+      };
+      await addDirectTrade(trade);
+      return res.json({ ok: true, trade });
+    }
+
+    // TC trading: sender sends TireCoins, receiver sends cash
+    if (offerType === 'tradeTireCoins') {
+      const { tcAmount, cashAmount: tcCash } = req.body;
+      const tc = Math.max(1, Math.floor(Number(tcAmount) || 0));
+      const cash = Math.max(1, Math.floor(Number(tcCash) || 0));
+      if ((sg.tireCoins || 0) < tc) return res.status(400).json({ error: 'Not enough TireCoins' });
+
+      const trade = {
+        id: uid(),
+        senderId: req.playerId,
+        senderName: sg.companyName || sg.name || 'Unknown',
+        receiverId,
+        receiverName: receiver.game_state.companyName || receiver.game_state.name || 'Unknown',
+        offerType: 'tradeTireCoins',
+        tcAmount: tc,
+        cashAmount: cash,
         status: 'pending',
         senderFulfilled: false,
         receiverFulfilled: false,
@@ -221,6 +246,37 @@ router.post('/fulfill', authMiddleware, async (req, res) => {
         trade.status = 'completed';
         g.log = g.log || [];
         g.log.push(`Rev share deal: paying ${Math.round(trade.revSharePct * 100)}% revenue to ${trade.senderName} for ${trade.revShareDays} days`);
+      }
+      await updateDirectTrade(tradeId, trade);
+      await savePlayerState(req.playerId, g);
+      return res.json({ ok: true, trade });
+    }
+
+    // Handle TC trades
+    if (trade.offerType === 'tradeTireCoins') {
+      if (isReceiver && !trade.receiverFulfilled) {
+        // Receiver pays cash to sender
+        if (g.cash < trade.cashAmount) return res.status(400).json({ error: 'Not enough cash' });
+        g.cash -= trade.cashAmount;
+        const sender = await getPlayer(trade.senderId);
+        if (sender) {
+          sender.game_state.cash += trade.cashAmount;
+          // Sender sends TC to receiver
+          if ((sender.game_state.tireCoins || 0) < trade.tcAmount) {
+            g.cash += trade.cashAmount; // refund
+            return res.status(400).json({ error: 'Sender no longer has enough TireCoins' });
+          }
+          sender.game_state.tireCoins -= trade.tcAmount;
+          g.tireCoins = (g.tireCoins || 0) + trade.tcAmount;
+          sender.game_state.log = sender.game_state.log || [];
+          sender.game_state.log.push({ msg: `Traded ${trade.tcAmount} TC to ${g.companyName || g.name} for $${trade.cashAmount.toLocaleString()}`, cat: 'event' });
+          await savePlayerState(trade.senderId, sender.game_state);
+        }
+        g.log = g.log || [];
+        g.log.push({ msg: `Bought ${trade.tcAmount} TC from ${trade.senderName} for $${trade.cashAmount.toLocaleString()}`, cat: 'event' });
+        trade.senderFulfilled = true;
+        trade.receiverFulfilled = true;
+        trade.status = 'completed';
       }
       await updateDirectTrade(tradeId, trade);
       await savePlayerState(req.playerId, g);

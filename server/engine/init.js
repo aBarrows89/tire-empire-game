@@ -129,6 +129,8 @@ export function init(playerName = "Player", globalDay = 1) {
     // Premium membership
     isPremium: false,
     premiumSince: null,
+    // Auto-restock IAP (resets on game restart)
+    hasAutoRestock: false,
     _events: [],
   };
 }
