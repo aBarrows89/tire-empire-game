@@ -114,14 +114,19 @@ export async function getGame(id = 'default') {
   const { rows } = await pool.query('SELECT * FROM games WHERE id = $1', [id]);
   const row = rows[0] || null;
   if (row) {
+    // Debug: log raw types before parsing (first 3 calls)
+    if (!getGame._logCount) getGame._logCount = 0;
+    if (getGame._logCount < 3) {
+      getGame._logCount++;
+      const rawType = typeof row.ai_shops;
+      const rawIsArr = Array.isArray(row.ai_shops);
+      const rawLen = row.ai_shops?.length;
+      const rawSlice = JSON.stringify(row.ai_shops)?.slice(0, 200);
+      console.log(`[pgStore] getGame RAW #${getGame._logCount}: type=${rawType} isArray=${rawIsArr} len=${rawLen} val=${rawSlice}`);
+    }
     row.economy = parseJson(row.economy);
     row.ai_shops = parseJson(row.ai_shops);
     row.liquidation = parseJson(row.liquidation);
-    // Debug: log types on first call
-    if (!getGame._logged) {
-      getGame._logged = true;
-      console.log(`[pgStore] getGame types: ai_shops=${typeof row.ai_shops} isArray=${Array.isArray(row.ai_shops)} len=${row.ai_shops?.length} raw=${JSON.stringify(row.ai_shops)?.slice(0, 100)}`);
-    }
     // Force ai_shops to array if not already
     if (!Array.isArray(row.ai_shops)) row.ai_shops = [];
     if (!Array.isArray(row.liquidation)) row.liquidation = [];
@@ -130,12 +135,17 @@ export async function getGame(id = 'default') {
 }
 
 export async function saveGame(id, day, economy, aiShops, liquidation) {
-  // JSON.stringify arrays to prevent pg from treating them as PostgreSQL arrays instead of JSONB
-  await pool.query(
-    `INSERT INTO games (id, week, economy, ai_shops, liquidation) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb)
-     ON CONFLICT (id) DO UPDATE SET week = $2, economy = $3::jsonb, ai_shops = $4::jsonb, liquidation = $5::jsonb, updated_at = NOW()`,
-    [id, day, JSON.stringify(economy || {}), JSON.stringify(aiShops || []), JSON.stringify(liquidation || [])]
-  );
+  try {
+    const econStr = JSON.stringify(economy || {});
+    const shopsStr = JSON.stringify(aiShops || []);
+    const liqStr = JSON.stringify(liquidation || []);
+    await pool.query(
+      `UPDATE games SET week = $2, economy = $3::jsonb, ai_shops = $4::jsonb, liquidation = $5::jsonb, updated_at = NOW() WHERE id = $1`,
+      [id, day, econStr, shopsStr, liqStr]
+    );
+  } catch (err) {
+    console.error('[pgStore] saveGame error:', err.message);
+  }
 }
 
 // ── Leaderboard ──
