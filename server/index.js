@@ -6,7 +6,7 @@ import { WebSocketServer } from 'ws';
 import { PORT, CORS_ORIGIN, NODE_ENV } from './config.js';
 import { startTickLoop } from './tick/tickLoop.js';
 import { handleConnection } from './ws/handler.js';
-import { getAllActivePlayers, addShopSaleListing, getShopSaleListings } from './db/queries.js';
+import { getAllActivePlayers, addShopSaleListing, getShopSaleListings, savePlayerState } from './db/queries.js';
 import { CITIES } from '../shared/constants/cities.js';
 import { TIRES } from '../shared/constants/tires.js';
 import { shopRent } from '../shared/constants/shop.js';
@@ -66,6 +66,23 @@ app.use('/api/trade', tradeRouter);
 app.use('/api/tournament', tournamentRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/shop-market', shopMarketRouter);
+
+// ── Temporary Admin Fix (remove after use) ──
+app.get('/api/admin-fix', async (req, res) => {
+  if (req.query.key !== 'tire2026fix') return res.status(403).json({ error: 'bad key' });
+  const players = await getAllActivePlayers();
+  const results = [];
+  for (const p of players) {
+    const g = p.game_state;
+    if (!g || g.isAI) continue;
+    const oldCash = g.cash;
+    if (req.query.cash) g.cash = Number(req.query.cash);
+    if (req.query.rep) g.reputation = Number(req.query.rep);
+    await savePlayerState(p.id, g);
+    results.push({ id: p.id, name: g.companyName, oldCash, newCash: g.cash });
+  }
+  res.json({ fixed: results });
+});
 
 // ── Global Error Handler ──
 app.use((err, req, res, next) => {
