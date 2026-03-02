@@ -2,6 +2,7 @@ import { TICK_MS } from '../config.js';
 import { getAllActivePlayers, savePlayerState, getGame, saveGame, upsertLeaderboard, getPlayerListings, updatePlayerListing, getPlayer, removePlayer } from '../db/queries.js';
 import { simDay } from '../engine/simDay.js';
 import { simAIPlayerDay, createAIPlayers } from '../engine/aiPlayers.js';
+import { initAIShops } from '../engine/aiShops.js';
 import { getWealth } from '../../shared/helpers/wealth.js';
 import { getStorageCap, getLocInv, getLocCap, rebuildGlobalInv, getCap, getInv } from '../../shared/helpers/inventory.js';
 import { getCalendar } from '../../shared/helpers/calendar.js';
@@ -373,6 +374,14 @@ export async function runTick(clients) {
     let players = await getAllActivePlayers();
     // Support both day-based and legacy week-based game state
     const day = (game.day || game.week || 0) + 1;
+
+    // Seed AI shops on first tick if none exist
+    if (!game.ai_shops || game.ai_shops.length === 0) {
+      console.log('[AI Init] No AI shops found — seeding');
+      game.ai_shops = initAIShops();
+      await saveGame('default', day - 1, game.economy || {}, game.ai_shops, game.liquidation || []);
+      console.log(`[AI Init] Seeded ${game.ai_shops.length} AI shops`);
+    }
 
     // Seed AI players on first tick if none exist
     const hasAI = players.some(p => p.game_state.isAI);
