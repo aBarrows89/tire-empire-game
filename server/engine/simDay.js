@@ -1,4 +1,4 @@
-import { R, Rf, C } from '../../shared/helpers/format.js';
+import { fmt, R, Rf, C } from '../../shared/helpers/format.js';
 import { getSeason, getSI } from '../../shared/helpers/season.js';
 import { getCap, getInv, getLocInv, getLocCap, rebuildGlobalInv } from '../../shared/helpers/inventory.js';
 import { getWealth } from '../../shared/helpers/wealth.js';

@@ -114,20 +114,9 @@ export async function getGame(id = 'default') {
   const { rows } = await pool.query('SELECT * FROM games WHERE id = $1', [id]);
   const row = rows[0] || null;
   if (row) {
-    // Debug: log raw types before parsing (first 3 calls)
-    if (!getGame._logCount) getGame._logCount = 0;
-    if (getGame._logCount < 3) {
-      getGame._logCount++;
-      const rawType = typeof row.ai_shops;
-      const rawIsArr = Array.isArray(row.ai_shops);
-      const rawLen = row.ai_shops?.length;
-      const rawSlice = JSON.stringify(row.ai_shops)?.slice(0, 200);
-      console.log(`[pgStore] getGame RAW #${getGame._logCount}: type=${rawType} isArray=${rawIsArr} len=${rawLen} val=${rawSlice}`);
-    }
     row.economy = parseJson(row.economy);
     row.ai_shops = parseJson(row.ai_shops);
     row.liquidation = parseJson(row.liquidation);
-    // Force ai_shops to array if not already
     if (!Array.isArray(row.ai_shops)) row.ai_shops = [];
     if (!Array.isArray(row.liquidation)) row.liquidation = [];
   }
