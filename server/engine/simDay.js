@@ -32,6 +32,8 @@ import { RETREADING } from '../../shared/constants/retreading.js';
 import { SUPPLIER_REL_TIERS, getSupplierRelTier } from '../../shared/constants/supplierRelations.js';
 import { ACHIEVEMENTS } from '../../shared/constants/achievements.js';
 import { FACTORY } from '../../shared/constants/factory.js';
+import { RAW_MATERIALS, VINNIE_SCHEMES, RD_PROJECTS, CERTIFICATIONS, SHIPPING_ZONES, CFO_ROLE } from '../../shared/constants/factoryBrand.js';
+import { getAllTires, getBrandTireKey, getEffectiveProductionCost, getCustomerTier } from '../../shared/helpers/factoryBrand.js';
 import { MANUFACTURERS } from '../../shared/constants/manufacturers.js';
 import { getHolidayMult } from '../../shared/constants/holidays.js';
 import { getTireSeasonMult } from '../../shared/constants/tireSeasonal.js';
@@ -75,7 +77,7 @@ function pullFromStock(s, tire, qty) {
 }
 
 export function simDay(g, shared = {}) {
-  let s = { ...g, day: g.day + 1, dayRev: 0, dayProfit: 0, daySold: 0, log: [], _events: [], dayRevByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0, services: 0 }, daySoldByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0 } };
+  let s = { ...g, day: g.day + 1, dayRev: 0, dayProfit: 0, daySold: 0, log: [], _events: [], dayRevByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0, services: 0, factoryWholesale: 0 }, daySoldByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0, factoryWholesale: 0 } };
 
   // Save previous day values for trend arrows
   s.prevDayRev = g.dayRev || 0;
@@ -138,24 +140,80 @@ export function simDay(g, shared = {}) {
 
   // ── FACTORY PRODUCTION ──
   if (s.hasFactory && s.factory) {
-    s.factory = { ...s.factory, productionQueue: [...(s.factory.productionQueue || [])], staff: { ...(s.factory.staff || { lineWorkers: 0, inspectors: 0, engineers: 0, manager: 0 }) } };
+    s.factory = {
+      ...s.factory,
+      productionQueue: [...(s.factory.productionQueue || [])],
+      staff: { ...(s.factory.staff || { lineWorkers: 0, inspectors: 0, engineers: 0, manager: 0 }) },
+      rawMaterials: { ...(s.factory.rawMaterials || { rubber: 1.0, steel: 1.0, chemicals: 1.0 }) },
+      rdProjects: [...(s.factory.rdProjects || [])],
+      certifications: [...(s.factory.certifications || [])],
+      vinnieInventory: { ...(s.factory.vinnieInventory || {}) },
+      customerList: [...(s.factory.customerList || [])],
+      orderHistory: [...(s.factory.orderHistory || [])],
+    };
     const fStaff = s.factory.staff;
     const managerBoost = 1 + (fStaff.manager || 0) * 0.20;
 
-    // Production completions — apply defect rate
+    // ── RAW MATERIAL PRICE DRIFT (weekly) ──
+    if (s.day % 7 === 0) {
+      for (const [mat, cfg] of Object.entries(RAW_MATERIALS)) {
+        const current = s.factory.rawMaterials[mat] ?? cfg.base;
+        const drift = (Math.random() - 0.5) * 2 * cfg.volatility;
+        s.factory.rawMaterials[mat] = Math.max(cfg.min, Math.min(cfg.max, current + drift));
+      }
+    }
+
+    // ── LINE SWITCHING COOLDOWN ──
+    if ((s.factory.switchCooldown || 0) > 0) {
+      s.factory.switchCooldown--;
+    }
+
+    // ── PRODUCTION COMPLETIONS — apply defect rate, store as brand_ keys ──
+    const defectMult = s.factory._vinnieQualityShortcut ? 2 : 1;
+    delete s.factory._vinnieQualityShortcut;
     const completed = s.factory.productionQueue.filter(q => s.day >= q.completionDay);
     s.factory.productionQueue = s.factory.productionQueue.filter(q => s.day < q.completionDay);
     let producedTotal = 0;
+    const allTiresMap = getAllTires(s);
     for (const q of completed) {
-      // Defect rate: base 15%, reduced by inspectors (2% each), min 1%
-      const defectRate = Math.max(FACTORY.minDefectRate, FACTORY.baseDefectRate - (fStaff.inspectors || 0) * 0.02);
+      const defectRate = Math.max(FACTORY.minDefectRate, (FACTORY.baseDefectRate - (fStaff.inspectors || 0) * 0.02) * defectMult);
       const goodQty = Math.max(1, Math.floor(q.qty * (1 - defectRate)));
-      s.warehouseInventory[q.tire] = (s.warehouseInventory[q.tire] || 0) + goodQty;
+      // Store with brand_ prefix
+      const storeKey = q.tire.startsWith('brand_') ? q.tire : getBrandTireKey(q.tire);
+      s.warehouseInventory[storeKey] = (s.warehouseInventory[storeKey] || 0) + goodQty;
       producedTotal += goodQty;
+      const tireName = allTiresMap[storeKey]?.n || allTiresMap[q.tire]?.n || q.tire;
       if (goodQty < q.qty) {
-        s.log.push({ msg: `\u{1F3ED} Factory produced ${goodQty}/${q.qty} ${TIRES[q.tire]?.n || q.tire} (${q.qty - goodQty} defective)`, cat: 'sale' });
+        s.log.push({ msg: `\u{1F3ED} Factory produced ${goodQty}/${q.qty} ${tireName} (${q.qty - goodQty} defective)`, cat: 'sale' });
       } else {
-        s.log.push({ msg: `\u{1F3ED} Factory produced ${goodQty} ${TIRES[q.tire]?.n || q.tire}`, cat: 'sale' });
+        s.log.push({ msg: `\u{1F3ED} Factory produced ${goodQty} ${tireName}`, cat: 'sale' });
+      }
+    }
+
+    // ── R&D PROJECT COMPLETION ──
+    const completedRD = s.factory.rdProjects.filter(p => s.day >= p.completionDay);
+    s.factory.rdProjects = s.factory.rdProjects.filter(p => s.day < p.completionDay);
+    if (!s.factory.unlockedSpecials) s.factory.unlockedSpecials = [];
+    for (const proj of completedRD) {
+      const rdDef = RD_PROJECTS.find(r => r.id === proj.id);
+      if (!rdDef) continue;
+      if (rdDef.qualityBoost) {
+        s.factory.qualityRating = Math.min(1.0, (s.factory.qualityRating || 0.80) + rdDef.qualityBoost);
+      }
+      if (rdDef.unlocksExclusive && !s.factory.unlockedSpecials.includes(rdDef.unlocksExclusive)) {
+        s.factory.unlockedSpecials.push(rdDef.unlocksExclusive);
+      }
+      s.log.push({ msg: `\u{1F52C} R&D Complete: ${rdDef.name}${rdDef.qualityBoost ? ` (+${Math.round(rdDef.qualityBoost * 100)}% quality)` : ''}${rdDef.unlocksExclusive ? ' — new tire unlocked!' : ''}`, cat: 'event' });
+    }
+
+    // ── CERTIFICATION COMPLETION ──
+    const completedCerts = s.factory.certifications.filter(c => !c.earned && s.day >= c.completionDay);
+    for (const cert of completedCerts) {
+      cert.earned = true;
+      const certDef = CERTIFICATIONS.find(c => c.id === cert.id);
+      if (certDef) {
+        s.factory.brandReputation = Math.min(100, (s.factory.brandReputation || 0) + certDef.repBoost);
+        s.log.push({ msg: `\u{1F3C5} Certification earned: ${certDef.name} (+${certDef.repBoost} brand rep)`, cat: 'event' });
       }
     }
 
@@ -173,12 +231,148 @@ export function simDay(g, shared = {}) {
     // Factory overhead
     s.cash -= (FACTORY.monthlyOverhead || 50000) / 30;
 
-    // Factory staff payroll
-    const factoryPayroll = Object.entries(fStaff).reduce((a, [role, count]) => {
+    // Factory staff payroll (including CFO if hired)
+    let factoryPayroll = Object.entries(fStaff).reduce((a, [role, count]) => {
       const staffDef = FACTORY.staff[role];
       return a + (staffDef ? staffDef.salary * count : 0);
     }, 0) / 30;
+    if (s.factory.hasCFO) factoryPayroll += CFO_ROLE.salary / 30;
     s.cash -= factoryPayroll;
+  }
+
+  // ── FACTORY WHOLESALE ORDERS (AI shops buying from player) ──
+  if (s.hasFactory && s.factory?.isDistributor) {
+    const allTiresWS = getAllTires(s);
+    const brandRep = s.factory.brandReputation || 0;
+    for (const aiShop of (shared.aiShops || [])) {
+      if (Math.random() > 1/7) continue; // weekly ordering
+      const buyChance = brandRep * 0.008; // 0-80% based on brand rep
+      if (Math.random() > buyChance) continue;
+
+      // Pick a tire type the shop might want that player produces
+      const producibleKeys = Object.keys(FACTORY.productionCost);
+      const brandedKeys = producibleKeys.map(k => getBrandTireKey(k));
+      const availableKeys = brandedKeys.filter(k => (s.warehouseInventory[k] || 0) > 0);
+      if (availableKeys.length === 0) continue;
+      const chosenKey = availableKeys[Math.floor(Math.random() * availableKeys.length)];
+      const stock = s.warehouseInventory[chosenKey] || 0;
+
+      // Order qty: 5-50, constrained by stock
+      const orderQty = Math.min(stock, Math.floor(5 + Math.random() * 45));
+      if (orderQty <= 0) continue;
+
+      // Find customer record
+      const shopId = aiShop.id || aiShop.name;
+      let customer = s.factory.customerList.find(c => c.id === shopId);
+      if (!customer) {
+        customer = { id: shopId, name: aiShop.name || 'AI Shop', totalPurchased: 0, lastOrderDay: 0 };
+        s.factory.customerList.push(customer);
+      }
+
+      // Apply discount tier
+      const tier = getCustomerTier(s.factory, customer.totalPurchased);
+      const baseType = chosenKey.replace('brand_', '');
+      const wsPrice = s.factory.wholesalePrices?.[baseType] || Math.round((FACTORY.productionCost[baseType] || 50) * 1.5);
+      const discountedPrice = Math.round(wsPrice * (1 - tier.disc));
+
+      // Shipping cost
+      const shopDist = Math.floor(Math.random() * 1500);
+      const zone = SHIPPING_ZONES.find(z => shopDist <= z.maxDist) || SHIPPING_ZONES[SHIPPING_ZONES.length - 1];
+      const shippingCost = orderQty * zone.costPerTire;
+
+      // Execute the sale
+      s.warehouseInventory[chosenKey] -= orderQty;
+      const grossRev = orderQty * discountedPrice;
+      const netRev = grossRev - shippingCost;
+      s.cash += netRev;
+      s.dayRev += grossRev;
+      s.dayProfit += netRev - orderQty * (FACTORY.productionCost[baseType] || 50);
+      s.daySold += orderQty;
+      s.dayRevByChannel.factoryWholesale = (s.dayRevByChannel.factoryWholesale || 0) + grossRev;
+      s.daySoldByChannel.factoryWholesale = (s.daySoldByChannel.factoryWholesale || 0) + orderQty;
+
+      // Track
+      customer.totalPurchased += orderQty;
+      customer.lastOrderDay = s.day;
+      s.factory.totalWholesaleRev = (s.factory.totalWholesaleRev || 0) + grossRev;
+      s.factory.totalWholesaleOrders = (s.factory.totalWholesaleOrders || 0) + 1;
+      s.factory.orderHistory.push({ shopId, shopName: aiShop.name || 'AI Shop', tire: chosenKey, qty: orderQty, price: discountedPrice, day: s.day, tier: tier.label });
+      if (s.factory.orderHistory.length > 100) s.factory.orderHistory = s.factory.orderHistory.slice(-100);
+
+      const tireName = allTiresWS[chosenKey]?.n || chosenKey;
+      s.log.push({ msg: `\u{1F3ED} ${aiShop.name || 'Shop'} ordered ${orderQty} ${tireName} ($${fmt(grossRev)})`, cat: 'sale' });
+    }
+  }
+
+  // ── VINNIE'S SCHEMES ──
+  if (s.hasFactory && s.factory && Math.random() < 0.02) {
+    const hasCFO = !!s.factory.hasCFO;
+    if (!hasCFO || Math.random() > CFO_ROLE.vinnieBlockChance) {
+      const scheme = VINNIE_SCHEMES[Math.floor(Math.random() * VINNIE_SCHEMES.length)];
+      const schemeQty = scheme.qty[0] + Math.floor(Math.random() * (scheme.qty[1] - scheme.qty[0]));
+      const totalSchemeCost = schemeQty * scheme.tireCost;
+      if (s.cash >= totalSchemeCost) {
+        s.cash -= totalSchemeCost;
+        s.factory.vinnieInventory[scheme.id] = {
+          qty: (s.factory.vinnieInventory[scheme.id]?.qty || 0) + schemeQty,
+          costPer: scheme.tireCost,
+          day: s.day,
+          sellRate: scheme.sellRate,
+          name: scheme.name,
+        };
+        s.factory.vinnieTotalLoss = (s.factory.vinnieTotalLoss || 0); // track later
+        s.log.push({ msg: `Vinnie: ${scheme.desc} \u2014 bought ${schemeQty} for $${fmt(totalSchemeCost)}`, cat: 'vinnie' });
+      }
+    } else {
+      s.log.push({ msg: `Your CFO blocked one of Vinnie's "deals." Smart hire.`, cat: 'vinnie' });
+    }
+  }
+
+  // ── VINNIE INVENTORY LIQUIDATION ──
+  if (s.hasFactory && s.factory) {
+    for (const [schemeId, item] of Object.entries(s.factory.vinnieInventory)) {
+      if (!item || item.qty <= 0) { delete s.factory.vinnieInventory[schemeId]; continue; }
+      const daysSincePurchase = s.day - (item.day || 0);
+      if (daysSincePurchase > 90 && item.qty > 0) {
+        // Dump remaining at 20% of cost
+        const dumpRev = Math.round(item.qty * item.costPer * 0.20);
+        const loss = item.qty * item.costPer - dumpRev;
+        s.cash += dumpRev;
+        s.factory.vinnieTotalLoss = (s.factory.vinnieTotalLoss || 0) + loss;
+        s.log.push({ msg: `Vinnie: "Alright kid, the ${item.name} thing didn't work out." Dumped ${item.qty} for $${fmt(dumpRev)} (lost $${fmt(loss)})`, cat: 'vinnie' });
+        delete s.factory.vinnieInventory[schemeId];
+      } else {
+        // Trickle sell at 30-60% of cost
+        const sellQty = Math.max(1, Math.floor(item.qty * item.sellRate));
+        const sellPricePer = Math.round(item.costPer * (0.3 + Math.random() * 0.3));
+        const sellRev = sellQty * sellPricePer;
+        const loss = sellQty * item.costPer - sellRev;
+        s.cash += sellRev;
+        item.qty -= sellQty;
+        s.factory.vinnieTotalLoss = (s.factory.vinnieTotalLoss || 0) + loss;
+        if (item.qty <= 0) delete s.factory.vinnieInventory[schemeId];
+      }
+    }
+  }
+
+  // ── VINNIE CHAOS EVENTS ──
+  if (s.hasFactory && s.factory) {
+    // "Quality Shortcut" — 1/80 days: next batch has 2x defect rate
+    if (Math.random() < 1/80) {
+      s.factory._vinnieQualityShortcut = true;
+      s.log.push({ msg: `Vinnie: "Nobody's gonna notice a few bubbles..." (next batch: 2x defect rate)`, cat: 'vinnie' });
+    }
+    // "Vinnie's Marketing Genius" — 1/60 days: spend $10k-$50k for 1-3 brand rep
+    if (Math.random() < 1/60) {
+      const adCost = 10000 + Math.floor(Math.random() * 40000);
+      if (s.cash >= adCost) {
+        s.cash -= adCost;
+        const repGain = 1 + Math.floor(Math.random() * 3);
+        s.factory.brandReputation = Math.min(100, (s.factory.brandReputation || 0) + repGain);
+        s.factory.vinnieTotalLoss = (s.factory.vinnieTotalLoss || 0) + adCost;
+        s.log.push({ msg: `Vinnie spent $${fmt(adCost)} on a blimp ad. (+${repGain} brand rep... barely worth it)`, cat: 'vinnie' });
+      }
+    }
   }
 
   const season = getSeason(s.day);
@@ -279,7 +473,7 @@ export function simDay(g, shared = {}) {
       // ── LOYALTY UPDATE ──
       const locLoyalty = loc.loyalty || 0;
       let priceRatio = 0, priceCount = 0;
-      for (const [k2, t2] of Object.entries(TIRES)) {
+      for (const [k2, t2] of Object.entries(getAllTires(s))) {
         if ((loc.inventory[k2] || 0) <= 0) continue;
         const pp = s.prices[k2] || t2.def;
         const mp = (s.marketPrices && s.marketPrices[k2]) || t2.def;
@@ -318,7 +512,8 @@ export function simDay(g, shared = {}) {
       let locDemand = Math.max(1, Math.floor(city.dem * .25 * demandMult * whPenalty * earlyBoostShop * loyaltyMult * marketingMult * marketShareMult * monopolyMult * holidayMult * premiumTrafficMult));
       let locNewSold = 0;
 
-      for (const [k, t] of Object.entries(TIRES)) {
+      const retailTires = getAllTires(s);
+      for (const [k, t] of Object.entries(retailTires)) {
         const locStock = loc.inventory[k] || 0;
         if (locStock <= 0) continue;
         const price = s.prices[k] || t.def;
@@ -329,12 +524,14 @@ export function simDay(g, shared = {}) {
         const winterMult = isSeasonal ? (city.win || 1) : 1;
         const agMult = t.ag ? (city.agPct || 0) : 1;
         const tireSeasonMult = getTireSeasonMult(k, season);
+        // Branded tire demand boost from brand reputation
+        const brandBoost = t.branded ? (1 + (s.factory?.brandReputation || 0) * 0.005) : 1;
 
         const evAdoptionMult = t.ev ? (1 + Math.min(2.0, s.day / 365 * 0.5)) : 1;
         const emergencyMult = t.emergency ? (1 + (Math.random() < 0.05 ? 3 : 0)) : 1;
         let qty = Math.min(
           locStock,
-          Math.floor(locDemand * (.25 + Math.random() * .15) * winterMult * agMult * priceMult * evAdoptionMult * emergencyMult * tireSeasonMult)
+          Math.floor(locDemand * (.25 + Math.random() * .15) * winterMult * agMult * priceMult * evAdoptionMult * emergencyMult * tireSeasonMult * brandBoost)
         );
         qty = Math.min(qty, Math.ceil(staffCap));
         if (qty <= 0) continue;

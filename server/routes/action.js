@@ -24,6 +24,8 @@ import { FRANCHISE } from '../../shared/constants/franchise.js';
 import { FLEA_MARKETS, FLEA_STAND_COST, FLEA_TRANSPORT } from '../../shared/constants/fleaMarkets.js';
 import { CAR_MEETS, CAR_MEET_SUMMER_START, CAR_MEET_SUMMER_END, CAR_MEET_TRANSPORT } from '../../shared/constants/carMeets.js';
 import { FACTORY } from '../../shared/constants/factory.js';
+import { RAW_MATERIALS, FACTORY_DISCOUNT_TIERS_DEFAULT, RD_PROJECTS, CERTIFICATIONS, EXCLUSIVE_TIRES, CFO_ROLE, LINE_SWITCH_DAYS } from '../../shared/constants/factoryBrand.js';
+import { getEffectiveProductionCost, getBrandTireKey } from '../../shared/helpers/factoryBrand.js';
 import { MANUFACTURERS } from '../../shared/constants/manufacturers.js';
 import { PAY } from '../../shared/constants/staff.js';
 import { getNextUpgrade } from '../../shared/constants/shopStorage.js';
@@ -628,8 +630,30 @@ router.post('/', authMiddleware, async (req, res) => {
         g.cash -= FACTORY.buildCost;
         g.hasFactory = true;
         g.factory = {
-          level: 1, brandName: (g.companyName || 'My') + ' Tires',
-          productionQueue: [], dailyCapacity: 50, qualityRating: 0.80, brandReputation: 0,
+          level: 1,
+          brandName: (g.companyName || 'My') + ' Tires',
+          productionQueue: [],
+          dailyCapacity: 50,
+          qualityRating: 0.80,
+          brandReputation: 0,
+          rawMaterials: { rubber: 1.0, steel: 1.0, chemicals: 1.0 },
+          currentLine: null,
+          switchCooldown: 0,
+          isDistributor: false,
+          discountTiers: [...FACTORY_DISCOUNT_TIERS_DEFAULT],
+          wholesalePrices: {},
+          mapPrices: {},
+          minOrders: {},
+          rdProjects: [],
+          unlockedSpecials: [],
+          certifications: [],
+          totalWholesaleRev: 0,
+          totalWholesaleOrders: 0,
+          customerList: [],
+          orderHistory: [],
+          vinnieInventory: {},
+          vinnieTotalLoss: 0,
+          hasCFO: false,
         };
         break;
       }
@@ -637,20 +661,38 @@ router.post('/', authMiddleware, async (req, res) => {
       case 'produceFactoryTires': {
         if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });
         const { tire, qty: rawQty2 } = params;
-        if (!FACTORY.productionCost[tire]) return res.status(400).json({ error: 'Cannot manufacture this tire type' });
+        // Allow standard producible types and exclusive unlocked types
+        const isExclusive = tire.startsWith('brand_') && (g.factory.unlockedSpecials || []).includes(tire);
+        const baseCostKey = isExclusive ? null : tire;
+        if (!isExclusive && !FACTORY.productionCost[tire]) return res.status(400).json({ error: 'Cannot manufacture this tire type' });
         const prodQty = Math.max(1, Math.floor(Number(rawQty2) || 0));
-        const cost = prodQty * FACTORY.productionCost[tire];
+        // Calculate effective cost with raw materials
+        const unitCost = isExclusive
+          ? (EXCLUSIVE_TIRES[tire]?.baseCost || 80)
+          : getEffectiveProductionCost(g.factory, tire);
+        const cost = prodQty * unitCost;
         if (g.cash < cost) return res.status(400).json({ error: 'Not enough cash' });
         const currentQueue = (g.factory.productionQueue || []).reduce((a, q) => a + q.qty, 0);
         if (currentQueue + prodQty > g.factory.dailyCapacity * 7) {
           return res.status(400).json({ error: 'Production queue full' });
         }
+        // Line switching cooldown
+        let switchDelay = 0;
+        if (g.factory.currentLine && g.factory.currentLine !== tire) {
+          switchDelay = LINE_SWITCH_DAYS;
+        }
+        g.factory.currentLine = tire;
         g.cash -= cost;
         if (!g.factory.productionQueue) g.factory.productionQueue = [];
+        const storeKey = tire.startsWith('brand_') ? tire : getBrandTireKey(tire);
         g.factory.productionQueue.push({
-          tire, qty: prodQty, startDay: g.day,
-          completionDay: g.day + Math.ceil(prodQty / g.factory.dailyCapacity),
+          tire: storeKey, qty: prodQty, startDay: g.day,
+          completionDay: g.day + switchDelay + Math.ceil(prodQty / g.factory.dailyCapacity),
         });
+        if (switchDelay > 0) {
+          g.log = g.log || [];
+          g.log.push({ msg: `Factory line switch: +${switchDelay} day cooldown`, cat: 'sale' });
+        }
         break;
       }
 
@@ -1187,6 +1229,107 @@ router.post('/', authMiddleware, async (req, res) => {
       case 'delistFactory': {
         g.factoryListing = null;
         g.log.push('Delisted factory from sale');
+        break;
+      }
+
+      // ── FACTORY DISTRIBUTION ──
+      case 'enableFactoryDistribution': {
+        if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });
+        if (!g.hasDist) return res.status(400).json({ error: 'Need distribution network' });
+        if (g.factory.isDistributor) return res.status(400).json({ error: 'Already a distributor' });
+        const distCost = 250000;
+        if (g.cash < distCost) return res.status(400).json({ error: 'Not enough cash ($250K)' });
+        g.cash -= distCost;
+        g.factory.isDistributor = true;
+        g.log = g.log || [];
+        g.log.push('Factory distribution network enabled! AI shops can now buy from you.');
+        break;
+      }
+
+      case 'setFactoryMAP': {
+        if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });
+        const { tire: mapTire, price: mapPrice } = params;
+        if (!FACTORY.productionCost[mapTire]) return res.status(400).json({ error: 'Invalid factory tire type' });
+        const minMAP = FACTORY.productionCost[mapTire];
+        if (Number(mapPrice) < minMAP) return res.status(400).json({ error: `MAP must be >= production cost ($${minMAP})` });
+        if (!g.factory.mapPrices) g.factory.mapPrices = {};
+        g.factory.mapPrices[mapTire] = Math.max(minMAP, Math.floor(Number(mapPrice) || 0));
+        break;
+      }
+
+      case 'setFactoryDiscountTier': {
+        if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });
+        const { tiers } = params;
+        if (!Array.isArray(tiers) || tiers.length > 5) return res.status(400).json({ error: 'Max 5 tiers' });
+        for (const t of tiers) {
+          if (typeof t.min !== 'number' || typeof t.disc !== 'number' || !t.label) {
+            return res.status(400).json({ error: 'Each tier needs min, disc, label' });
+          }
+          if (t.disc > 0.25) return res.status(400).json({ error: 'Max discount is 25%' });
+        }
+        g.factory.discountTiers = tiers.sort((a, b) => a.min - b.min);
+        break;
+      }
+
+      // ── R&D LAB ──
+      case 'startRDProject': {
+        if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });
+        const { projectId } = params;
+        const rdDef = RD_PROJECTS.find(r => r.id === projectId);
+        if (!rdDef) return res.status(400).json({ error: 'Invalid R&D project' });
+        const fStaff2 = g.factory.staff || {};
+        if ((fStaff2.engineers || 0) < 1) return res.status(400).json({ error: 'Need at least 1 engineer' });
+        if (!g.factory.rdProjects) g.factory.rdProjects = [];
+        if (g.factory.rdProjects.length >= 2) return res.status(400).json({ error: 'Max 2 concurrent R&D projects' });
+        if (g.factory.rdProjects.some(p => p.id === projectId)) return res.status(400).json({ error: 'Project already in progress' });
+        if ((g.factory.unlockedSpecials || []).includes(rdDef.unlocksExclusive)) {
+          return res.status(400).json({ error: 'Already completed this project' });
+        }
+        if (g.cash < rdDef.cost) return res.status(400).json({ error: 'Not enough cash' });
+        g.cash -= rdDef.cost;
+        g.factory.rdProjects.push({ id: projectId, startDay: g.day, completionDay: g.day + rdDef.days });
+        g.log = g.log || [];
+        g.log.push(`Started R&D: ${rdDef.name} (${rdDef.days} days)`);
+        break;
+      }
+
+      // ── CERTIFICATIONS ──
+      case 'startCertification': {
+        if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });
+        const { certId } = params;
+        const certDef = CERTIFICATIONS.find(c => c.id === certId);
+        if (!certDef) return res.status(400).json({ error: 'Invalid certification' });
+        if (!g.factory.certifications) g.factory.certifications = [];
+        if (g.factory.certifications.some(c => c.id === certId)) return res.status(400).json({ error: 'Certification already in progress or earned' });
+        if (certDef.qualityReq && (g.factory.qualityRating || 0) < certDef.qualityReq) {
+          return res.status(400).json({ error: `Quality must be ${Math.round(certDef.qualityReq * 100)}%+` });
+        }
+        if (g.cash < certDef.cost) return res.status(400).json({ error: 'Not enough cash' });
+        g.cash -= certDef.cost;
+        g.factory.certifications.push({ id: certId, startDay: g.day, completionDay: g.day + certDef.days, earned: false });
+        g.log = g.log || [];
+        g.log.push(`Started certification: ${certDef.name} (${certDef.days} days)`);
+        break;
+      }
+
+      // ── FACTORY CFO ──
+      case 'hireFactoryCFO': {
+        if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });
+        if (g.factory.hasCFO) return res.status(400).json({ error: 'Already have a CFO' });
+        if (g.cash < CFO_ROLE.salary) return res.status(400).json({ error: 'Not enough cash' });
+        g.cash -= CFO_ROLE.salary;
+        g.factory.hasCFO = true;
+        g.log = g.log || [];
+        g.log.push(`Hired CFO ($${CFO_ROLE.salary}/mo) — blocks 50% of Vinnie's schemes`);
+        break;
+      }
+
+      case 'fireFactoryCFO': {
+        if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });
+        if (!g.factory.hasCFO) return res.status(400).json({ error: 'No CFO to fire' });
+        g.factory.hasCFO = false;
+        g.log = g.log || [];
+        g.log.push('Fired factory CFO');
         break;
       }
 

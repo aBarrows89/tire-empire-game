@@ -10,3 +10,4 @@ export { getEcomTier } from './ecommerce.js';
 export { getWhStaffReq, getWhPayroll, getWhShortage } from './warehouse.js';
 export { canUnlockDist } from './distribution.js';
 export { TUTORIAL_STEPS } from './tutorial.js';
+export { getBrandTireKey, getBrandTire, getAllTires, getEffectiveProductionCost, getCustomerTier } from './factoryBrand.js';

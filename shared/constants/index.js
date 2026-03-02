@@ -24,3 +24,4 @@ export { INSTALLER_NET } from './installerNet.js';
 export { MONET } from './monetization.js';
 export { EVENTS } from './events.js';
 export { VINNIE_TIPS } from './vinnieTips.js';
+export { RAW_MATERIALS, LINE_SWITCH_DAYS, FACTORY_DISCOUNT_TIERS_DEFAULT, RD_PROJECTS, CERTIFICATIONS, SHIPPING_ZONES, VINNIE_SCHEMES, EXCLUSIVE_TIRES, CFO_ROLE } from './factoryBrand.js';

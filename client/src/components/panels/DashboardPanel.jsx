@@ -30,6 +30,7 @@ const CHANNEL_LABELS = {
   carMeets: 'Car Meets',
   ecom: 'E-Commerce',
   wholesale: 'Wholesale',
+  factoryWholesale: 'Factory Wholesale',
   gov: 'Gov Contracts',
   van: 'Van Sales',
   services: 'Services',

@@ -391,6 +391,18 @@ export async function runTick(clients) {
     // Calculate total TireCoins in circulation across all players
     const totalTC = players.reduce((sum, p) => sum + (p.game_state.tireCoins || 0), 0);
 
+    // Build factory supplier list from all players with isDistributor
+    const factorySuppliers = players
+      .filter(p => p.game_state.hasFactory && p.game_state.factory?.isDistributor)
+      .map(p => ({
+        playerId: p.id,
+        brandName: p.game_state.factory.brandName,
+        brandRep: p.game_state.factory.brandReputation || 0,
+        wholesalePrices: p.game_state.factory.wholesalePrices || {},
+        qualityRating: p.game_state.factory.qualityRating || 0.80,
+        cityId: (p.game_state.locations || [])[0]?.cityId,
+      }));
+
     const shared = {
       cities: CITIES,
       aiShops: game.ai_shops || [],
@@ -398,6 +410,7 @@ export async function runTick(clients) {
       playerPriceAvg,
       aiPriceAvg,
       totalTC,
+      factorySuppliers,
     };
 
     const cal = getCalendar(day);

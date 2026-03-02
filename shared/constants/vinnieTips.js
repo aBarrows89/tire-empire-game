@@ -76,11 +76,15 @@ export const VINNIE_TIPS = [
   // ═══════════════════════════════════════════
   // FACTORY
   // ═══════════════════════════════════════════
-  { condKey: "factoryFirst", tip: "Your factory is live! Start with one production line and scale up. Factory tires cost a fraction of wholesale — that's your new edge." },
+  { condKey: "factoryFirst", tip: "Kid, you're in the big leagues now. Start with one production line and scale up. Factory tires cost a fraction of wholesale — that's your new edge." },
   { condKey: "factoryStaff", tip: "A factory needs skilled workers to run efficiently. Hire factory staff before ramping production or quality will suffer." },
   { condKey: "factoryBrand", tip: "You're making your own tires now. Build your brand name — customers pay more for a name they recognize and trust." },
   { condKey: "factoryUpgrade", tip: "Upgrading your factory equipment increases output and quality. Each upgrade pays for itself within a few months of production." },
   { condKey: "factoryExport", tip: "Why stop at domestic? Your factory can produce for export markets. International sales add a whole new revenue layer to your empire." },
+  { condKey: "factoryWholesale", tip: "Now you're SUPPLYING the competition. That's power. Set your wholesale prices right and watch the orders roll in." },
+  { condKey: "factoryBrandRep50", tip: "Your name carries weight. Time to raise those prices. Shops are ASKING for your brand now." },
+  { condKey: "factoryVinnieLoss", tip: "Hey, you win some, you lose some. Mostly lose some. Maybe hire a CFO to keep me in check... just kidding. Kind of." },
+  { condKey: "factoryRD", tip: "R&D is how you stay ahead. Invest in new tire tech and you'll unlock products nobody else can make. That's a moat, kid." },
 
   // ═══════════════════════════════════════════
   // SEASONAL
