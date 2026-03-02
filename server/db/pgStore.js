@@ -49,11 +49,21 @@ async function ensureSchema() {
 
 await ensureSchema();
 
+// Helper: ensure JSONB fields are parsed (pg sometimes returns strings)
+function parseJson(val) {
+  if (typeof val === 'string') {
+    try { return JSON.parse(val); } catch { return val; }
+  }
+  return val;
+}
+
 // ── Players ──
 
 export async function getPlayer(id) {
   const { rows } = await pool.query('SELECT * FROM players WHERE id = $1', [id]);
-  return rows[0] || null;
+  const row = rows[0] || null;
+  if (row) row.game_state = parseJson(row.game_state);
+  return row;
 }
 
 export async function createPlayer(id, name, gameState) {
@@ -88,6 +98,7 @@ export async function getAllActivePlayers() {
   const { rows } = await pool.query(
     "SELECT id, game_state FROM players WHERE (game_state->>'paused')::boolean IS NOT TRUE"
   );
+  for (const r of rows) r.game_state = parseJson(r.game_state);
   return rows;
 }
 
@@ -101,7 +112,13 @@ export async function removePlayer(id) {
 
 export async function getGame(id = 'default') {
   const { rows } = await pool.query('SELECT * FROM games WHERE id = $1', [id]);
-  return rows[0] || null;
+  const row = rows[0] || null;
+  if (row) {
+    row.economy = parseJson(row.economy);
+    row.ai_shops = parseJson(row.ai_shops);
+    row.liquidation = parseJson(row.liquidation);
+  }
+  return row;
 }
 
 export async function saveGame(id, day, economy, aiShops, liquidation) {
