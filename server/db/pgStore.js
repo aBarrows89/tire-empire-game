@@ -117,6 +117,14 @@ export async function getGame(id = 'default') {
     row.economy = parseJson(row.economy);
     row.ai_shops = parseJson(row.ai_shops);
     row.liquidation = parseJson(row.liquidation);
+    // Debug: log types on first call
+    if (!getGame._logged) {
+      getGame._logged = true;
+      console.log(`[pgStore] getGame types: ai_shops=${typeof row.ai_shops} isArray=${Array.isArray(row.ai_shops)} len=${row.ai_shops?.length} raw=${JSON.stringify(row.ai_shops)?.slice(0, 100)}`);
+    }
+    // Force ai_shops to array if not already
+    if (!Array.isArray(row.ai_shops)) row.ai_shops = [];
+    if (!Array.isArray(row.liquidation)) row.liquidation = [];
   }
   return row;
 }
