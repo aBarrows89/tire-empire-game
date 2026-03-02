@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { postAction } from '../../api/client.js';
 import { WS_MIN_REP, WS_MIN_STORAGE, VOL_TIERS } from '@shared/constants/wholesale.js';
@@ -8,41 +8,15 @@ import { getVolTier } from '@shared/helpers/wholesale.js';
 import { getCap } from '@shared/helpers/inventory.js';
 import { hapticsMedium } from '../../api/haptics.js';
 
-const TIRE_KEYS = Object.keys(TIRES);
-
 export default function WholesalePanel() {
   const { state, refreshState } = useGame();
   const g = state.game;
-  const [busy, setBusy] = useState(false);
-
-  // Add-client form state
-  const [clientName, setClientName] = useState('');
-  const [clientTire, setClientTire] = useState(TIRE_KEYS[0]);
-  const [clientMin, setClientMin] = useState(10);
-  const [clientMax, setClientMax] = useState(50);
+  const [busy, setBusy] = React.useState(false);
 
   const unlockWholesale = async () => {
     setBusy(true);
     const res = await postAction('unlockWholesale');
     if (res.ok) { hapticsMedium(); refreshState(); }
-    setBusy(false);
-  };
-
-  const addClient = async () => {
-    if (!clientName.trim()) return;
-    setBusy(true);
-    const res = await postAction('addWsClient', {
-      name: clientName.trim(),
-      preferredTire: clientTire,
-      minOrder: clientMin,
-      maxOrder: clientMax,
-    });
-    if (res.ok) {
-      refreshState();
-      setClientName('');
-      setClientMin(10);
-      setClientMax(50);
-    }
     setBusy(false);
   };
 
@@ -59,7 +33,8 @@ export default function WholesalePanel() {
           <div className="card-title">Wholesale Channel</div>
           <div className="text-sm text-dim" style={{ lineHeight: 1.5, marginBottom: 8 }}>
             Open a B2B wholesale channel to supply tires in bulk to fleet operators,
-            dealerships, and other commercial clients.
+            dealerships, and other commercial clients. Clients will approach you
+            automatically as your reputation grows.
           </div>
         </div>
 
@@ -92,6 +67,7 @@ export default function WholesalePanel() {
   // --- Unlocked view ---
   const tier = getVolTier(g.monthlyPurchaseVol || 0);
   const clients = g.wsClients || [];
+  const nextTier = VOL_TIERS.find(t => t.min > (g.monthlyPurchaseVol || 0));
 
   return (
     <>
@@ -107,17 +83,22 @@ export default function WholesalePanel() {
           <span className="font-bold">{fmt(g.monthlyPurchaseVol || 0)} tires</span>
         </div>
         <div className="row-between mb-4">
-          <span className="text-sm text-dim">Discount</span>
+          <span className="text-sm text-dim">Your Discount</span>
           <span className="font-bold text-green">{(tier.disc * 100).toFixed(0)}%</span>
         </div>
+        {nextTier && (
+          <div className="text-xs text-dim" style={{ marginTop: 4 }}>
+            Next: {nextTier.label} at {fmt(nextTier.min)} tires/month
+          </div>
+        )}
 
         {/* Tier progression */}
-        <div className="text-xs text-dim" style={{ marginTop: 4 }}>
+        <div className="text-xs text-dim" style={{ marginTop: 8 }}>
           {VOL_TIERS.map((t, i) => {
             const active = tier.label === t.label;
             return (
               <span key={i} style={{ marginRight: 8 }}>
-                <span className={active ? 'font-bold text-accent' : ''}>{t.label}</span>
+                <span className={active ? 'font-bold text-accent' : ''}>{t.label.split(' ')[0]}</span>
                 {i < VOL_TIERS.length - 1 && ' / '}
               </span>
             );
@@ -125,92 +106,48 @@ export default function WholesalePanel() {
         </div>
       </div>
 
+      {/* How it works */}
+      <div className="card">
+        <div className="card-title">How Wholesale Works</div>
+        <div className="text-xs text-dim" style={{ lineHeight: 1.6 }}>
+          B2B clients approach you automatically based on your <strong>reputation</strong>.
+          Each client orders weekly. Keep stock of their preferred tires or they'll leave.
+          Higher reputation = more clients (up to 1 per 10 rep).
+          <br /><br />
+          Max clients at your rep ({Math.round(g.reputation)}): <strong>{Math.floor(g.reputation / 10)}</strong>
+        </div>
+      </div>
+
       {/* Client List */}
       <div className="card">
         <div className="card-title">B2B Clients ({clients.length})</div>
         {clients.length === 0 && (
-          <div className="text-sm text-dim">No clients yet. Add your first wholesale client below.</div>
+          <div className="text-sm text-dim" style={{ lineHeight: 1.5 }}>
+            No clients yet. Keep building your reputation and stocking your warehouse
+            — clients will find you automatically each week.
+          </div>
         )}
         {clients.map((client) => {
           const tire = TIRES[client.preferredTire];
+          const satisfaction = client.satisfaction ?? 100;
+          const satColor = satisfaction >= 70 ? 'text-green' : satisfaction >= 40 ? 'text-gold' : 'text-red';
           return (
             <div key={client.id} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>
               <div className="row-between mb-4">
                 <span className="font-bold text-sm">{client.name}</span>
-                <span className="text-xs text-dim">Joined day {client.joinedDay}</span>
+                <span className={`text-xs font-bold ${satColor}`}>{satisfaction}% happy</span>
               </div>
               <div className="row-between text-xs">
-                <span className="text-dim">Preferred: {tire?.n || client.preferredTire}</span>
-                <span className="text-dim">Order range: {client.minOrder}&ndash;{client.maxOrder}</span>
+                <span className="text-dim">Wants: {tire?.n || client.preferredTire}</span>
+                <span className="text-dim">{client.minOrder}&ndash;{client.maxOrder}/order</span>
+              </div>
+              <div className="row-between text-xs" style={{ marginTop: 2 }}>
+                <span className="text-dim">Total ordered: {fmt(client.totalOrdered || 0)}</span>
+                <span className="text-dim">Since day {client.joinedDay}</span>
               </div>
             </div>
           );
         })}
-      </div>
-
-      {/* Add Client Form */}
-      <div className="card">
-        <div className="card-title">Add Client</div>
-        <div className="text-xs text-dim mb-4">
-          Register a new B2B wholesale client.
-        </div>
-        <div style={{ marginBottom: 8 }}>
-          <label className="text-xs text-dim" style={{ display: 'block', marginBottom: 4 }}>Client Name</label>
-          <input
-            type="text"
-            className="autoprice-offset"
-            style={{ width: '100%', textAlign: 'left' }}
-            placeholder="e.g. Metro Fleet Services"
-            value={clientName}
-            onChange={(e) => setClientName(e.target.value)}
-          />
-        </div>
-        <div style={{ marginBottom: 8 }}>
-          <label className="text-xs text-dim" style={{ display: 'block', marginBottom: 4 }}>Preferred Tire</label>
-          <select
-            className="autoprice-select"
-            style={{ width: '100%' }}
-            value={clientTire}
-            onChange={(e) => setClientTire(e.target.value)}
-          >
-            {TIRE_KEYS.map(key => (
-              <option key={key} value={key}>
-                {TIRES[key].n}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="row gap-8" style={{ marginBottom: 8 }}>
-          <div style={{ flex: 1 }}>
-            <label className="text-xs text-dim" style={{ display: 'block', marginBottom: 4 }}>Min Order</label>
-            <input
-              type="number"
-              className="autoprice-offset"
-              style={{ width: '100%', textAlign: 'left' }}
-              min={1}
-              value={clientMin}
-              onChange={(e) => setClientMin(Math.max(1, Number(e.target.value)))}
-            />
-          </div>
-          <div style={{ flex: 1 }}>
-            <label className="text-xs text-dim" style={{ display: 'block', marginBottom: 4 }}>Max Order</label>
-            <input
-              type="number"
-              className="autoprice-offset"
-              style={{ width: '100%', textAlign: 'left' }}
-              min={1}
-              value={clientMax}
-              onChange={(e) => setClientMax(Math.max(1, Number(e.target.value)))}
-            />
-          </div>
-        </div>
-        <button
-          className="btn btn-full btn-green"
-          disabled={!clientName.trim() || clientMin < 1 || clientMax < clientMin || busy}
-          onClick={addClient}
-        >
-          {busy ? 'Adding...' : 'Add Client'}
-        </button>
       </div>
     </>
   );

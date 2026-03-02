@@ -805,26 +805,81 @@ export function simDay(g, shared = {}) {
     }
   }
 
-  // ── WHOLESALE REVENUE — daily (÷7) ──
-  if (s.hasWholesale && s.wsClients.length > 0) {
+  // ── WHOLESALE ──
+  if (s.hasWholesale) {
+    if (!s.wsClients) s.wsClients = [];
+
+    // Auto-generate new clients based on reputation + capacity (weekly chance)
+    if (s.day % 7 === 0) {
+      const maxClients = Math.floor(s.reputation / 10);  // 1 client per 10 rep, up to ~10
+      if (s.wsClients.length < maxClients && Math.random() < 0.4) {
+        const WS_CLIENT_NAMES = [
+          'Metro Fleet Services', 'County Transit Authority', 'Regional Auto Group',
+          'Swift Logistics', 'Heartland Trucking', 'Eagle Transport Co',
+          'Downtown Auto Mall', 'Valley Car Dealers', 'National Rental Corp',
+          'Premier Fleet Mgmt', 'Interstate Freight', 'Coastal Delivery Inc',
+          'Union Bus Lines', 'Capital City Motors', 'Suburban Auto Network',
+          'Pro Haulers LLC', 'Central Dispatch', 'Liberty Motor Pool',
+          'Patriot Freight', 'Summit Transport Group',
+        ];
+        const usedNames = new Set(s.wsClients.map(c => c.name));
+        const available = WS_CLIENT_NAMES.filter(n => !usedNames.has(n));
+        if (available.length > 0) {
+          const tireKeys = Object.keys(TIRES).filter(k => !k.startsWith('used_') && !k.startsWith('brand_'));
+          const newClient = {
+            id: `wsc-${s.day}-${Math.random().toString(36).slice(2, 8)}`,
+            name: available[R(0, available.length - 1)],
+            preferredTire: tireKeys[R(0, tireKeys.length - 1)],
+            minOrder: R(5, 15),
+            maxOrder: R(20, 50),
+            joinedDay: s.day,
+            satisfaction: 100,
+            totalOrdered: 0,
+            failedOrders: 0,
+          };
+          s.wsClients.push(newClient);
+          s.log.push({ msg: `New wholesale client: ${newClient.name} (wants ${TIRES[newClient.preferredTire]?.n || newClient.preferredTire})`, cat: 'wholesale' });
+        }
+      }
+
+      // Clients leave if satisfaction drops too low
+      s.wsClients = s.wsClients.filter(c => {
+        if (c.satisfaction <= 20) {
+          s.log.push({ msg: `Wholesale client ${c.name} left (too many unfilled orders)`, cat: 'wholesale' });
+          return false;
+        }
+        return true;
+      });
+    }
+
+    // Fulfill wholesale orders (~once per week per client)
+    let monthlyVol = 0;
     for (const client of s.wsClients) {
-      // Only fulfill wholesale orders ~once per week (1/7 chance per day)
       if (Math.random() > 1/7) continue;
       const qty = R(client.minOrder || 5, client.maxOrder || 20);
-      const tire = client.preferredTire || "allSeason";
+      const tire = client.preferredTire || 'allSeason';
       const t = TIRES[tire];
       const totalStock = (s.warehouseInventory?.[tire] || 0) +
         s.locations.reduce((a, l) => a + (l.inventory?.[tire] || 0), 0);
-      if (!t || totalStock < qty) continue;
-
+      if (!t || totalStock < qty) {
+        client.failedOrders = (client.failedOrders || 0) + 1;
+        client.satisfaction = Math.max(0, (client.satisfaction || 100) - 15);
+        continue;
+      }
       const pulled = pullFromStock(s, tire, qty);
-      if (pulled <= 0) continue;
-
+      if (pulled <= 0) {
+        client.failedOrders = (client.failedOrders || 0) + 1;
+        client.satisfaction = Math.max(0, (client.satisfaction || 100) - 15);
+        continue;
+      }
+      // Successful order — boost satisfaction
+      client.satisfaction = Math.min(100, (client.satisfaction || 100) + 5);
+      client.totalOrdered = (client.totalOrdered || 0) + pulled;
+      monthlyVol += pulled;
       const margin = getWsMargin(s, client);
       const price = Math.round(t.def * (1 - margin));
       const rev = pulled * price;
       const deliveryCost = pulled * Rf(WS_DELIVERY_COST.min, WS_DELIVERY_COST.max);
-
       s.cash += rev - deliveryCost;
       s.dayRev += rev;
       s.dayProfit += rev - deliveryCost;
@@ -832,6 +887,8 @@ export function simDay(g, shared = {}) {
       s.dayRevByChannel.wholesale += rev;
       s.daySoldByChannel.wholesale += pulled;
     }
+    // Track monthly volume (rolling approximation: daily sales * 30)
+    s.monthlyPurchaseVol = Math.round((s.monthlyPurchaseVol || 0) * 0.97 + monthlyVol * 4.3);
   }
 
   // ── E-COMMERCE REVENUE — daily (÷7) ──
