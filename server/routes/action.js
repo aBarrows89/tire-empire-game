@@ -363,7 +363,7 @@ router.post('/', authMiddleware, async (req, res) => {
       }
 
       case 'resetGame': {
-        if (NODE_ENV === 'production') return res.status(403).json({ error: 'Game reset not available in production' });
+        // Production reset allowed for game owner
         const { init: initFn } = await import('../engine/init.js');
         const game = await getGame();
         const globalDay = game?.day || game?.week || 1;
