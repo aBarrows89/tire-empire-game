@@ -187,6 +187,7 @@ export default function StoragePanel() {
               max={srcInv[txTire] || 1}
               value={txQty}
               onChange={e => setTxQty(Math.max(1, Number(e.target.value)))}
+              onFocus={e => e.target.select()}
             />
           </div>
 
@@ -228,6 +229,7 @@ export default function StoragePanel() {
             max={retreadGrade === 'junk' ? (g.warehouseInventory?.used_junk || 0) : (g.warehouseInventory?.used_poor || 0)}
             value={retreadQty}
             onChange={e => setRetreadQty(Math.max(1, Number(e.target.value)))}
+            onFocus={e => e.target.select()}
           />
         </div>
         <div className="text-xs text-dim mb-4">

@@ -266,6 +266,17 @@ function createAIPlayer(name, company, stage, playerDay, globalDay) {
       vanTotalSold: 0,
       vanOnlyDays: 0,
       autoSuppliers: [],
+      blockedPlayers: [],
+      isBanned: false,
+      stockExchange: stage > 0.3 ? {
+        hasBrokerage: true, brokerageOpenedDay: 1, portfolio: {}, openOrders: [], tradeHistory: [],
+        marginEnabled: false, marginDebt: 0, marginCallDay: null, darkPoolAccess: false,
+        advancedCharting: false, shortSellingEnabled: false, ipoPriority: false,
+        realTimeAlerts: false, priceAlerts: [], dividendIncome: 0, capitalGains: 0,
+        taxesPaid: 0, brokerageFeePaid: 0, wealthTaxPaid: 0,
+        isPublic: false, ipoDay: null, ticker: null, dividendPayoutRatio: 0.25,
+        founderSharesLocked: 0, shortPositions: {},
+      } : null,
       shopListings: [],
       shopBids: [],
       shopRevenueShares: [],
@@ -423,6 +434,15 @@ export function simAIPlayerDay(g) {
 
   // Round reputation
   g.reputation = Math.round(g.reputation * 100) / 100;
+
+  // AI stock trading — place random orders if they have a brokerage
+  if (g.stockExchange?.hasBrokerage && Math.random() < 0.15 && g.cash > 5000) {
+    // AI will place orders during exchangeTick via the order book
+    // Store intent; exchangeTick picks it up
+    if (!g._aiTradeIntent) g._aiTradeIntent = {};
+    g._aiTradeIntent.budget = Math.floor(g.cash * R(0.02, 0.08));
+    g._aiTradeIntent.action = Math.random() < 0.6 ? 'buy' : 'sell';
+  }
 
   return g;
 }

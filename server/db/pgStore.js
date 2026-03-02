@@ -6,6 +6,7 @@ const directTrades = [];
 const tournaments = new Map();
 const chatMessages = [];
 const shopSaleListings = [];
+const chatMutes = new Map();
 
 // ── Ensure schema exists on first load ──
 async function ensureSchema() {
@@ -219,6 +220,17 @@ export async function addChatMessage(msg) {
   chatMessages.push(msg);
   if (chatMessages.length > 500) chatMessages.splice(0, chatMessages.length - 500);
   return msg;
+}
+
+// ── Chat Mutes (in-memory) ──
+
+export async function getChatMutes() { return Object.fromEntries(chatMutes); }
+export async function setChatMute(playerId, data) { chatMutes.set(playerId, data); }
+export async function removeChatMute(playerId) { chatMutes.delete(playerId); }
+export async function deleteChatMessage(messageId) {
+  const idx = chatMessages.findIndex(m => m.id === messageId);
+  if (idx !== -1) { chatMessages.splice(idx, 1); return true; }
+  return false;
 }
 
 // ── Shop Sale Listings (in-memory) ──

@@ -432,14 +432,13 @@ export function simDay(g, shared = {}) {
     for (const loc of s.locations) {
       if (moved >= driverCap) break;
       if (!loc.inventory) loc.inventory = {};
-      const locFree = getLocCap(loc) - getLocInv(loc);
-      if (locFree <= 0) continue;
-      const toMove = Math.min(locFree, driverCap - moved);
       // Move tires from warehouse to this location
-      for (const [k, whQty] of Object.entries(s.warehouseInventory)) {
-        if (moved >= driverCap || toMove <= 0) break;
+      for (const [k, whQty] of Object.entries(s.warehouseInventory || {})) {
+        if (moved >= driverCap) break;
         if (whQty <= 0) continue;
-        const take = Math.min(whQty, toMove - (getLocCap(loc) - getLocInv(loc) < 0 ? 0 : getLocCap(loc) - getLocInv(loc)), driverCap - moved);
+        const locFree = getLocCap(loc) - getLocInv(loc);
+        if (locFree <= 0) break;
+        const take = Math.min(whQty, locFree, driverCap - moved);
         if (take <= 0) continue;
         s.warehouseInventory[k] -= take;
         loc.inventory[k] = (loc.inventory[k] || 0) + take;
@@ -456,19 +455,24 @@ export function simDay(g, shared = {}) {
   const locTakeOffSources = {};
   if (s.locations.length > 0) {
     // Staff capacity: techs = output (installs), sales = demand (customers)
-    // Cap is min of both — need techs to install AND sales to bring customers
-    const techCap = s.staff.techs * 8;
-    const salesCap = s.staff.sales * 5;
-    const staffCap = Math.min(techCap, salesCap) * (1 + s.staff.managers * .15);
+    // Per-location daily cap based on staff headcount
+    const techCap = s.staff.techs * 12;
+    const salesCap = s.staff.sales * 8;
+    const staffCapTotal = Math.min(techCap, salesCap) * (1 + s.staff.managers * .15);
     const demandMult = sDem * (1 + s.reputation * .01) * (s._tB || 1);
     const whPenalty = 1 - getWhShortage(s) * .08;
 
     // Early game boost: 2x demand at day 1, tapering to 1x at day 180
     const earlyBoostShop = s.day <= 180 ? 1 + (180 - s.day) / 180 : 1;
 
+    // Split staff capacity across locations (minimum 1 staff equivalent per location)
+    const locCount = s.locations.length || 1;
+    const staffCapPerLoc = Math.max(staffCapTotal / locCount, 8);
+
     for (const loc of s.locations) {
       if (!loc.inventory) loc.inventory = {};
       loc.dailyStats = { rev: 0, sold: 0, profit: 0 };
+      let remainingStaffCap = staffCapPerLoc;
       const city = (shared.cities || []).find(c => c.id === loc.cityId) || { dem: 50, cost: 1, win: 0 };
       // ── LOYALTY UPDATE ──
       const locLoyalty = loc.loyalty || 0;
@@ -533,7 +537,7 @@ export function simDay(g, shared = {}) {
           locStock,
           Math.floor(locDemand * (.25 + Math.random() * .15) * winterMult * agMult * priceMult * evAdoptionMult * emergencyMult * tireSeasonMult * brandBoost)
         );
-        qty = Math.min(qty, Math.ceil(staffCap));
+        qty = Math.min(qty, Math.ceil(remainingStaffCap));
         if (qty <= 0) continue;
 
         const rev = qty * price;
@@ -553,6 +557,7 @@ export function simDay(g, shared = {}) {
           locNewSold += qty;
         }
         locDemand -= qty;
+        remainingStaffCap -= qty;
       }
       locTakeOffSources[loc.id] = locNewSold;
     }
@@ -562,8 +567,8 @@ export function simDay(g, shared = {}) {
   s.dayServiceRev = 0;
   s.dayServiceJobs = 0;
   if (s.locations.length > 0 && s.staff.techs > 0) {
-    // Daily tech capacity (8 per tech)
-    const totalTechCap = s.staff.techs * 8 * (1 + s.staff.managers * .15);
+    // Daily tech capacity (12 per tech)
+    const totalTechCap = s.staff.techs * 12 * (1 + s.staff.managers * .15);
     const usedByTires = s.daySold;
     const spareCap = Math.max(0, totalTechCap - usedByTires);
 

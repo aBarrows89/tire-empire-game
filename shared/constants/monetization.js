@@ -27,6 +27,12 @@ export const MONET = {
     installerRecruited: 25,
     becameInstaller: 40,
   },
+  // Ad strategy
+  adRewardTC: 50,
+  maxRewardedPerDay: 3,
+  interstitialCooldownMs: 300_000,
+  interstitialMinPanelSwitches: 3,
+
   cosmetics: [
     { id: "gold_name", n: "Gold Company Name", cost: 500, desc: "Your company name glows gold in the header — always visible" },
     { id: "neon_sign", n: "Neon Shop Glow", cost: 300, desc: "Your shop cards pulse with a neon border effect" },

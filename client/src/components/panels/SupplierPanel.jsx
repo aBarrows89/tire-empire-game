@@ -194,6 +194,7 @@ export default function SupplierPanel() {
                       style={{ flex: 1 }}
                       value={orderQty}
                       onChange={(e) => setOrderQty(Math.max(1, parseInt(e.target.value) || 1))}
+                      onFocus={e => e.target.select()}
                       min={1}
                     />
                     <button
@@ -351,6 +352,7 @@ export default function SupplierPanel() {
             min={1}
             value={importQty}
             onChange={e => setImportQty(Math.max(1, Number(e.target.value)))}
+            onFocus={e => e.target.select()}
           />
           <button
             className="btn btn-sm btn-green"
@@ -424,6 +426,7 @@ export default function SupplierPanel() {
             max={(g.warehouseInventory || {})[exportTire] || 1}
             value={exportQty}
             onChange={e => setExportQty(Math.max(1, Number(e.target.value)))}
+            onFocus={e => e.target.select()}
           />
         </div>
         <button

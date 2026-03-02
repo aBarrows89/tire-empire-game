@@ -22,6 +22,11 @@ import tradeRouter from './routes/trade.js';
 import tournamentRouter from './routes/tournament.js';
 import chatRouter from './routes/chat.js';
 import shopMarketRouter from './routes/shopMarket.js';
+import wholesaleRouter from './routes/wholesale.js';
+import exchangeRouter from './routes/exchange.js';
+import adminRouter from './routes/admin.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const app = express();
 
@@ -66,7 +71,13 @@ app.use('/api/trade', tradeRouter);
 app.use('/api/tournament', tournamentRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/shop-market', shopMarketRouter);
+app.use('/api/wholesale', wholesaleRouter);
+app.use('/api/exchange', exchangeRouter);
+app.use('/api/admin', adminRouter);
 
+// ── Admin Dashboard (static HTML) ──
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+app.use('/admin', express.static(path.join(__dirname, 'admin')));
 
 // ── Global Error Handler ──
 app.use((err, req, res, next) => {

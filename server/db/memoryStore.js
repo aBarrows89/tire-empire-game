@@ -6,6 +6,7 @@ const directTrades = [];
 const tournaments = new Map();
 const chatMessages = [];
 const shopSaleListings = [];
+const chatMutes = new Map(); // playerId -> { mutedBy, mutedAt, expiresAt, reason }
 
 export function createMemoryStore() {
   return {
@@ -82,7 +83,7 @@ export function createMemoryStore() {
       return rows.slice(0, limit);
     },
 
-    async upsertLeaderboard(playerId, name, wealth, reputation, locations, day, isPremium) {
+    async upsertLeaderboard(playerId, name, wealth, reputation, locations, day, isPremium, stockTicker) {
       leaderboard.set(playerId, {
         player_id: playerId,
         name,
@@ -91,6 +92,7 @@ export function createMemoryStore() {
         locations,
         day,
         isPremium: !!isPremium,
+        stockTicker: stockTicker || null,
         updated_at: new Date().toISOString(),
       });
     },
@@ -153,6 +155,16 @@ export function createMemoryStore() {
       chatMessages.push(msg);
       if (chatMessages.length > 500) chatMessages.splice(0, chatMessages.length - 500);
       return msg;
+    },
+
+    // Chat mutes (admin moderation)
+    async getChatMutes() { return Object.fromEntries(chatMutes); },
+    async setChatMute(playerId, data) { chatMutes.set(playerId, data); },
+    async removeChatMute(playerId) { chatMutes.delete(playerId); },
+    async deleteChatMessage(messageId) {
+      const idx = chatMessages.findIndex(m => m.id === messageId);
+      if (idx !== -1) { chatMessages.splice(idx, 1); return true; }
+      return false;
     },
 
     // Shop sale listings (shared marketplace)

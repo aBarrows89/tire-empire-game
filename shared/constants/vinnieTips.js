@@ -109,6 +109,25 @@ export const VINNIE_TIPS = [
   { condKey: "noSales", tip: "Nobody's buying. That's a pricing problem, an inventory problem, or both. Lower prices on your cheapest tires to get cash flowing again." },
 
   // ═══════════════════════════════════════════
+  // STOCK EXCHANGE / INVESTMENTS
+  // ═══════════════════════════════════════════
+  { condKey: "exchangeReady", tip: "You know what's better than selling tires? Owning a piece of every tire shop in the game. Open a brokerage account at the TESX and start investing." },
+  { condKey: "exchangeNewbie", tip: "The stock market ain't charity, kid. Every trade costs you 1.5% commission and Uncle Sam wants his capital gains cut. Think before you click." },
+  { condKey: "exchangeIPO", tip: "Going public ain't just bragging rights \u2014 it's cash. IPO your company and let other players fund your expansion. Just remember, shareholders want dividends." },
+  { condKey: "exchangeIPOReady", tip: "You've got the rep, the revenue, the locations... you're IPO material. List on the TESX and let the market decide what your empire is worth." },
+  { condKey: "exchangeDividends", tip: "Dividend income is the best kind of money \u2014 you earn it while you sleep. Find companies with fat profit margins and high payout ratios." },
+  { condKey: "exchangeRisk", tip: "Hot tip: new companies are cheap for a reason. They're volatile, unprofitable, and half of 'em will crash. But the ones that survive? 10x returns." },
+  { condKey: "exchangeStable", tip: "Want steady returns? Look for companies with 3+ shops, positive profit margins, and consistent revenue. Boring? Maybe. But boring pays the bills." },
+  { condKey: "exchangeCrash", tip: "Markets crash. It's not if, it's when. When blood is in the streets, that's when the smart money buys. Just make sure you're not already leveraged to the gills." },
+  { condKey: "exchangeMargin", tip: "Margin trading is a double-edged sword. 2:1 leverage means 2x gains OR 2x losses. I've seen more fortunes lost to margin calls than to bad inventory." },
+  { condKey: "exchangeShort", tip: "Short selling is betting against someone else's dream. Profitable? Sure. Risky? Absolutely. If the stock moons while you're short, you're toast." },
+  { condKey: "exchangeWealthTax", tip: "The bigger your portfolio, the more the taxman takes. Wealth tax hits portfolios over $500K. Diversify between stocks, your business, and cash." },
+  { condKey: "exchangePortfolio", tip: "Don't put all your money in one stock \u2014 not even your own. Diversify across sectors. When retail dips, manufacturing might boom." },
+  { condKey: "exchangeBrokerageFee", tip: "That $500/month brokerage fee? Cost of doing business. Make sure your investments earn more than that or you're literally paying to lose money." },
+  { condKey: "exchangeScratchTicket", tip: "Feeling lucky? The scratch tickets cost 1,000 TC but the top prize is $5 MILLION. Not great odds, but hey \u2014 somebody's gotta win." },
+  { condKey: "exchangeVinnieTip", tip: "For 200 TC I'll give you an insider stock tip. Am I right 60% of the time? Sure. Is 60% better than your guessing? Absolutely." },
+
+  // ═══════════════════════════════════════════
   // DEFAULTS (multiple fallbacks for variety)
   // ═══════════════════════════════════════════
   { condKey: "default", tip: "Keep grinding, kid. The tire game rewards patience and hustle. Every day you show up is a day closer to empire." },

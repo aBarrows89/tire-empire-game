@@ -22,7 +22,8 @@ const SECONDARY_TABS = [
   { id: 'trade', icon: '\u{1F91D}', label: 'Trade' },
   { id: 'factory', icon: '\u{1F3ED}', label: 'Factory' },
   { id: 'ecommerce', icon: '\u{1F4BB}', label: 'E-Com' },
-  { id: 'wholesale', icon: '\u{1F4E6}', label: 'Wholesale' },
+  { id: 'wholesale', icon: '\u{1F69B}', label: 'Wholesale' },
+  { id: 'exchange', icon: '\u{1F4C8}', label: 'Exchange' },
   { id: 'achievements', icon: '\u{1F3C5}', label: 'Awards' },
   { id: 'profile', icon: '\u{1F464}', label: 'Profile' },
   { id: 'log', icon: '\u{1F4CB}', label: 'Log' },
@@ -55,13 +56,16 @@ function getUnlockedTabs(g) {
 
   unlocked.add('achievements');
 
-  if (g.hasFactory || g.reputation >= 70) unlocked.add('factory');
+  if (g.hasFactory || g.reputation >= 50) unlocked.add('factory');
 
   // E-commerce: show if unlocked or meets requirements
   if (g.hasEcom || (g.reputation >= 30 && g.cash >= 50000)) unlocked.add('ecommerce');
 
   // Wholesale: show if unlocked or meets requirements
   if (g.hasWholesale || (g.reputation >= 25 && g.locations.length >= 2)) unlocked.add('wholesale');
+
+  // Exchange: show if has brokerage or meets requirements
+  if (g.stockExchange?.hasBrokerage || (g.reputation >= 10 && (g.locations || []).length >= 1)) unlocked.add('exchange');
 
   return unlocked;
 }

@@ -15,6 +15,7 @@ import { P2P_FEES } from '../../shared/constants/marketplace.js';
 import { broadcast } from './broadcast.js';
 import { updateAIPrices } from '../engine/aiPriceWar.js';
 import { saveTournament } from '../db/queries.js';
+import { runExchangeTick } from '../engine/exchangeTick.js';
 
 let tickInterval = null;
 
@@ -412,6 +413,20 @@ export async function runTick(clients) {
         cityId: (p.game_state.locations || [])[0]?.cityId,
       }));
 
+    // Build wholesale supplier list from all players with hasWholesale + prices set
+    const wholesaleSuppliers = players
+      .filter(p => {
+        const gs = p.game_state;
+        return gs.hasWholesale && Object.keys(gs.wholesalePrices || {}).length > 0;
+      })
+      .map(p => ({
+        playerId: p.id,
+        companyName: p.game_state.companyName || p.game_state.name || 'Unknown',
+        reputation: p.game_state.reputation || 0,
+        wholesalePrices: p.game_state.wholesalePrices || {},
+        cityId: (p.game_state.locations || [])[0]?.cityId || null,
+      }));
+
     const shared = {
       cities: CITIES,
       aiShops: game.ai_shops || [],
@@ -420,6 +435,7 @@ export async function runTick(clients) {
       aiPriceAvg,
       totalTC,
       factorySuppliers,
+      wholesaleSuppliers,
     };
 
     const cal = getCalendar(day);
@@ -437,7 +453,8 @@ export async function runTick(clients) {
           newState.reputation,
           newState.locations.length,
           newState.day,
-          newState.isPremium
+          newState.isPremium,
+          newState.stockExchange?.ticker || null
         );
         continue;
       }
@@ -454,7 +471,8 @@ export async function runTick(clients) {
         newState.reputation,
         newState.locations.length,
         newState.day,
-        newState.isPremium
+        newState.isPremium,
+        newState.stockExchange?.ticker || null
       );
     }
 
@@ -511,6 +529,24 @@ export async function runTick(clients) {
       }
     }
 
+    // ── Stock Exchange Tick ──
+    try {
+      const exchangeResult = runExchangeTick(
+        game.economy?.exchange || null,
+        players,
+        day
+      );
+      // Save updated player states from exchange operations (dividends, taxes, fees)
+      for (const p of exchangeResult.modifiedPlayers) {
+        await savePlayerState(p.id, p.game_state);
+      }
+      // Store exchange state in economy
+      game.economy = game.economy || {};
+      game.economy.exchange = exchangeResult.exchangeState;
+    } catch (err) {
+      console.error('Exchange tick error:', err);
+    }
+
     // Update game day
     await saveGame(
       'default',
@@ -521,6 +557,7 @@ export async function runTick(clients) {
     );
 
     // Broadcast tick to all clients
+    const exchangeState = game.economy?.exchange;
     broadcast(clients, {
       type: 'tick',
       day,
@@ -528,6 +565,12 @@ export async function runTick(clients) {
       season: cal.season,
       playerCount: players.length,
       timestamp: Date.now(),
+      exchange: exchangeState ? {
+        indices: exchangeState.indices,
+        sentiment: exchangeState.sentiment?.value,
+        dayVolume: exchangeState.dayVolume,
+        crashActive: exchangeState.sentiment?.crashActive,
+      } : null,
     });
 
     if (day % 30 === 0) {

@@ -25,6 +25,11 @@ function gameReducer(state, action) {
         ...state,
         chatMessages: [...(state.chatMessages || []), action.payload].slice(-200),
       };
+    case 'DELETE_CHAT':
+      return {
+        ...state,
+        chatMessages: (state.chatMessages || []).filter(m => m.id !== action.payload),
+      };
     case 'SET_PANEL':
       try { localStorage.setItem('te_activePanel', action.payload); } catch {}
       return { ...state, activePanel: action.payload, viewingProfile: null };
@@ -93,13 +98,18 @@ export function GameProvider({ children }) {
   // WebSocket tick handler — refresh state on each tick
   const onTick = useCallback(() => {
     refreshState();
+    window.dispatchEvent(new CustomEvent('gameTick'));
   }, [refreshState]);
 
   const onChat = useCallback((msg) => {
     dispatch({ type: 'ADD_CHAT', payload: msg });
   }, []);
 
-  const wsRef = useWebSocket(onTick, onChat);
+  const onChatDelete = useCallback((messageId) => {
+    dispatch({ type: 'DELETE_CHAT', payload: messageId });
+  }, []);
+
+  const wsRef = useWebSocket(onTick, onChat, onChatDelete);
 
   const sendChat = useCallback((text, channel = 'global') => {
     sendWsMessage(wsRef, { type: 'chat', text, channel });

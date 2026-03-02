@@ -8,6 +8,7 @@ export const CORS_ORIGIN = process.env.CORS_ORIGIN || (
   process.env.NODE_ENV === 'production' ? 'capacitor://localhost' : '*'
 );
 export const STORAGE_TYPE = process.env.STORAGE || 'memory';
+export const ADMIN_UIDS = (process.env.ADMIN_UIDS || '').split(',').map(s => s.trim()).filter(Boolean);
 
 // Firebase Admin credentials (set via environment variables, never commit)
 export const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID;

@@ -24,3 +24,7 @@ export const WS_DELIVERY_COST = { min: 4, max: 8 };
 export const WS_STORAGE_COST = .50;
 export const WS_MIN_REP = 30;
 export const WS_MIN_STORAGE = 2000;
+
+// Player-to-player wholesale constants
+export const P2P_DELIVERY_FEE = 6;        // flat per-tire delivery cost
+export const P2P_COMMISSION = 0.03;        // 3% platform commission on sales

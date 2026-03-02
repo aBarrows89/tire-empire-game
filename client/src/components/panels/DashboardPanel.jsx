@@ -4,7 +4,7 @@ import { fmt } from '@shared/helpers/format.js';
 import { TIRES } from '@shared/constants/tires.js';
 import { CITIES } from '@shared/constants/cities.js';
 import { getWealth } from '@shared/helpers/wealth.js';
-import { getInv, getCap } from '@shared/helpers/inventory.js';
+import { getInv, getCap, getLocCap } from '@shared/helpers/inventory.js';
 import { PAY } from '@shared/constants/staff.js';
 import { MARKETING } from '@shared/constants/marketing.js';
 import { INSURANCE } from '@shared/constants/insurance.js';
@@ -238,7 +238,7 @@ export default function DashboardPanel() {
             const city = CITIES.find(c => c.id === loc.cityId);
             const cityName = city ? `${city.name}, ${city.state}` : (loc.cityId || 'Unknown');
             const locInvNow = Object.values(loc.inventory || {}).reduce((a, b) => a + b, 0);
-            const locCap = loc.capacity || 500;
+            const locCap = getLocCap(loc);
             const fillPct = locCap > 0 ? Math.round((locInvNow / locCap) * 100) : 0;
             const stats = loc.dailyStats || { rev: 0, sold: 0, profit: 0 };
             const loyalty = Math.round(loc.loyalty || 0);

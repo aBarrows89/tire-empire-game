@@ -12,7 +12,7 @@ import PullToRefresh from './components/PullToRefresh.jsx';
 import PanelTransition from './components/PanelTransition.jsx';
 import AdBanner from './components/AdBanner.jsx';
 import PremiumModal from './components/PremiumModal.jsx';
-import { initAds, showBanner, hideBanner, showInterstitial } from './services/ads.js';
+import { useAds } from './hooks/useAds.js';
 import DashboardPanel from './components/panels/DashboardPanel.jsx';
 import SourcePanel from './components/panels/SourcePanel.jsx';
 import PricingPanel from './components/panels/PricingPanel.jsx';
@@ -30,6 +30,7 @@ import AchievementsPanel from './components/panels/AchievementsPanel.jsx';
 import FactoryPanel from './components/panels/FactoryPanel.jsx';
 import EcommercePanel from './components/panels/EcommercePanel.jsx';
 import WholesalePanel from './components/panels/WholesalePanel.jsx';
+import ExchangePanel from './components/panels/ExchangePanel.jsx';
 
 const PANELS = {
   dashboard: DashboardPanel,
@@ -49,6 +50,7 @@ const PANELS = {
   factory: FactoryPanel,
   ecommerce: EcommercePanel,
   wholesale: WholesalePanel,
+  exchange: ExchangePanel,
 };
 
 function GameLayout() {
@@ -57,8 +59,6 @@ function GameLayout() {
   const [toastAch, setToastAch] = useState(null);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const shownRef = useRef(new Set());
-  const lastInterstitialRef = useRef(0);
-  const adsInitRef = useRef(false);
   const prevPanelRef = useRef(null);
 
   // Listen for openPremiumModal event (from profile, Vinnie, etc.)
@@ -75,31 +75,25 @@ function GameLayout() {
     return () => window.removeEventListener('toggleChat', toggleChat);
   }, [toggleChat]);
 
-  // Initialize ads for non-premium players
   const g = state.game;
-  useEffect(() => {
-    if (g && !g.isPremium && !adsInitRef.current) {
-      adsInitRef.current = true;
-      initAds().then(() => showBanner());
-    }
-    if (g && g.isPremium && adsInitRef.current) {
-      hideBanner();
-    }
-  }, [g?.isPremium]);
 
-  // Show interstitial on panel switch (max once per 5 minutes)
+  // Ad system — manages banner, interstitial cooldown
+  const adState = useAds(g?.isPremium);
+
+  // Track panel switches for interstitial gating
   useEffect(() => {
-    if (!g || g.isPremium) return;
-    const panel = state.activePanel;
-    if (prevPanelRef.current && prevPanelRef.current !== panel) {
-      const now = Date.now();
-      if (now - lastInterstitialRef.current > 5 * 60 * 1000) {
-        lastInterstitialRef.current = now;
-        showInterstitial();
-      }
+    if (prevPanelRef.current && prevPanelRef.current !== state.activePanel) {
+      adState.trackPanelSwitch();
     }
-    prevPanelRef.current = panel;
-  }, [state.activePanel, g?.isPremium]);
+    prevPanelRef.current = state.activePanel;
+  }, [state.activePanel, adState]);
+
+  // Listen for game ticks to maybe show interstitial
+  useEffect(() => {
+    const handler = () => adState.maybeShowInterstitial();
+    window.addEventListener('gameTick', handler);
+    return () => window.removeEventListener('gameTick', handler);
+  }, [adState]);
 
   if (state.loading) return <div className="loading">Loading Tire Empire...</div>;
   if (state.error) return <div className="loading">Error: {state.error}</div>;
@@ -121,13 +115,14 @@ function GameLayout() {
   return (
     <>
       <Header />
+      {/* Ad banner — IN document flow so it never covers content */}
+      {!g.isPremium && (
+        <AdBanner onOpenPremium={() => setShowPremiumModal(true)} />
+      )}
       {state.offline && (
         <div className="offline-banner">
           {'\u{1F4E1}'} Offline Mode — Actions will sync when connected
         </div>
-      )}
-      {!g.isPremium && (
-        <AdBanner onOpenPremium={() => setShowPremiumModal(true)} />
       )}
       <div className="main">
         <PullToRefresh onRefresh={refreshState}>

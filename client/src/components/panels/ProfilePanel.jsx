@@ -4,6 +4,7 @@ import { API_BASE, getHeaders, postAction } from '../../api/client.js';
 import { getCalendar, DAYS_PER_YEAR } from '@shared/helpers/calendar.js';
 import { SkeletonProfileCard } from '../SkeletonLoader.jsx';
 import { isMuted, toggleMute } from '../../api/sounds.js';
+import RewardedAdButton from '../RewardedAdButton.jsx';
 
 export default function ProfilePanel() {
   const { state, dispatch, refreshState } = useGame();
@@ -117,6 +118,7 @@ export default function ProfilePanel() {
           <div className="text-xs text-dim" style={{ marginTop: 4 }}>
             Unlock gameplay advantages + cosmetics
           </div>
+          <RewardedAdButton />
         </div>
       )}
 
@@ -176,6 +178,27 @@ export default function ProfilePanel() {
               {muted ? '\u{1F507} Muted' : '\u{1F50A} On'}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Blocked Players (own profile only) */}
+      {!isOther && (g?.blockedPlayers || []).length > 0 && (
+        <div className="card">
+          <div className="card-title">Blocked Players</div>
+          {g.blockedPlayers.map(bp => (
+            <div key={bp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+              <span className="text-sm">{bp.name}</span>
+              <button
+                className="btn btn-sm btn-outline"
+                onClick={async () => {
+                  await postAction('unblockPlayer', { targetPlayerId: bp.id });
+                  refreshState();
+                }}
+              >
+                Unblock
+              </button>
+            </div>
+          ))}
         </div>
       )}
 

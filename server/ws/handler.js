@@ -1,4 +1,4 @@
-import { getPlayer, addChatMessage } from '../db/queries.js';
+import { getPlayer, addChatMessage, getChatMutes, removeChatMute } from '../db/queries.js';
 import admin from 'firebase-admin';
 import { NODE_ENV } from '../config.js';
 
@@ -49,6 +49,25 @@ export function handleConnection(ws, clients) {
           if (!player) {
             ws.send(JSON.stringify({ type: 'error', message: 'Player not found' }));
             break;
+          }
+          // Check ban
+          if (player.game_state?.isBanned) {
+            ws.send(JSON.stringify({ type: 'error', message: 'Your account is banned' }));
+            break;
+          }
+          // Check mute
+          const mutes = await getChatMutes();
+          const mute = mutes[ws.playerId];
+          if (mute) {
+            if (mute.expiresAt && Date.now() > mute.expiresAt) {
+              removeChatMute(ws.playerId); // expired, clean up
+            } else {
+              const muteMsg = mute.expiresAt
+                ? `You are muted until ${new Date(mute.expiresAt).toLocaleString()}`
+                : 'You are permanently muted from chat';
+              ws.send(JSON.stringify({ type: 'error', message: muteMsg }));
+              break;
+            }
           }
           const text = (msg.text || '').trim().slice(0, 200);
           if (!text) break;

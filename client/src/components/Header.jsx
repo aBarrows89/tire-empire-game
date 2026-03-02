@@ -11,8 +11,9 @@ export default function Header() {
   const g = state.game;
   if (!g) return null;
 
-  const day = g.day || g.week || 1;
-  const cal = getCalendar(day);
+  const playerDay = g.day || g.week || 1;
+  const worldDay = (g.startDay || 1) + playerDay - 1;
+  const cal = getCalendar(worldDay);
   const inv = getInv(g);
   const cap = getCap(g);
 

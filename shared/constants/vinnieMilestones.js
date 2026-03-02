@@ -104,6 +104,47 @@ export const VINNIE_MILESTONES = [
     hint: 'Check Bank',
     panel: 'bank',
   },
+  // ── Exchange milestones ──
+  {
+    id: 'exchange_open',
+    check: g => g.stockExchange?.hasBrokerage && !g.stockExchange?.isPublic,
+    title: "Wall Street, Baby!",
+    message: "You opened a brokerage account! Listen kid \u2014 the stock market is where empires are REALLY built. Buy other players' stocks, earn dividends, and watch your money make money. But be careful... crashes happen.",
+    emotion: 'money',
+    hint: 'View Exchange',
+    panel: 'exchange',
+  },
+  {
+    id: 'exchange_first_trade',
+    check: g => (g.stockExchange?.tradeHistory || []).length > 0,
+    title: "Your First Trade!",
+    message: "Welcome to the big leagues! You just made your first trade on the TESX. Remember \u2014 every buy costs you commission, and selling at a profit means paying capital gains tax. The government always gets their cut.",
+    emotion: 'point',
+  },
+  {
+    id: 'exchange_ipo',
+    check: g => g.stockExchange?.isPublic,
+    title: "You're a Public Company!",
+    message: g => `$${g.stockExchange.ticker} is live on the TESX! Your shareholders are counting on you now. Keep growing revenue and they'll drive your stock price up. Let it slide... and they'll dump you faster than cheap rubber.`,
+    emotion: 'excited',
+    hint: 'View Your Stock',
+    panel: 'exchange',
+  },
+  {
+    id: 'exchange_dividends_earned',
+    check: g => (g.stockExchange?.dividendIncome || 0) >= 1000,
+    title: "Passive Income King",
+    message: g => `You've earned $${Math.round(g.stockExchange.dividendIncome).toLocaleString()} in dividends! That's money rolling in while you sleep. The trick? Find companies with fat margins and generous payout ratios. Boring stocks, beautiful returns.`,
+    emotion: 'money',
+  },
+  {
+    id: 'exchange_crash_survivor',
+    check: g => (g.stockExchange?.taxesPaid || 0) >= 5000 && Object.keys(g.stockExchange?.portfolio || {}).length >= 2,
+    title: "Battle-Tested Investor",
+    message: "You've paid your tuition to the market \u2014 fees, taxes, maybe a crash or two. Most players quit after their first red day. You? You're still here. That's how fortunes are made, kid.",
+    emotion: 'serious',
+  },
+
   // ── Premium pitch milestones ──
   {
     id: 'premium_pitch_shops',

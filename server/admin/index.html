@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tire Empire Admin</title>
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <div id="app">
+    <header id="admin-header">
+      <h1>Tire Empire Admin</h1>
+      <div id="auth-status">Not authenticated</div>
+      <div id="auth-form">
+        <input id="admin-uid-input" placeholder="Admin UID (dev mode)">
+        <button class="btn btn-blue" id="auth-btn">Authenticate</button>
+      </div>
+    </header>
+
+    <nav id="admin-tabs" style="display:none">
+      <button class="tab active" data-tab="players">Players</button>
+      <button class="tab" data-tab="chat">Chat</button>
+      <button class="tab" data-tab="economy">Economy</button>
+      <button class="tab" data-tab="server">Server</button>
+    </nav>
+
+    <main id="admin-content" style="display:none">
+      <!-- Players Tab -->
+      <section id="tab-players" class="tab-content active">
+        <div class="search-bar">
+          <input id="player-search" placeholder="Search players by name or ID...">
+          <button class="btn btn-blue" id="player-search-btn">Search</button>
+        </div>
+        <table>
+          <thead><tr>
+            <th>Company</th><th>Cash</th><th>TC</th><th>Rep</th>
+            <th>Shops</th><th>Wealth</th><th>Status</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="player-tbody"></tbody>
+        </table>
+        <div id="player-pagination" style="margin-top:8px;text-align:center"></div>
+      </section>
+
+      <!-- Chat Tab -->
+      <section id="tab-chat" class="tab-content">
+        <h3 style="margin-bottom:8px">Active Mutes</h3>
+        <div id="mutes-list" style="margin-bottom:12px"><em style="color:#555">None</em></div>
+        <div class="mute-form">
+          <input id="mute-player-id" placeholder="Player ID to mute" style="width:180px">
+          <select id="mute-duration">
+            <option value="5">5 min</option>
+            <option value="15">15 min</option>
+            <option value="60">1 hour</option>
+            <option value="1440">24 hours</option>
+            <option value="">Permanent</option>
+          </select>
+          <input id="mute-reason" placeholder="Reason" style="width:140px">
+          <button class="btn btn-red btn-sm" id="mute-btn">Mute</button>
+        </div>
+        <h3 style="margin:12px 0 8px">Chat Log</h3>
+        <button class="btn btn-outline btn-sm" id="refresh-chat-btn" style="margin-bottom:8px">Refresh</button>
+        <div id="chat-log"></div>
+      </section>
+
+      <!-- Economy Tab -->
+      <section id="tab-economy" class="tab-content">
+        <div class="stat-grid" id="economy-stats"></div>
+        <h3 style="margin:12px 0 8px">Top 10 by Wealth</h3>
+        <table>
+          <thead><tr><th>#</th><th>Company</th><th>Wealth</th><th>Cash</th><th>Rep</th><th>Shops</th></tr></thead>
+          <tbody id="top10-tbody"></tbody>
+        </table>
+      </section>
+
+      <!-- Server Tab -->
+      <section id="tab-server" class="tab-content">
+        <div class="stat-grid" id="server-stats"></div>
+      </section>
+    </main>
+
+    <!-- Player Detail Modal -->
+    <div id="player-detail-modal" class="modal hidden">
+      <div class="modal-content">
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+        <h2 id="detail-name" style="margin-bottom:12px"></h2>
+        <div id="detail-stats"></div>
+        <div id="detail-actions" style="margin:12px 0"></div>
+        <details style="margin-top:12px">
+          <summary style="cursor:pointer;color:#888;font-size:13px">Raw Game State (JSON)</summary>
+          <pre id="detail-raw" style="max-height:300px;overflow:auto;font-size:11px;background:#111;padding:8px;border-radius:6px;margin-top:8px;white-space:pre-wrap;word-break:break-all"></pre>
+        </details>
+      </div>
+    </div>
+  </div>
+  <script src="admin.js"></script>
+</body>
+</html>

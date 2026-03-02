@@ -93,12 +93,17 @@ function collectMatchingTips(g) {
   }
 
   // ─── FACTORY ───
-  if (g.hasFactory) {
-    if ((g.factoryOutput || 0) === 0) pushTip(tips, 'factoryFirst');
-    if ((g.factoryStaff || 0) < 3) pushTip(tips, 'factoryStaff');
+  if (g.hasFactory && g.factory) {
+    const factoryStaffCount = Object.values(g.factory.staff || {}).reduce((a, b) => a + b, 0);
+    if ((g.factory.productionQueue || []).length === 0) pushTip(tips, 'factoryFirst');
+    if (factoryStaffCount < 3) pushTip(tips, 'factoryStaff');
     if (g.reputation >= 25) pushTip(tips, 'factoryBrand');
-    if ((g.factoryLevel || 1) < 3) pushTip(tips, 'factoryUpgrade');
-    if ((g.factoryLevel || 1) >= 2 && g.reputation >= 35) pushTip(tips, 'factoryExport');
+    if ((g.factory.level || 1) < 3) pushTip(tips, 'factoryUpgrade');
+    if ((g.factory.level || 1) >= 2 && g.reputation >= 35) pushTip(tips, 'factoryExport');
+    if (g.hasWholesale && g.factory.isDistributor) pushTip(tips, 'factoryWholesale');
+    if ((g.factory.brandReputation || 0) >= 50) pushTip(tips, 'factoryBrandRep50');
+    if ((g.factory.vinnieTotalLoss || 0) > 0) pushTip(tips, 'factoryVinnieLoss');
+    if ((g.factory.rdProjects || []).length > 0) pushTip(tips, 'factoryRD');
   }
 
   // ─── SEASONAL (calendar-based) ───
@@ -130,6 +135,30 @@ function collectMatchingTips(g) {
   if (g.cash < 0) pushTip(tips, 'cashNeg');
   if (inv > 10 && sold === 0 && day > 7) pushTip(tips, 'overpriced');
   if (sold === 0 && inv > 0) pushTip(tips, 'noSales');
+
+  // ─── STOCK EXCHANGE / INVESTMENTS ───
+  const se = g.stockExchange || {};
+  if (!se.hasBrokerage && g.reputation >= 10 && locCount >= 1) {
+    pushTip(tips, 'exchangeReady');
+  }
+  if (se.hasBrokerage) {
+    const portSize = Object.keys(se.portfolio || {}).length;
+    const portfolioVal = Object.values(se.portfolio || {}).reduce((a, h) => a + h.qty * (h.avgCost || 0), 0);
+
+    if (portSize === 0) pushTip(tips, 'exchangeNewbie');
+    if (!se.isPublic && g.reputation >= 40 && locCount >= 3) pushTip(tips, 'exchangeIPOReady');
+    if (se.isPublic && portSize < 3) pushTip(tips, 'exchangeIPO');
+    if ((se.dividendIncome || 0) > 0) pushTip(tips, 'exchangeDividends');
+    if (portSize >= 1 && portSize < 3) pushTip(tips, 'exchangePortfolio');
+    if (portSize >= 1 && portfolioVal < 50000) pushTip(tips, 'exchangeRisk');
+    if (portfolioVal > 100000) pushTip(tips, 'exchangeStable');
+    if (se.marginEnabled && (se.marginDebt || 0) > 0) pushTip(tips, 'exchangeMargin');
+    if (se.shortSellingEnabled) pushTip(tips, 'exchangeShort');
+    if (portfolioVal > 500000) pushTip(tips, 'exchangeWealthTax');
+    if ((se.brokerageFeePaid || 0) > 0 && portfolioVal < 10000) pushTip(tips, 'exchangeBrokerageFee');
+    if ((g.tireCoins || 0) >= 1000) pushTip(tips, 'exchangeScratchTicket');
+    if ((g.tireCoins || 0) >= 200 && portSize >= 1) pushTip(tips, 'exchangeVinnieTip');
+  }
 
   // ─── DEFAULTS (multiple fallbacks for variety) ───
   if (tips.length === 0) {

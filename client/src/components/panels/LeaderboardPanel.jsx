@@ -117,6 +117,20 @@ export default function LeaderboardPanel() {
                   </div>
                   <div className="text-xs text-dim">
                     Rep {(row.reputation || 0).toFixed(1)} {'\u00B7'} {row.locations || 0} loc{(row.locations || 0) !== 1 ? 's' : ''}
+                    {row.stockTicker && (
+                      <span
+                        className="text-green font-bold"
+                        style={{ cursor: 'pointer' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          dispatch({ type: 'SET_PANEL', payload: 'exchange' });
+                          // Store ticker for ExchangePanel to pick up
+                          try { localStorage.setItem('te_viewStock', row.stockTicker); } catch {}
+                        }}
+                      >
+                        {' \u00B7 $'}{row.stockTicker}
+                      </span>
+                    )}
                     {prizeLabel && <span className="text-gold font-bold">{prizeLabel}</span>}
                   </div>
                 </div>

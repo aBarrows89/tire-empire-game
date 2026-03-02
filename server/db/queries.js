@@ -39,3 +39,7 @@ export const getShopSaleListingById = (...args) => impl.getShopSaleListingById(.
 export const updateShopSaleListing = (...args) => impl.updateShopSaleListing(...args);
 export const removeShopSaleListing = (...args) => impl.removeShopSaleListing(...args);
 export const removePlayer = (...args) => impl.removePlayer(...args);
+export const getChatMutes = (...args) => impl.getChatMutes(...args);
+export const setChatMute = (...args) => impl.setChatMute(...args);
+export const removeChatMute = (...args) => impl.removeChatMute(...args);
+export const deleteChatMessage = (...args) => impl.deleteChatMessage(...args);

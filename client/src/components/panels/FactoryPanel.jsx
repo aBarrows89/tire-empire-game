@@ -377,7 +377,7 @@ export default function FactoryPanel() {
             <div style={{ marginBottom: 8 }}>
               <label className="text-xs text-dim" style={{ display: 'block', marginBottom: 4 }}>Quantity</label>
               <input type="number" className="autoprice-offset" style={{ width: '100%', textAlign: 'left' }}
-                min={1} max={effectiveCap * 7} value={qty} onChange={(e) => setQty(Math.max(1, Number(e.target.value)))} />
+                min={1} max={effectiveCap * 7} value={qty} onChange={(e) => setQty(Math.max(1, Number(e.target.value)))} onFocus={e => e.target.select()} />
             </div>
             <div className="row-between text-sm mb-4">
               <span className="text-dim">Effective Cost (with materials)</span>

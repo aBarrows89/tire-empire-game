@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getPlayer, savePlayerState, getGame, addShopSaleListing, removeShopSaleListing, getShopSaleListings } from '../db/queries.js';
+import { getPlayer, savePlayerState, getGame, saveGame, addShopSaleListing, removeShopSaleListing, getShopSaleListings } from '../db/queries.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { NODE_ENV } from '../config.js';
 import { uid } from '../../shared/helpers/random.js';
@@ -279,7 +279,9 @@ router.post('/', authMiddleware, async (req, res) => {
       }
 
       case 'devBoost': {
-        if (NODE_ENV === 'production') return res.status(403).json({ error: 'Not available' });
+        if (NODE_ENV === 'production' && (!process.env.ADMIN_KEY || params.adminKey !== process.env.ADMIN_KEY)) {
+          return res.status(403).json({ error: 'Not available' });
+        }
         if (params.cash != null) g.cash = Number(params.cash);
         if (params.reputation != null) g.reputation = Number(params.reputation);
         g.log.push(`[DEV] Set cash=${g.cash}, rep=${g.reputation}`);
@@ -369,9 +371,65 @@ router.post('/', authMiddleware, async (req, res) => {
         const { init: initFn } = await import('../engine/init.js');
         const game = await getGame();
         const globalDay = game?.day || game?.week || 1;
-        const fresh = initFn(g.name || 'Player', globalDay);
-        fresh.id = g.id || req.playerId;
-        fresh.companyName = g.companyName || '';
+
+        // If player was publicly traded, crash their stock (bankruptcy restructuring)
+        const oldTicker = g.stockExchange?.ticker;
+        if (oldTicker && game?.economy?.exchange?.stocks?.[oldTicker]) {
+          const stock = game.economy.exchange.stocks[oldTicker];
+          const crashPrice = Math.max(0.01, +(stock.price * 0.05).toFixed(2)); // 95% crash
+          stock.price = crashPrice;
+          stock.change = -95;
+          stock.eps = 0;
+          stock.revenue = 0;
+          stock.profit = 0;
+          stock.dailyProfit = 0;
+          stock.bookValue = 0;
+          stock.locations = 0;
+          stock.reputation = 0;
+          stock.priceHistory.push({
+            day: globalDay, open: stock.price, high: stock.price,
+            low: crashPrice, close: crashPrice, volume: 0,
+          });
+          await saveGame('default', globalDay, game.economy, game.ai_shops || [], game.liquidation || []);
+        }
+
+        // Preserve identity
+        const savedName = g.name || 'Player';
+        const savedCompanyName = g.companyName || '';
+        const savedId = g.id || req.playerId;
+
+        const fresh = initFn(savedName, globalDay);
+        fresh.id = savedId;
+        fresh.companyName = savedCompanyName;
+
+        // Keep brokerage + ticker (stock still exists, just crashed)
+        if (oldTicker) {
+          fresh.stockExchange = {
+            hasBrokerage: true,
+            brokerageOpenedDay: g.stockExchange.brokerageOpenedDay,
+            portfolio: {},
+            openOrders: [],
+            tradeHistory: [],
+            isPublic: true,
+            ipoDay: g.stockExchange.ipoDay,
+            ticker: oldTicker,
+            dividendPayoutRatio: 0.25,
+            founderSharesLocked: g.stockExchange.founderSharesLocked || 0,
+            shortPositions: {},
+            marginEnabled: false, marginDebt: 0, marginCallDay: null,
+            darkPoolAccess: false, advancedCharting: false,
+            shortSellingEnabled: false, ipoPriority: false, realTimeAlerts: false,
+            priceAlerts: [], dividendIncome: 0, capitalGains: 0, taxesPaid: 0,
+            brokerageFeePaid: 0, wealthTaxPaid: 0,
+          };
+          // Founder still holds shares (locked)
+          fresh.stockExchange.portfolio[oldTicker] = {
+            qty: g.stockExchange.founderSharesLocked || 0,
+            avgCost: 0.01,
+            acquiredDay: globalDay,
+          };
+        }
+
         g = fresh;
         break;
       }
@@ -637,6 +695,7 @@ router.post('/', authMiddleware, async (req, res) => {
           qualityRating: 0.80,
           brandReputation: 0,
           rawMaterials: { rubber: 1.0, steel: 1.0, chemicals: 1.0 },
+          staff: { lineWorkers: 0, inspectors: 0, engineers: 0, manager: 0 },
           currentLine: null,
           switchCooldown: 0,
           isDistributor: false,
@@ -1052,10 +1111,45 @@ router.post('/', authMiddleware, async (req, res) => {
         break;
       }
 
+      case 'rewardAdWatch': {
+        if (!g.adRewards) g.adRewards = { lastDay: 0, count: 0 };
+        const adDay = g.day || 1;
+        if (g.adRewards.lastDay !== adDay) {
+          g.adRewards.lastDay = adDay;
+          g.adRewards.count = 0;
+        }
+        if (g.adRewards.count >= 3) {
+          return res.status(429).json({ error: 'Daily ad reward limit reached' });
+        }
+        g.adRewards.count += 1;
+        g.tireCoins = (g.tireCoins || 0) + 50;
+        g.log.push(`Earned 50 TC from watching an ad (${g.adRewards.count}/3 today)`);
+        break;
+      }
+
       case 'activateAutoRestock': {
         // One-time $0.99 IAP — unlocks auto-supplier system. Resets on game restart.
         g.hasAutoRestock = true;
         g.log.push('Auto-Restock unlocked! Set up automatic supplier orders.');
+        break;
+      }
+
+      // ── CHAT BLOCKING ──
+      case 'blockPlayer': {
+        const { targetPlayerId, targetName } = params;
+        if (!targetPlayerId) return res.status(400).json({ error: 'Missing targetPlayerId' });
+        if (targetPlayerId === req.playerId) return res.status(400).json({ error: 'Cannot block yourself' });
+        if (!g.blockedPlayers) g.blockedPlayers = [];
+        if (!g.blockedPlayers.some(b => b.id === targetPlayerId)) {
+          g.blockedPlayers.push({ id: targetPlayerId, name: targetName || 'Unknown' });
+        }
+        break;
+      }
+
+      case 'unblockPlayer': {
+        const { targetPlayerId: unblockId } = params;
+        if (!unblockId) return res.status(400).json({ error: 'Missing targetPlayerId' });
+        g.blockedPlayers = (g.blockedPlayers || []).filter(b => b.id !== unblockId);
         break;
       }
 
@@ -1319,7 +1413,9 @@ router.post('/', authMiddleware, async (req, res) => {
       }
 
       case 'devSetState': {
-        if (NODE_ENV === 'production') return res.status(403).json({ error: 'Not available' });
+        if (NODE_ENV === 'production' && (!process.env.ADMIN_KEY || params.adminKey !== process.env.ADMIN_KEY)) {
+          return res.status(403).json({ error: 'Not available' });
+        }
         if (params.cash != null) g.cash = Number(params.cash);
         if (params.reputation != null) g.reputation = Number(params.reputation);
         if (params.day != null) g.day = Number(params.day);

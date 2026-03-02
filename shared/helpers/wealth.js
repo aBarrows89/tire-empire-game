@@ -48,6 +48,26 @@ export function getWealth(g) {
     ? (FACTORY.factoryValue[g.factory.level] || 0)
     : 0;
 
+  // Stock Exchange portfolio value (estimated from stored prices)
+  let portfolioValue = 0;
+  let marginDebt = 0;
+  let shortLiability = 0;
+  if (g.stockExchange) {
+    // Portfolio: qty * avgCost as estimate (actual prices updated by exchange tick)
+    for (const [, holding] of Object.entries(g.stockExchange.portfolio || {})) {
+      if (holding && holding.qty > 0) {
+        portfolioValue += holding.qty * (holding.avgCost || 0);
+      }
+    }
+    marginDebt = g.stockExchange.marginDebt || 0;
+    // Short liability estimate
+    for (const [, pos] of Object.entries(g.stockExchange.shortPositions || {})) {
+      if (pos && pos.qty > 0) {
+        shortLiability += pos.qty * (pos.openPrice || 0);
+      }
+    }
+  }
+
   return Math.floor(
     g.cash
     + (g.bankBalance || 0)
@@ -56,6 +76,9 @@ export function getWealth(g) {
     + installmentValue
     + revShareValue
     + factoryValue
+    + portfolioValue
+    - marginDebt
+    - shortLiability
     - debt
   );
 }

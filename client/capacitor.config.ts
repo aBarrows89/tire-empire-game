@@ -22,6 +22,11 @@ const config: CapacitorConfig = {
       backgroundColor: '#1a1a2e',
       showSpinner: false,
     },
+    AdMob: {
+      appIdIos: 'ca-app-pub-3940256099942544~1458002511',       // Google test app ID
+      appIdAndroid: 'ca-app-pub-3940256099942544~3347511713',   // Google test app ID
+      requestTrackingAuthorization: true,
+    },
   },
 };
 

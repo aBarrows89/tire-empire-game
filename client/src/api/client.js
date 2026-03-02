@@ -132,12 +132,14 @@ export async function tradeAction(action, tradeId) {
   return res.json();
 }
 
-export function useWebSocket(onTick, onChat) {
+export function useWebSocket(onTick, onChat, onChatDelete) {
   const tickRef = useRef(onTick);
   const chatRef = useRef(onChat);
+  const chatDeleteRef = useRef(onChatDelete);
   const wsRef = useRef(null);
   tickRef.current = onTick;
   chatRef.current = onChat;
+  chatDeleteRef.current = onChatDelete;
 
   useEffect(() => {
     let destroyed = false;
@@ -175,6 +177,7 @@ export function useWebSocket(onTick, onChat) {
           const msg = JSON.parse(e.data);
           if (msg.type === 'tick') tickRef.current(msg);
           if (msg.type === 'chat' && chatRef.current) chatRef.current(msg.message);
+          if (msg.type === 'chatDelete' && chatDeleteRef.current) chatDeleteRef.current(msg.messageId);
         } catch {}
       };
 
@@ -203,6 +206,31 @@ export function sendWsMessage(wsRef, data) {
   if (wsRef.current?.readyState === 1) {
     wsRef.current.send(JSON.stringify(data));
   }
+}
+
+// Wholesale P2P API
+export async function getWholesaleSuppliers() {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/wholesale/suppliers`, { headers });
+  return res.json();
+}
+
+export async function placeWholesaleOrder(supplierId, tireType, qty) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/wholesale/order`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ supplierId, tireType, qty }),
+  });
+  return res.json();
+}
+
+export async function setWholesalePrices(prices) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/wholesale/set-prices`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ prices }),
+  });
+  return res.json();
 }
 
 // Shop marketplace API
@@ -260,5 +288,108 @@ export async function counterShopOffer(data) {
     method: 'POST', headers,
     body: JSON.stringify(data),
   });
+  return res.json();
+}
+
+// Stock Exchange API
+export async function openBrokerage() {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/open-account`, { method: 'POST', headers });
+  return res.json();
+}
+
+export async function getExchangeOverview() {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/overview`, { headers });
+  return res.json();
+}
+
+export async function getStocks() {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/stocks`, { headers });
+  return res.json();
+}
+
+export async function getStockDetail(ticker) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/stock/${ticker}`, { headers });
+  return res.json();
+}
+
+export async function placeOrder(params) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/order`, { method: 'POST', headers, body: JSON.stringify(params) });
+  return res.json();
+}
+
+export async function cancelOrder(orderId) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/cancel-order`, { method: 'POST', headers, body: JSON.stringify({ orderId }) });
+  return res.json();
+}
+
+export async function getPortfolio() {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/portfolio`, { headers });
+  return res.json();
+}
+
+export async function getTradeHistory() {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/history`, { headers });
+  return res.json();
+}
+
+export async function applyForIPO(params) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/ipo/apply`, { method: 'POST', headers, body: JSON.stringify(params) });
+  return res.json();
+}
+
+export async function setDividendRatio(ratio) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/ipo/set-dividend-ratio`, { method: 'POST', headers, body: JSON.stringify({ ratio }) });
+  return res.json();
+}
+
+export async function unlockExchangeFeature(feature) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/unlock`, { method: 'POST', headers, body: JSON.stringify({ feature }) });
+  return res.json();
+}
+
+export async function requestVinnieTip() {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/vinnie-tip`, { method: 'POST', headers });
+  return res.json();
+}
+
+export async function shortSell(params) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/short-sell`, { method: 'POST', headers, body: JSON.stringify(params) });
+  return res.json();
+}
+
+export async function coverShort(params) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/cover-short`, { method: 'POST', headers, body: JSON.stringify(params) });
+  return res.json();
+}
+
+export async function setAlert(params) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/set-alert`, { method: 'POST', headers, body: JSON.stringify(params) });
+  return res.json();
+}
+
+export async function buyScratchTicket() {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/scratch-ticket`, { method: 'POST', headers });
+  return res.json();
+}
+
+export async function claimScratchPrize(prize) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/scratch-ticket/claim`, { method: 'POST', headers, body: JSON.stringify({ prize }) });
   return res.json();
 }

@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { hapticsLight } from '../api/haptics.js';
+import { useGame } from '../context/GameContext.jsx';
+import { postAction } from '../api/client.js';
 
 const CHANNELS = [
   { id: 'global', label: '\u{1F30D} Global' },
@@ -11,10 +13,19 @@ export default function ChatOverlay({ messages = [], onSend, isOpen, onClose }) 
   const [text, setText] = useState('');
   const [channel, setChannel] = useState('global');
   const [typing, setTyping] = useState(false);
+  const [blockTarget, setBlockTarget] = useState(null); // { id, name }
   const listRef = useRef(null);
   const typingTimer = useRef(null);
 
-  const filtered = messages.filter(m => !m.channel || m.channel === channel);
+  const { state, refreshState } = useGame();
+  const g = state.game;
+  const blockedSet = useMemo(() => {
+    return new Set((g?.blockedPlayers || []).map(b => b.id));
+  }, [g?.blockedPlayers]);
+
+  const filtered = messages
+    .filter(m => !blockedSet.has(m.playerId))
+    .filter(m => !m.channel || m.channel === channel);
 
   useEffect(() => {
     if (listRef.current) {
@@ -138,12 +149,22 @@ export default function ChatOverlay({ messages = [], onSend, isOpen, onClose }) 
           </div>
         )}
         {filtered.map((msg, i) => (
-          <div key={i} style={{ marginBottom: 8 }}>
+          <div key={msg.id || i} style={{ marginBottom: 8 }}>
             <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
-              <span style={{ fontWeight: 700, fontSize: 12, color: 'var(--accent)' }}>{msg.from}</span>
-              {msg.ts && (
+              <span
+                style={{ fontWeight: 700, fontSize: 12, color: 'var(--accent)', cursor: 'pointer' }}
+                onClick={() => {
+                  if (msg.playerId && msg.playerId !== g?.id) {
+                    hapticsLight();
+                    setBlockTarget({ id: msg.playerId, name: msg.playerName || msg.from || 'Unknown' });
+                  }
+                }}
+              >
+                {msg.playerName || msg.from}
+              </span>
+              {(msg.timestamp || msg.ts) && (
                 <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>
-                  {new Date(msg.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {new Date(msg.timestamp || msg.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               )}
             </div>
@@ -195,6 +216,66 @@ export default function ChatOverlay({ messages = [], onSend, isOpen, onClose }) 
           Send
         </button>
       </div>
+
+      {/* Block player confirmation */}
+      {blockTarget && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0, left: 0, right: 0, top: 0,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10,
+            borderRadius: '14px 14px 0 0',
+          }}
+          onClick={() => setBlockTarget(null)}
+        >
+          <div
+            style={{
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 12,
+              padding: 20,
+              width: '80%',
+              maxWidth: 300,
+              textAlign: 'center',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>
+              Block {blockTarget.name}?
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 16 }}>
+              Their messages will be hidden from your chat. You can unblock them from your profile.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                className="btn btn-sm btn-outline"
+                style={{ flex: 1 }}
+                onClick={() => setBlockTarget(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-sm"
+                style={{ flex: 1, background: 'var(--red)', color: '#fff' }}
+                onClick={async () => {
+                  await postAction('blockPlayer', {
+                    targetPlayerId: blockTarget.id,
+                    targetName: blockTarget.name,
+                  });
+                  refreshState();
+                  setBlockTarget(null);
+                }}
+              >
+                Block
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
