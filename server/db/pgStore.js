@@ -58,10 +58,10 @@ export async function getPlayer(id) {
 
 export async function createPlayer(id, name, gameState) {
   const { rows } = await pool.query(
-    `INSERT INTO players (id, name, game_state) VALUES ($1, $2, $3)
-     ON CONFLICT (id) DO UPDATE SET name = $2, game_state = $3, updated_at = NOW()
+    `INSERT INTO players (id, name, game_state) VALUES ($1, $2, $3::jsonb)
+     ON CONFLICT (id) DO UPDATE SET name = $2, game_state = $3::jsonb, updated_at = NOW()
      RETURNING *`,
-    [id, name, gameState]
+    [id, name, JSON.stringify(gameState)]
   );
   return rows[0];
 }
@@ -69,9 +69,9 @@ export async function createPlayer(id, name, gameState) {
 export async function savePlayerState(id, gameState) {
   // Upsert: create if not exists, update if exists
   await pool.query(
-    `INSERT INTO players (id, name, game_state) VALUES ($1, $2, $3)
-     ON CONFLICT (id) DO UPDATE SET game_state = $3, updated_at = NOW()`,
-    [id, gameState?.name || gameState?.companyName || 'Player', gameState]
+    `INSERT INTO players (id, name, game_state) VALUES ($1, $2, $3::jsonb)
+     ON CONFLICT (id) DO UPDATE SET game_state = $3::jsonb, updated_at = NOW()`,
+    [id, gameState?.name || gameState?.companyName || 'Player', JSON.stringify(gameState)]
   );
 }
 
@@ -105,10 +105,11 @@ export async function getGame(id = 'default') {
 }
 
 export async function saveGame(id, day, economy, aiShops, liquidation) {
+  // JSON.stringify arrays to prevent pg from treating them as PostgreSQL arrays instead of JSONB
   await pool.query(
-    `INSERT INTO games (id, week, economy, ai_shops, liquidation) VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT (id) DO UPDATE SET week = $2, economy = $3, ai_shops = $4, liquidation = $5, updated_at = NOW()`,
-    [id, day, economy, aiShops, liquidation]
+    `INSERT INTO games (id, week, economy, ai_shops, liquidation) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb)
+     ON CONFLICT (id) DO UPDATE SET week = $2, economy = $3::jsonb, ai_shops = $4::jsonb, liquidation = $5::jsonb, updated_at = NOW()`,
+    [id, day, JSON.stringify(economy || {}), JSON.stringify(aiShops || []), JSON.stringify(liquidation || [])]
   );
 }
 
