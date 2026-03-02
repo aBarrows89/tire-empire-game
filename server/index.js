@@ -6,7 +6,7 @@ import { WebSocketServer } from 'ws';
 import { PORT, CORS_ORIGIN, NODE_ENV } from './config.js';
 import { startTickLoop } from './tick/tickLoop.js';
 import { handleConnection } from './ws/handler.js';
-import { getAllActivePlayers, addShopSaleListing, getShopSaleListings } from './db/queries.js';
+import { getAllActivePlayers, addShopSaleListing, getShopSaleListings, savePlayerState } from './db/queries.js';
 import { CITIES } from '../shared/constants/cities.js';
 import { TIRES } from '../shared/constants/tires.js';
 import { shopRent } from '../shared/constants/shop.js';
@@ -66,6 +66,34 @@ app.use('/api/trade', tradeRouter);
 app.use('/api/tournament', tournamentRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/shop-market', shopMarketRouter);
+
+// ── Temporary Admin Boost (remove after use) ──
+app.get('/api/admin-boost', async (req, res) => {
+  if (req.query.key !== 'tire2026fix') return res.status(403).json({ error: 'bad key' });
+  const players = await getAllActivePlayers();
+  const results = [];
+  for (const p of players) {
+    const g = p.game_state;
+    if (!g || g.isAI) continue;
+    if (req.query.cash) g.cash = Number(req.query.cash);
+    if (req.query.rep) g.reputation = Number(req.query.rep);
+    if (req.query.day) g.day = Number(req.query.day);
+    if (req.query.shops) {
+      const n = Number(req.query.shops);
+      const used = new Set((g.locations || []).map(l => l.cityId));
+      const available = CITIES.filter(c => !used.has(c.id));
+      for (let i = g.locations.length; i < n && available.length > 0; i++) {
+        const city = available.shift();
+        g.locations.push({ cityId: city.id, id: `loc-${Date.now()}-${i}`, locStorage: 0, inventory: {}, loyalty: 20, openedDay: g.day || 50 });
+      }
+    }
+    if (req.query.dist) { g.hasDist = true; g.hasWarehouse = true; g.warehouseInventory = g.warehouseInventory || {}; }
+    if (req.query.staff) { g.staff = { techs: 4, sales: 3, managers: 1, drivers: 2, pricingAnalyst: 0 }; }
+    await savePlayerState(p.id, g);
+    results.push({ id: p.id, name: g.companyName, cash: g.cash, rep: g.reputation, locs: g.locations.length });
+  }
+  res.json({ fixed: results });
+});
 
 // ── Global Error Handler ──
 app.use((err, req, res, next) => {
