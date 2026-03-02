@@ -304,11 +304,11 @@ export default function TradePanel() {
               <div className="row gap-8 mb-4">
                 <div style={{ flex: 1 }}>
                   <div className="text-xs text-dim mb-4">TC Amount</div>
-                  <input type="number" className="autoprice-offset" style={{ width: '100%' }} min={1} max={g.tireCoins || 0} value={tcAmount} onChange={e => setTcAmount(Math.max(1, Number(e.target.value)))} />
+                  <input type="number" className="autoprice-offset" style={{ width: '100%' }} inputMode="numeric" min={1} max={g.tireCoins || 0} value={tcAmount} onChange={e => setTcAmount(Math.max(1, Number(e.target.value.replace(/^0+(?=\d)/, ''))))} />
                 </div>
                 <div style={{ flex: 1 }}>
                   <div className="text-xs text-dim mb-4">Cash Amount ($)</div>
-                  <input type="number" className="autoprice-offset" style={{ width: '100%' }} min={1} value={tcCashAmount} onChange={e => setTcCashAmount(Math.max(1, Number(e.target.value)))} />
+                  <input type="number" className="autoprice-offset" style={{ width: '100%' }} inputMode="numeric" min={1} value={tcCashAmount} onChange={e => setTcCashAmount(Math.max(1, Number(e.target.value.replace(/^0+(?=\d)/, ''))))} />
                 </div>
               </div>
               <div className="text-xs text-dim mb-4">
@@ -338,11 +338,11 @@ export default function TradePanel() {
               <div className="row gap-8 mb-4">
                 <div style={{ flex: 1 }}>
                   <div className="text-xs text-dim mb-4">Quantity</div>
-                  <input type="number" className="autoprice-offset" style={{ width: '100%' }} min={1} value={qty} onChange={e => setQty(Math.max(1, Number(e.target.value)))} />
+                  <input type="number" className="autoprice-offset" style={{ width: '100%' }} inputMode="numeric" min={1} value={qty} onChange={e => setQty(Math.max(1, Number(e.target.value.replace(/^0+(?=\d)/, ''))))} />
                 </div>
                 <div style={{ flex: 1 }}>
                   <div className="text-xs text-dim mb-4">Cash Amount ($)</div>
-                  <input type="number" className="autoprice-offset" style={{ width: '100%' }} min={1} value={cashAmount} onChange={e => setCashAmount(Math.max(1, Number(e.target.value)))} />
+                  <input type="number" className="autoprice-offset" style={{ width: '100%' }} inputMode="numeric" min={1} value={cashAmount} onChange={e => setCashAmount(Math.max(1, Number(e.target.value.replace(/^0+(?=\d)/, ''))))} />
                 </div>
               </div>
 

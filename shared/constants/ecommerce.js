@@ -25,13 +25,13 @@ export const ECOM_UPGRADES = {
 
 export const ECOM_TIERS = [
   { min: 0, label: "Invisible", marketShare: .0005, desc: "Page 10+ \u2014 nobody finds you" },
-  { min: 30000, label: "Startup", marketShare: .002, desc: "Page 5-8 for niche terms" },
-  { min: 100000, label: "Emerging", marketShare: .005, desc: "Page 2-3 for some searches" },
-  { min: 300000, label: "Growing", marketShare: .012, desc: "First page for long-tail keywords" },
-  { min: 800000, label: "Established", marketShare: .025, desc: "First page for major terms" },
-  { min: 2000000, label: "Competitive", marketShare: .045, desc: "Top 5 for most tire searches" },
-  { min: 5000000, label: "Major Player", marketShare: .075, desc: "Top 3 \u2014 competing with the big sites" },
-  { min: 12000000, label: "Dominant", marketShare: .12, desc: "Household name in online tires" },
+  { min: 20000, label: "Startup", marketShare: .002, desc: "Page 5-8 for niche terms" },
+  { min: 60000, label: "Emerging", marketShare: .005, desc: "Page 2-3 for some searches" },
+  { min: 180000, label: "Growing", marketShare: .012, desc: "First page for long-tail keywords" },
+  { min: 450000, label: "Established", marketShare: .025, desc: "First page for major terms" },
+  { min: 1000000, label: "Competitive", marketShare: .045, desc: "Top 5 for most tire searches" },
+  { min: 2500000, label: "Major Player", marketShare: .075, desc: "Top 3 \u2014 competing with the big sites" },
+  { min: 6000000, label: "Dominant", marketShare: .12, desc: "Household name in online tires" },
 ];
 
 export const ECOM_PAYMENT_FEE = .028;

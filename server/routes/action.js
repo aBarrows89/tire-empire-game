@@ -109,6 +109,21 @@ router.post('/', authMiddleware, async (req, res) => {
         break;
       }
 
+      case 'buyStorageTC': {
+        const TC_STORAGE_COST = 500;
+        const TC_STORAGE_BONUS = 100;
+        const TC_STORAGE_MAX = 5;
+        const currentBonus = g.bonusStorage || 0;
+        const purchases = currentBonus / TC_STORAGE_BONUS;
+        if (purchases >= TC_STORAGE_MAX) return res.status(400).json({ error: `Max ${TC_STORAGE_MAX} storage upgrades purchased` });
+        if ((g.tireCoins || 0) < TC_STORAGE_COST) return res.status(400).json({ error: `Need ${TC_STORAGE_COST} TC (you have ${g.tireCoins || 0})` });
+        g.tireCoins -= TC_STORAGE_COST;
+        g.bonusStorage = currentBonus + TC_STORAGE_BONUS;
+        g.log = g.log || [];
+        g.log.push(`Purchased +${TC_STORAGE_BONUS} warehouse capacity for ${TC_STORAGE_COST} TC`);
+        break;
+      }
+
       case 'sellStorage': {
         const { storageId } = params;
         const idx = g.storage.findIndex(s => s.id === storageId);

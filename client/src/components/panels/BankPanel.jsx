@@ -144,7 +144,8 @@ export default function BankPanel() {
             type="number"
             placeholder="Amount"
             value={depAmount}
-            onChange={(e) => setDepAmount(e.target.value)}
+            onChange={(e) => setDepAmount(e.target.value.replace(/^0+(?=\d)/, ''))}
+            inputMode="numeric"
             min={1}
             max={Math.floor(g.cash)}
             style={inputStyle}
@@ -176,7 +177,8 @@ export default function BankPanel() {
               type="number"
               placeholder="Amount"
               value={wdAmount}
-              onChange={(e) => setWdAmount(e.target.value)}
+              onChange={(e) => setWdAmount(e.target.value.replace(/^0+(?=\d)/, ''))}
+              inputMode="numeric"
               min={1}
               max={Math.floor(balance)}
               style={inputStyle}
@@ -219,7 +221,8 @@ export default function BankPanel() {
                     type="number"
                     placeholder="Pay Extra"
                     value={repayVal}
-                    onChange={(e) => setRepayAmounts(prev => ({ ...prev, [i]: e.target.value }))}
+                    onChange={(e) => setRepayAmounts(prev => ({ ...prev, [i]: e.target.value.replace(/^0+(?=\d)/, '') }))}
+                    inputMode="numeric"
                     min={1}
                     max={Math.min(Math.floor(g.cash), Math.ceil(loan.remaining))}
                     style={{ ...inputStyle, fontSize: 12 }}

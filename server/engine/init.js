@@ -126,6 +126,8 @@ export function init(playerName = "Player", globalDay = 1) {
     shopBids: [],
     shopRevenueShares: [],
     shopInstallments: [],
+    // Bonus warehouse capacity purchased with TC
+    bonusStorage: 0,
     // Premium membership
     isPremium: false,
     premiumSince: null,

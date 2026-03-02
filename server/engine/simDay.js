@@ -315,7 +315,7 @@ export function simDay(g, shared = {}) {
       const aiShopsInCity = (shared.aiShops || []).filter(a => a.cityId === loc.cityId).length;
       const monopolyMult = aiShopsInCity === 0 ? 1.5 : aiShopsInCity <= 2 ? 1.2 : 1.0;
       const premiumTrafficMult = s.isPremium ? 1.08 : 1;
-      let locDemand = Math.max(1, Math.floor(city.dem * .08 * demandMult * whPenalty * earlyBoostShop * loyaltyMult * marketingMult * marketShareMult * monopolyMult * holidayMult * premiumTrafficMult));
+      let locDemand = Math.max(1, Math.floor(city.dem * .25 * demandMult * whPenalty * earlyBoostShop * loyaltyMult * marketingMult * marketShareMult * monopolyMult * holidayMult * premiumTrafficMult));
       let locNewSold = 0;
 
       for (const [k, t] of Object.entries(TIRES)) {
@@ -334,7 +334,7 @@ export function simDay(g, shared = {}) {
         const emergencyMult = t.emergency ? (1 + (Math.random() < 0.05 ? 3 : 0)) : 1;
         let qty = Math.min(
           locStock,
-          Math.floor(locDemand * (.15 + Math.random() * .10) * winterMult * agMult * priceMult * evAdoptionMult * emergencyMult * tireSeasonMult)
+          Math.floor(locDemand * (.25 + Math.random() * .15) * winterMult * agMult * priceMult * evAdoptionMult * emergencyMult * tireSeasonMult)
         );
         qty = Math.min(qty, Math.ceil(staffCap));
         if (qty <= 0) continue;
@@ -465,8 +465,9 @@ export function simDay(g, shared = {}) {
     s.marketShare[cityId].share = total > 0 ? Math.min(1, s.marketShare[cityId].playerSales / total) : 0;
   }
 
-  // ── VAN SALES (bootstrap, no shop) — daily ──
-  if (s.locations.length === 0) {
+  // ── VAN SALES — daily (scales down when stores exist) ──
+  {
+    const vanScale = s.locations.length === 0 ? 1 : 0.4;
     const wh = s.warehouseInventory || {};
     const whTotal = Object.values(wh).reduce((a, b) => a + b, 0);
     if (whTotal > 0) {
@@ -474,7 +475,7 @@ export function simDay(g, shared = {}) {
       const earlyBoost = s.day <= 180 ? 1 + (180 - s.day) / 180 : 1;
       // Base demand scales with rep (8 base → grows)
       const baseDemand = 8 + s.reputation * 0.4;
-      const vanDemand = Math.max(2, Math.floor(baseDemand * sDem * (s._tB || 1) * earlyBoost * holidayMult));
+      const vanDemand = Math.max(2, Math.floor(baseDemand * sDem * (s._tB || 1) * earlyBoost * holidayMult * vanScale));
       let sold = 0;
       for (const [k, t] of Object.entries(TIRES)) {
         if ((wh[k] || 0) <= 0) continue;
@@ -512,9 +513,8 @@ export function simDay(g, shared = {}) {
     // Operating cost per stand per day
     s.cash -= numStands * FLEA_DAILY_OPERATING;
 
-    // Van capacity divided among stands
-    const vanCap = 30; // base flea van capacity
-    const capsPerStand = Math.floor(vanCap / numStands);
+    // Each stand has its own capacity — scales UP with more stands
+    const capsPerStand = 20 + numStands * 5; // 1=25, 2=30 each, 3=35 each
 
     for (const stand of s.fleaMarketStands) {
       const market = FLEA_MARKETS.find(m => m.id === stand.marketId);
@@ -801,6 +801,11 @@ export function simDay(g, shared = {}) {
     s.cash -= (ECOM_HOSTING_BASE + (s.ecomDailyOrders || 0) * ECOM_HOSTING_SCALE / 200) / 30;
   }
 
+  // Track ecom recurring costs toward tier progression
+  if (s.hasEcom && (ecomPayroll + ecomUpgradeCost) > 0) {
+    s.ecomTotalSpent = (s.ecomTotalSpent || 0) + (ecomPayroll + ecomUpgradeCost) / 30;
+  }
+
   // Storage rent
   const storageRent = s.storage.reduce((a, st) => a + (STORAGE[st.type]?.mo || 0), 0) / 30;
   s.cash -= storageRent;
@@ -847,6 +852,34 @@ export function simDay(g, shared = {}) {
     }
   }
   s.loans = (s.loans || []).filter(l => l.remaining > 0);
+
+  // ── BANKRUPTCY PROTECTION ──
+  if (s.cash < -10000) {
+    s.log.push({ msg: `Vinnie: "Kid, you're bleeding money. Fire some people or close a shop."`, cat: 'vinnie' });
+  }
+  if (s.cash < -50000) {
+    // Forced cost reduction: skip marketing on all locations
+    for (const loc of s.locations) {
+      if (loc.marketing) {
+        s.log.push({ msg: `Auto-cancelled marketing in ${loc.cityId} due to cash crisis`, cat: 'cost' });
+        loc.marketing = null;
+      }
+    }
+  }
+  if (s.cash < -100000) {
+    // Auto-fire non-essential staff (leave 1 tech, 1 sales minimum)
+    const minTechs = 1, minSales = 1;
+    let fired = false;
+    if (s.staff.managers > 0) { s.staff.managers = 0; fired = true; }
+    if (s.staff.drivers > 1) { s.staff.drivers = 1; fired = true; }
+    if (s.staff.techs > minTechs) { s.staff.techs = minTechs; fired = true; }
+    if (s.staff.sales > minSales) { s.staff.sales = minSales; fired = true; }
+    if (fired) {
+      s.log.push({ msg: `Emergency layoffs! Staff reduced to skeleton crew. Cash: $${Math.round(s.cash).toLocaleString()}`, cat: 'cost' });
+    }
+    // Clamp cash floor at -100k
+    s.cash = Math.max(s.cash, -100000);
+  }
 
   // ── BANK DEPOSITS — daily interest ──
   if (s.bankBalance > 0) {

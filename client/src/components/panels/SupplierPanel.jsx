@@ -5,6 +5,7 @@ import { TIRES } from '@shared/constants/tires.js';
 import { SUPPLIER_REL_TIERS, getSupplierRelTier } from '@shared/constants/supplierRelations.js';
 import { fmt } from '@shared/helpers/format.js';
 import { getCap, getInv } from '@shared/helpers/inventory.js';
+import { FACTORY } from '@shared/constants/factory.js';
 import { postAction } from '../../api/client.js';
 
 export default function SupplierPanel() {
@@ -59,6 +60,47 @@ export default function SupplierPanel() {
           Unlock supplier accounts to order NEW tires. Free space: {freeSpace}
         </div>
       </div>
+
+      {/* Your Factory */}
+      {g.hasFactory && g.factory && (
+        <div className="card" style={{ borderLeft: '3px solid var(--accent)' }}>
+          <div className="card-title">Your Factory</div>
+          <div className="text-xs text-dim mb-4">
+            Branded tires produced here appear in your warehouse inventory.
+          </div>
+          <div className="row-between text-sm mb-4">
+            <span className="text-dim">Production Lines</span>
+            <span className="font-bold">{g.factory.lines || 1}</span>
+          </div>
+          <div className="row-between text-sm mb-4">
+            <span className="text-dim">Daily Output</span>
+            <span className="font-bold">{g.factory.dailyOutput || 0} tires/day</span>
+          </div>
+          {g.factory.currentTire && TIRES[g.factory.currentTire] && (
+            <div className="row-between text-sm mb-4">
+              <span className="text-dim">Producing</span>
+              <span className="font-bold">{TIRES[g.factory.currentTire].n}</span>
+            </div>
+          )}
+          {(() => {
+            const brandedInStock = Object.entries(g.warehouseInventory || {})
+              .filter(([k, qty]) => qty > 0 && k.startsWith('branded_'))
+              .map(([k, qty]) => ({ key: k, name: TIRES[k]?.n || k, qty }));
+            if (brandedInStock.length === 0) return null;
+            return (
+              <>
+                <div className="text-xs text-dim mb-4" style={{ marginTop: 4 }}>Branded tires in stock:</div>
+                {brandedInStock.map(t => (
+                  <div key={t.key} className="row-between text-xs mb-4">
+                    <span>{t.name}</span>
+                    <span className="font-bold">{t.qty}</span>
+                  </div>
+                ))}
+              </>
+            );
+          })()}
+        </div>
+      )}
 
       {SUPPLIERS.map((sup, index) => {
         const unlocked = (g.unlockedSuppliers || []).includes(index);

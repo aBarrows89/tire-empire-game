@@ -117,16 +117,24 @@ export default function DashboardPanel() {
                 <span className="font-bold">{g.daySold || 0}</span>
               </div>
               <div className="row-between text-sm mb-4">
-                <span className="text-dim">Revenue</span>
+                <span className="text-dim">Gross Revenue</span>
                 <span className="font-bold text-green">${fmt(g.dayRev || 0)}</span>
               </div>
               <div className="row-between text-sm mb-4">
-                <span className="text-dim">Profit</span>
+                <span className="text-dim">COGS</span>
+                <span className="font-bold text-red">-${fmt(Math.max(0, (g.dayRev || 0) - (g.dayProfit || 0)))}</span>
+              </div>
+              <div className="row-between text-sm mb-4">
+                <span className="text-dim">Gross Profit</span>
                 <span className={`font-bold ${(g.dayProfit || 0) >= 0 ? 'text-green' : 'text-red'}`}>
                   ${fmt(g.dayProfit || 0)}
                 </span>
               </div>
               <div className="row-between text-sm mb-4">
+                <span className="text-dim">Expenses</span>
+                <span className="font-bold text-red">-${fmt(totalDailyExpenses)}</span>
+              </div>
+              <div className="row-between text-sm mb-4" style={{ borderTop: '1px solid var(--border)', paddingTop: 4 }}>
                 <span className="text-dim">Net P&L</span>
                 <span className={`font-bold ${netPL >= 0 ? 'text-green' : 'text-red'}`}>
                   ${fmt(netPL)}

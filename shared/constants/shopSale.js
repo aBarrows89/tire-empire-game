@@ -50,9 +50,11 @@ export function getShopValuation(loc, city) {
   );
 
   const dailyRev = (loc.dailyStats && loc.dailyStats.rev) || 0;
-  const revenueBonus = dailyRev * 30 * 4; // 4 months of estimated monthly revenue
+  const revenueBonus = dailyRev * 30 * 12; // 1 year of projected revenue
 
-  const totalValue = Math.round(baseValue + inventoryValue + loyaltyBonus + revenueBonus);
+  const rawTotal = Math.round(baseValue + inventoryValue + loyaltyBonus + revenueBonus);
+  // Floor: shop is always worth at least 50% of base city cost
+  const totalValue = Math.max(rawTotal, Math.round(baseValue * 0.5));
 
   return { baseValue, inventoryValue, loyaltyBonus: Math.round(loyaltyBonus), revenueBonus: Math.round(revenueBonus), totalValue };
 }

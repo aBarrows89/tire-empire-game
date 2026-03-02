@@ -308,6 +308,12 @@ export default function MarketplacePanel() {
                       MAP minimum: ${mapMin}/tire (Minimum Advertised Price)
                     </div>
                   )}
+                  {sellTire && TIRES[sellTire] && (
+                    <div className="text-xs mb-4" style={{ color: 'var(--text-dim)', background: 'var(--bg-card)', padding: '4px 8px', borderRadius: 4 }}>
+                      Market price: <span className="font-bold">${fmt(g.marketPrices?.[sellTire] || TIRES[sellTire].def)}</span>/tire
+                      {' '}&middot; Range: ${fmt(TIRES[sellTire].lo)}-${fmt(TIRES[sellTire].hi)}
+                    </div>
+                  )}
                   <div className="row gap-8 mb-4">
                     <div style={{ flex: 1 }}>
                       <div className="text-xs text-dim mb-4">Quantity</div>

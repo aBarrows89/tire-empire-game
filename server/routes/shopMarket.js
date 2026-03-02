@@ -47,6 +47,13 @@ router.post('/list', authMiddleware, async (req, res) => {
 
     const loc = g.locations.find(l => l.id === locationId);
     if (!loc) return res.status(400).json({ error: 'Invalid location' });
+
+    // Enforce minimum ownership period before listing
+    const ownedDays = g.day - (loc.openedDay || 0);
+    if (ownedDays < SHOP_BID.minOwnershipDays) {
+      return res.status(400).json({ error: `Must own shop at least ${SHOP_BID.minOwnershipDays} days before listing (${SHOP_BID.minOwnershipDays - ownedDays} days left)` });
+    }
+
     const city = CITIES.find(c => c.id === loc.cityId);
     const val = getShopValuation(loc, city);
     const price = Math.max(1, Math.floor(Number(askingPrice) || val.totalValue));
