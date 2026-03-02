@@ -1301,7 +1301,7 @@ router.post('/', authMiddleware, async (req, res) => {
           askingPrice: Math.max(1, Math.floor(Number(factAskPrice) || FACTORY.factoryValue[g.factory.level] || 5000000)),
           listedDay: g.day,
         };
-        g.log.push(`Listed factory for sale at $${fmt(g.factoryListing.askingPrice)}`);
+        g.log.push(`Listed factory for sale at $${g.factoryListing.askingPrice.toLocaleString()}`);
         break;
       }
 
