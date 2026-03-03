@@ -383,7 +383,7 @@ router.get('/economy', async (req, res) => {
     const game = await getGame('default');
     const real = all.filter(p => !p.game_state?.isAI && p.game_state?.companyName);
 
-    let totalCash = 0, totalTC = 0, totalRep = 0;
+    let totalCash = 0, totalTC = 0, totalRep = 0, totalBankRate = 0, totalBankBalance = 0;
     const withWealth = [];
 
     for (const p of real) {
@@ -391,6 +391,8 @@ router.get('/economy', async (req, res) => {
       totalCash += g.cash || 0;
       totalTC += g.tireCoins || 0;
       totalRep += g.reputation || 0;
+      totalBankRate += g.bankRate || 0.042;
+      totalBankBalance += g.bankBalance || 0;
       withWealth.push({
         id: p.id,
         companyName: g.companyName,
@@ -412,6 +414,9 @@ router.get('/economy', async (req, res) => {
       top10: withWealth.slice(0, 10),
       commodities: game?.economy?.commodities || {},
       tcValue: game?.economy?.tcValue || 50000,
+      avgBankRate: real.length > 0 ? Math.round((totalBankRate / real.length) * 10000) / 10000 : 0.042,
+      totalBankDeposits: Math.round(totalBankBalance),
+      tcPerCapita: real.length > 0 ? Math.round((totalTC / real.length) * 100) / 100 : 0,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });

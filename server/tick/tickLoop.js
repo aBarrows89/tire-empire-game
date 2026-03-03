@@ -496,18 +496,28 @@ export async function runTick(clients) {
     if (day % 7 === 0) {
       const prevTcValue = game.economy.tcValue;
 
-      // ── Factor 1: TC Supply (existing) ──
-      // More TC in circulation = each TC worth less
-      const tcSupplyFactor = totalTC > 0 ? Math.max(0.6, Math.min(1.8, 25000 / totalTC)) : 1.0;
+      // ── Factor 1: Per-Capita TC Scarcity ──
+      // TC value is driven by how scarce TC is *per player*.
+      // Baseline: 10 TC per player is "normal" → factor = 1.0
+      // 1M players with 1 TC each → 0.001 per capita → extremely scarce → big multiplier
+      // 10 players with 10,000 TC each → 1000 per capita → abundant → value drops
+      const playerCount = Math.max(1, realPlayers.length);
+      const tcPerCapita = totalTC / playerCount;
+      const scarcityBaseline = 10; // 10 TC per player = neutral
+      // Log scale so it works from 1 player to 1M players
+      // tcPerCapita=0.001 → factor≈4.0, tcPerCapita=1 → ≈2.0, tcPerCapita=10 → 1.0, tcPerCapita=100 → ≈0.5, tcPerCapita=1000 → ≈0.25
+      const tcSupplyFactor = totalTC > 0
+        ? Math.max(0.15, Math.min(5.0, scarcityBaseline / Math.max(0.001, tcPerCapita)))
+        : 1.0;
 
       // ── Factor 2: Velocity of Money (Cash Inflation) ──
-      // Total cash across all players. More cash = inflation = TC buys less cash
-      // Baseline: $500K total is "normal" for ~10 players
-      const expectedCash = Math.max(1, players.length) * 50000;
-      const cashRatio = totalCash / Math.max(1, expectedCash);
-      // cashRatio > 1 = lots of cash = inflation = TC value drops
-      // cashRatio < 1 = cash scarce = deflation = TC value rises
-      const velocityFactor = Math.max(0.7, Math.min(1.5, 1.0 / Math.sqrt(Math.max(0.1, cashRatio))));
+      // Per-capita cash compared to baseline. More cash per player = inflation = TC worth less in cash terms
+      const expectedCashPerPlayer = 50000;
+      const cashPerCapita = totalCash / Math.max(1, playerCount);
+      const cashRatio = cashPerCapita / expectedCashPerPlayer;
+      // cashRatio > 1 = lots of cash = inflation = TC value rises (buys more inflated cash)
+      // cashRatio < 1 = cash scarce = deflation = TC value drops
+      const velocityFactor = Math.max(0.5, Math.min(2.0, Math.sqrt(Math.max(0.1, cashRatio))));
 
       // ── Factor 3: Resource Scarcity (Rubber) ──
       // High rubber output + low manufacturing = oversupply = TC cheaper
@@ -553,7 +563,7 @@ export async function runTick(clients) {
       // ── Combine all factors ──
       const combinedMult = tcSupplyFactor * velocityFactor * rubberFactor * sentimentFactor * marketMakerFactor * chaosFactor * tcNoise;
       game.economy.tcValue = Math.round(
-        Math.max(25000, Math.min(100000, game.economy.tcValue * combinedMult))
+        Math.max(1000, Math.min(500000, game.economy.tcValue * combinedMult))
       );
 
       // Store metrics for dashboard

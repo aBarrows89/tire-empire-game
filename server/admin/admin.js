@@ -469,6 +469,9 @@ async function loadEconomy() {
       <div class="stat-card"><div class="label">Total Players</div><div class="value">${data.playerCount}</div></div>
       <div class="stat-card"><div class="label">Active Players</div><div class="value green">${data.activePlayerCount}</div></div>
       <div class="stat-card"><div class="label">TC Value</div><div class="value gold">$${fmt(data.tcValue)}</div></div>
+      <div class="stat-card"><div class="label">TC / Player</div><div class="value gold">${data.tcPerCapita || 0}</div></div>
+      <div class="stat-card"><div class="label">Avg Interest Rate</div><div class="value blue">${((data.avgBankRate || 0.042) * 100).toFixed(2)}%</div></div>
+      <div class="stat-card"><div class="label">Total Bank Deposits</div><div class="value green">$${fmt(data.totalBankDeposits)}</div></div>
     `;
 
     // Commodity controls
