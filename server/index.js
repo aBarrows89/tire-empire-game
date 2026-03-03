@@ -30,6 +30,9 @@ import { fileURLToPath } from 'url';
 
 const app = express();
 
+// Trust reverse proxy (Railway, Heroku, etc.) for correct IP in rate limiter
+if (NODE_ENV === 'production') app.set('trust proxy', 1);
+
 // ── Security Middleware ──
 app.use(cors({
   origin: CORS_ORIGIN === '*' ? true : (
