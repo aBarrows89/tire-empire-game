@@ -247,8 +247,8 @@ export function simDay(g, shared = {}) {
     // Effective daily capacity = level base + line workers
     s.factory.dailyCapacity = (FACTORY.levels.find(l => l.level === s.factory.level) || FACTORY.levels[0]).dailyCapacity + (fStaff.lineWorkers || 0) * 10;
 
-    // Factory overhead (affected by global events)
-    s.cash -= ((FACTORY.monthlyOverhead || 50000) / 30) * globalCostMult;
+    // Factory overhead
+    s.cash -= (FACTORY.monthlyOverhead || 50000) / 30;
 
     // Factory staff payroll (including CFO if hired)
     let factoryPayroll = Object.entries(fStaff).reduce((a, [role, count]) => {
