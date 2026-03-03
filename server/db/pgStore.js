@@ -78,11 +78,10 @@ export async function createPlayer(id, name, gameState) {
 }
 
 export async function savePlayerState(id, gameState) {
-  // Upsert: create if not exists, update if exists
+  // UPDATE only — never re-create a deleted player
   await pool.query(
-    `INSERT INTO players (id, name, game_state) VALUES ($1, $2, $3::jsonb)
-     ON CONFLICT (id) DO UPDATE SET game_state = $3::jsonb, updated_at = NOW()`,
-    [id, gameState?.name || gameState?.companyName || 'Player', JSON.stringify(gameState)]
+    `UPDATE players SET game_state = $2::jsonb, updated_at = NOW() WHERE id = $1`,
+    [id, JSON.stringify(gameState)]
   );
 }
 
