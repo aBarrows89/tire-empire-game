@@ -910,9 +910,12 @@ async function uploadApk() {
   if (!file.name.endsWith('.apk')) { alert('File must be an APK'); return; }
   progress.textContent = `Uploading ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)...`;
   try {
+    // Remove Content-Type: application/json for binary upload
+    const uploadHeaders = { ...AUTH_HEADER, 'X-Filename': file.name };
+    delete uploadHeaders['Content-Type'];
     const res = await fetch(`${API}/upload-apk`, {
       method: 'POST',
-      headers: { ...AUTH_HEADER, 'X-Filename': file.name },
+      headers: uploadHeaders,
       body: file,
     });
     const data = await res.json();

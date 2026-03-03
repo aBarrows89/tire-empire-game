@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { adminAuthMiddleware } from '../middleware/adminAuth.js';
 import {
-  getPlayer, savePlayerState, getAllActivePlayers, getGame, saveGame,
+  getPlayer, createPlayer, savePlayerState, getAllActivePlayers, getGame, saveGame,
   getChatMessages, deleteChatMessage, getChatMutes, setChatMute, removeChatMute,
   removePlayer, saveFile, getFile,
 } from '../db/queries.js';
@@ -602,7 +602,7 @@ router.post('/create-stealth-player', async (req, res) => {
     const int = Math.max(1, Math.min(10, Number(intensity) || 5));
 
     const player = createStealthPlayer(name, companyName, cityId || null, int, req.adminId);
-    await savePlayerState(player.id, player.game_state);
+    await createPlayer(player.id, player.game_state.name || name, player.game_state);
     await auditLog(req, 'createStealthPlayer', player.id, { name, companyName, intensity: int, cityId });
     res.json({ ok: true, id: player.id, companyName });
   } catch (e) {

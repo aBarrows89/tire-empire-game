@@ -612,18 +612,22 @@ export async function runTick(clients) {
       const state = player.game_state;
       if (isBotPlayer(state)) {
         // Lightweight bot simulation (legacy isAI + stealth _botConfig)
-        const newState = simAIPlayerDay(state);
-        await savePlayerState(player.id, newState);
-        await upsertLeaderboard(
-          player.id,
-          newState.companyName || newState.name || 'Unknown',
-          getWealth(newState),
-          newState.reputation,
-          newState.locations.length,
-          newState.day,
-          newState.isPremium,
-          newState.stockExchange?.ticker || null
-        );
+        try {
+          const newState = simAIPlayerDay(state);
+          await savePlayerState(player.id, newState);
+          await upsertLeaderboard(
+            player.id,
+            newState.companyName || newState.name || 'Unknown',
+            getWealth(newState),
+            newState.reputation,
+            (newState.locations || []).length,
+            newState.day,
+            newState.isPremium,
+            newState.stockExchange?.ticker || null
+          );
+        } catch (botErr) {
+          console.error(`[Tick] Error processing bot ${player.id}:`, botErr.message);
+        }
         continue;
       }
       try {
