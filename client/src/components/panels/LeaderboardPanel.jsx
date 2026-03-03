@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { API_BASE, getHeaders } from '../../api/client.js';
 import { fmt } from '@shared/helpers/format.js';
@@ -14,7 +14,12 @@ export default function LeaderboardPanel() {
   const [tournamentData, setTournamentData] = useState(null);
   const swipeHandlers = useSwipeTabs(['allTime', 'weekly'], tab, setTab);
 
+  // Throttle leaderboard fetches — every 5 days instead of every tick
+  const lastFetchDay = useRef(0);
   useEffect(() => {
+    const day = g?.day || 0;
+    if (day - lastFetchDay.current < 5 && rows.length > 0) return;
+    lastFetchDay.current = day;
     getHeaders().then(h =>
       fetch(`${API_BASE}/leaderboard?limit=50`, { headers: h })
         .then(r => r.json())
@@ -23,8 +28,12 @@ export default function LeaderboardPanel() {
     );
   }, [g?.day]);
 
+  const lastTourneyDay = useRef(0);
   useEffect(() => {
     if (tab === 'weekly') {
+      const day = g?.day || 0;
+      if (day - lastTourneyDay.current < 5 && tournamentData) return;
+      lastTourneyDay.current = day;
       getHeaders().then(h =>
         fetch(`${API_BASE}/tournament`, { headers: h })
           .then(r => r.json())

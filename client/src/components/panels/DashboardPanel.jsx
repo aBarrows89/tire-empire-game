@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { fmt } from '@shared/helpers/format.js';
 import { TIRES } from '@shared/constants/tires.js';
@@ -48,9 +48,12 @@ export default function DashboardPanel() {
   const [intelBusy, setIntelBusy] = useState(false);
   const [marketReportData, setMarketReportData] = useState(null);
 
-  // Fetch exchange overview for market report summary (if player has brokerage)
+  // Fetch exchange overview for market report summary (throttled — every 10 days)
+  const lastExchangeFetch = React.useRef(0);
   useEffect(() => {
     if (g.stockExchange?.hasBrokerage) {
+      if (g.day - lastExchangeFetch.current < 10 && marketReportData) return;
+      lastExchangeFetch.current = g.day;
       getExchangeOverview().then(ov => {
         if (ov?.marketReport) setMarketReportData(ov.marketReport);
       }).catch(() => {});
@@ -61,37 +64,34 @@ export default function DashboardPanel() {
   const cap = getCap(g);
   const pct = cap > 0 ? Math.round((inv / cap) * 100) : 0;
 
-  // Calculate total inventory across warehouse + all locations
-  const whInv = Object.values(g.warehouseInventory || {}).reduce((a, b) => a + b, 0);
-  const locInv = (g.locations || []).reduce((sum, loc) => {
-    return sum + Object.values(loc.inventory || {}).reduce((a, b) => a + b, 0);
-  }, 0);
-  const totalInventory = whInv + locInv;
-
-  // Daily expense estimates
-  const staffCost = Object.entries(g.staff || {}).reduce((a, [k, v]) => a + (PAY[k] || 0) * v, 0) / 30;
-  const shopRentEst = (g.locations || []).length * 4500 / 30;
-  const marketingCost = (g.locations || []).reduce((a, loc) => {
-    const mktg = loc.marketing && MARKETING[loc.marketing];
-    return a + (mktg ? (mktg.costPerDay || mktg.dailyCost || 0) : 0);
-  }, 0);
-  const insuranceCost = g.insurance && INSURANCE[g.insurance] ? INSURANCE[g.insurance].monthlyCost / 30 : 0;
-  const loanCost = (g.loans || []).reduce((a, l) => {
-    const wkPmt = l.weeklyPayment || 0;
-    return a + wkPmt / 7;
-  }, 0);
-
-  // Factory costs
-  const factoryOverhead = g.hasFactory ? FACTORY.monthlyOverhead / 30 : 0;
-  const factoryStaff = g.factory?.staff || {};
-  const factoryPayroll = g.hasFactory
-    ? Object.entries(factoryStaff).reduce((a, [role, count]) => {
-        const def = FACTORY.staff?.[role];
-        return a + (def ? def.salary * count : 0);
-      }, 0) / 30
-    : 0;
-
-  const totalDailyExpenses = staffCost + shopRentEst + marketingCost + insuranceCost + loanCost + factoryOverhead + factoryPayroll;
+  // Memoize expensive calculations that don't need to recalc every render
+  const { whInv, locInv, totalInventory, totalDailyExpenses, staffCost, shopRentEst, marketingCost, insuranceCost, loanCost, factoryOverhead, factoryPayroll } = useMemo(() => {
+    const whInv = Object.values(g.warehouseInventory || {}).reduce((a, b) => a + b, 0);
+    const locInv = (g.locations || []).reduce((sum, loc) => {
+      return sum + Object.values(loc.inventory || {}).reduce((a, b) => a + b, 0);
+    }, 0);
+    const staffCost = Object.entries(g.staff || {}).reduce((a, [k, v]) => a + (PAY[k] || 0) * v, 0) / 30;
+    const shopRentEst = (g.locations || []).length * 4500 / 30;
+    const marketingCost = (g.locations || []).reduce((a, loc) => {
+      const mktg = loc.marketing && MARKETING[loc.marketing];
+      return a + (mktg ? (mktg.costPerDay || mktg.dailyCost || 0) : 0);
+    }, 0);
+    const insuranceCost = g.insurance && INSURANCE[g.insurance] ? INSURANCE[g.insurance].monthlyCost / 30 : 0;
+    const loanCost = (g.loans || []).reduce((a, l) => a + (l.weeklyPayment || 0) / 7, 0);
+    const factoryOverhead = g.hasFactory ? FACTORY.monthlyOverhead / 30 : 0;
+    const factStaff = g.factory?.staff || {};
+    const factoryPayroll = g.hasFactory
+      ? Object.entries(factStaff).reduce((a, [role, count]) => {
+          const def = FACTORY.staff?.[role];
+          return a + (def ? def.salary * count : 0);
+        }, 0) / 30
+      : 0;
+    return {
+      whInv, locInv, totalInventory: whInv + locInv,
+      totalDailyExpenses: staffCost + shopRentEst + marketingCost + insuranceCost + loanCost + factoryOverhead + factoryPayroll,
+      staffCost, shopRentEst, marketingCost, insuranceCost, loanCost, factoryOverhead, factoryPayroll,
+    };
+  }, [g.day]);
 
   // Staff capacity calculations
   const techs = g.staff?.techs || 0;

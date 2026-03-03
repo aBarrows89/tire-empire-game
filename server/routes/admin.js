@@ -66,6 +66,8 @@ router.get('/players', async (req, res) => {
         botIntensity: g._botConfig?.intensity || null,
         day: g.day || 0,
         wealth: Math.round(getWealth(g)),
+        factoryBrand: g.factory?.brandName || null,
+        hasFactory: !!g.hasFactory,
       };
     });
 
@@ -407,12 +409,13 @@ router.get('/economy', async (req, res) => {
   try {
     const all = await getAllActivePlayers();
     const game = await getGame('default');
-    const real = all.filter(p => !isBotPlayer(p.game_state || {}) && p.game_state?.companyName);
+    // Include ALL players (bots + real) in economy calculations
+    const active = all.filter(p => p.game_state?.companyName);
 
     let totalCash = 0, totalTC = 0, totalRep = 0, totalBankRate = 0, totalBankBalance = 0;
     const withWealth = [];
 
-    for (const p of real) {
+    for (const p of active) {
       const g = p.game_state;
       totalCash += g.cash || 0;
       totalTC += g.tireCoins || 0;
@@ -434,15 +437,15 @@ router.get('/economy', async (req, res) => {
     res.json({
       totalCash: Math.round(totalCash),
       totalTC: Math.round(totalTC),
-      avgReputation: real.length > 0 ? Math.round((totalRep / real.length) * 10) / 10 : 0,
+      avgReputation: active.length > 0 ? Math.round((totalRep / active.length) * 10) / 10 : 0,
       playerCount: all.length,
-      activePlayerCount: real.length,
+      activePlayerCount: active.length,
       top10: withWealth.slice(0, 10),
       commodities: game?.economy?.commodities || {},
       tcValue: game?.economy?.tcValue || 50000,
-      avgBankRate: real.length > 0 ? Math.round((totalBankRate / real.length) * 10000) / 10000 : 0.042,
+      avgBankRate: active.length > 0 ? Math.round((totalBankRate / active.length) * 10000) / 10000 : 0.042,
       totalBankDeposits: Math.round(totalBankBalance),
-      tcPerCapita: real.length > 0 ? Math.round((totalTC / real.length) * 100) / 100 : 0,
+      tcPerCapita: active.length > 0 ? Math.round((totalTC / active.length) * 100) / 100 : 0,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });

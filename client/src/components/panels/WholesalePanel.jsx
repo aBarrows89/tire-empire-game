@@ -154,7 +154,7 @@ export default function WholesalePanel() {
           <span className="font-bold text-green">${fmt(g.totalWholesaleRevenue || 0)}</span>
         </div>
         <div className="row-between mb-4">
-          <span className="text-sm text-dim">NPC Clients</span>
+          <span className="text-sm text-dim">Wholesale Clients</span>
           <span className="font-bold">{clients.length}</span>
         </div>
       </div>
@@ -346,12 +346,12 @@ export default function WholesalePanel() {
         </>
       )}
 
-      {/* NPC Client List (existing) */}
+      {/* Client List */}
       <div className="card">
-        <div className="card-title">B2B NPC Clients ({clients.length})</div>
+        <div className="card-title">B2B Clients ({clients.length})</div>
         {clients.length === 0 && (
           <div className="text-sm text-dim" style={{ lineHeight: 1.5 }}>
-            No NPC clients yet. Keep building your reputation and stocking your warehouse
+            No wholesale clients yet. Keep building your reputation and stocking your warehouse
             — clients will find you automatically each week.
           </div>
         )}

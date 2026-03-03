@@ -345,7 +345,8 @@ export default function FactoryPanel() {
               <div className="card-title">Production Queue</div>
               {queue.map((job, i) => {
                 const baseKey = job.tire.replace('brand_', '');
-                const tireName = TIRES[baseKey]?.n || EXCLUSIVE_TIRES[job.tire]?.n || job.tire;
+                const baseName = TIRES[baseKey]?.n || EXCLUSIVE_TIRES[job.tire]?.n || job.tire;
+                const tireName = factory?.brandName ? `${factory.brandName} ${baseName}` : baseName;
                 const daysLeft = Math.max(0, (job.completionDay || 0) - (g.day || 0));
                 const totalDays = Math.max(1, (job.completionDay || 0) - (job.startDay || 0));
                 const progress = Math.round(((totalDays - daysLeft) / totalDays) * 100);
@@ -388,7 +389,8 @@ export default function FactoryPanel() {
               <select className="autoprice-select" style={{ width: '100%' }} value={selectedType} onChange={(e) => setSelectedType(e.target.value)}>
                 {allProducible.map(type => {
                   const isExcl = type.startsWith('brand_');
-                  const name = isExcl ? (EXCLUSIVE_TIRES[type]?.n || type) : (TIRES[type]?.n || type);
+                  const rawName = isExcl ? (EXCLUSIVE_TIRES[type]?.n || type) : (TIRES[type]?.n || type);
+                  const name = factory?.brandName ? `${factory.brandName} ${rawName}` : rawName;
                   const cost = isExcl ? (EXCLUSIVE_TIRES[type]?.baseCost || 80) : getEffectiveProductionCost(factory, type);
                   return <option key={type} value={type}>{name} -- ${cost}/tire{isExcl ? ' (Exclusive)' : ''}</option>;
                 })}
@@ -424,14 +426,22 @@ export default function FactoryPanel() {
               <div className="text-sm text-green font-bold mb-4">Distribution Active</div>
             ) : (
               <>
-                <div className="text-sm text-dim mb-4">Enable distribution to let AI shops buy from your factory.</div>
+                <div className="text-sm text-dim mb-4">Enable distribution to let other players buy from your factory.</div>
                 {g.hasDist ? (
                   <button className="btn btn-full btn-green" disabled={g.cash < 250000 || busy}
                     onClick={() => doAction('enableFactoryDistribution')}>
                     Enable Distribution ($250K)
                   </button>
                 ) : (
-                  <div className="text-xs text-red">Unlock Distribution Network first</div>
+                  <>
+                    <div className="text-xs text-dim mb-4">
+                      Requires: Rep 50+, 5+ locations, wholesale channel, $500K
+                    </div>
+                    <button className="btn btn-full btn-blue" disabled={g.cash < 500000 || g.reputation < 50 || (g.locations || []).length < 5 || !g.hasWholesale || busy}
+                      onClick={() => doAction('unlockDist')}>
+                      Unlock Distribution Network ($500K)
+                    </button>
+                  </>
                 )}
               </>
             )}
@@ -440,7 +450,7 @@ export default function FactoryPanel() {
           {/* Wholesale Price Editor */}
           <div className="card">
             <div className="card-title">Wholesale Prices</div>
-            <div className="text-xs text-dim mb-4">Set prices per tire. AI shops compare against NPC suppliers.</div>
+            <div className="text-xs text-dim mb-4">Set prices per tire. Buyers compare against other suppliers.</div>
           </div>
           {PRODUCIBLE_TYPES.map(type => {
             const t = TIRES[type];
@@ -453,7 +463,7 @@ export default function FactoryPanel() {
             const minOrder = factory?.minOrders?.[type] || 10;
             return (
               <div key={type} className="card">
-                <div className="font-bold text-sm mb-4">{t?.n || type}</div>
+                <div className="font-bold text-sm mb-4">{factory?.brandName ? `${factory.brandName} ${t?.n || type}` : (t?.n || type)}</div>
                 <div className="row-between text-xs mb-4">
                   <span className="text-dim">Production cost: ${prodCost} (base ${baseProdCost})</span>
                   <span className={margin > 0 ? 'text-green' : 'text-red'}>Margin: ${margin} ({marginPct}%)</span>

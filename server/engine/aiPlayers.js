@@ -510,6 +510,17 @@ export function simAIPlayerDay(g) {
   g.totalSold += daySold;
   g.cash += dayProfit;
 
+  // ── SERVICE REVENUE — bots do tire services too ──
+  if ((g.locations || []).length > 0) {
+    const serviceRev = Math.floor(R(50, 200) * t * (g.locations.length));
+    g.dayServiceRev = serviceRev;
+    g.dayServiceJobs = Math.floor(serviceRev / 25);
+    g.totalServiceRev = (g.totalServiceRev || 0) + serviceRev;
+    g.cash += serviceRev;
+    g.dayRev += serviceRev;
+    g.totalRev += serviceRev;
+  }
+
   // Reputation growth — scales with intensity
   const repChance = intensity <= 3 ? 0.05 : intensity <= 6 ? 0.15 : 0.30;
   const repGrowth = intensity <= 3 ? R(0.02, 0.1) : intensity <= 6 ? R(0.05, 0.2) : R(0.1, 0.4);
@@ -548,13 +559,10 @@ export function simAIPlayerDay(g) {
       if (!g.prices[k]) continue;
       let target;
       if (intensity >= 7) {
-        // Disruptors undercut market aggressively
         target = tire.def * R(0.75, 0.90);
       } else if (intensity <= 3) {
-        // Casuals price above market
         target = tire.def * R(1.05, 1.15);
       } else {
-        // Competitive: near market price
         target = tire.def * R(0.90, 1.10);
       }
       g.prices[k] = Math.round(g.prices[k] * 0.85 + target * 0.15);
@@ -580,6 +588,41 @@ export function simAIPlayerDay(g) {
     }
   }
 
+  // ── STORAGE UPGRADES — bots buy more storage when full ──
+  if (Math.random() < 0.03 * t && g.cash > 50000) {
+    const whTotal = Object.values(g.warehouseInventory || {}).reduce((a, b) => a + b, 0);
+    const storageTypes = g.storage || [];
+    const currentMax = storageTypes.reduce((a, s) => a + (s.type === 'warehouse' ? 500 : s.type === 'garage' ? 200 : 50), 0);
+    if (whTotal > currentMax * 0.8 && storageTypes.length < 3 + intensity) {
+      const nextType = currentMax < 200 ? 'garage' : 'warehouse';
+      const cost = nextType === 'warehouse' ? 30000 : 8000;
+      if (g.cash > cost * 2) {
+        g.cash -= cost;
+        g.storage.push({ type: nextType, id: uid() });
+        g.hasWarehouse = true;
+      }
+    }
+  }
+
+  // ── LOCATION STORAGE UPGRADES ──
+  if (Math.random() < 0.02 * t) {
+    for (const loc of (g.locations || [])) {
+      if ((loc.locStorage || 0) < 150 && g.cash > 20000) {
+        loc.locStorage = (loc.locStorage || 0) + 50;
+        g.cash -= 5000;
+      }
+    }
+  }
+
+  // ── MARKETING — bots advertise their shops ──
+  if (Math.random() < 0.02 * t && intensity >= 4) {
+    for (const loc of (g.locations || [])) {
+      if (!loc.marketing && g.cash > 15000) {
+        loc.marketing = intensity >= 7 ? 'targeted' : 'local';
+      }
+    }
+  }
+
   // Bank interest
   if (g.bankBalance > 0) {
     const interest = Math.round(g.bankBalance * (g.bankRate || 0.042) / 360);
@@ -595,6 +638,19 @@ export function simAIPlayerDay(g) {
     loan.remaining -= actual;
   }
   g.loans = (g.loans || []).filter(l => l.remaining > 0);
+
+  // ── TAKE OUT LOANS — aggressive bots borrow to expand ──
+  if (intensity >= 6 && Math.random() < 0.01 * t && g.cash < 100000 && (g.loans || []).length < 2) {
+    const loanAmt = intensity >= 8 ? 75000 : 25000;
+    const rate = intensity >= 8 ? 0.07 : 0.095;
+    g.loans = g.loans || [];
+    g.loans.push({
+      id: uid(), name: intensity >= 8 ? 'SBA' : 'Small Biz',
+      amt: loanAmt, r: rate, remaining: loanAmt,
+      weeklyPayment: Math.round(loanAmt * (1 + rate) / 52),
+    });
+    g.cash += loanAmt;
+  }
 
   // ── SHOP EXPANSION — higher intensity expands faster ──
   const expandChance = intensity <= 3 ? 0.005 : intensity <= 6 ? 0.015 : 0.03 + t * 0.02;
@@ -629,8 +685,102 @@ export function simAIPlayerDay(g) {
         loc.staff.sales++;
         g.cash -= 2500;
       }
+      if (intensity >= 6 && !loc.staff.managers && g.cash > 15000) {
+        loc.staff.managers = 1;
+        g.cash -= 5000;
+      }
     }
   }
+
+  // ── WHOLESALE — bots unlock and use wholesale ──
+  if (!g.hasWholesale && g.reputation >= 20 && intensity >= 4 && Math.random() < 0.05) {
+    g.hasWholesale = true;
+    g.wsClients = g.wsClients || [];
+  }
+
+  // Generate wholesale revenue for bots with wholesale
+  if (g.hasWholesale && Math.random() < 0.1 + t * 0.15) {
+    const wsRev = Math.floor(R(500, 3000) * t);
+    g.cash += wsRev;
+    g.totalWholesaleRevenue = (g.totalWholesaleRevenue || 0) + wsRev;
+    g.monthlyPurchaseVol = (g.monthlyPurchaseVol || 0) + Math.floor(wsRev / 80);
+    g.dayRev += wsRev;
+    g.totalRev += wsRev;
+    // Grow wholesale client list organically
+    if (g.wsClients.length < intensity * 2 && Math.random() < 0.1) {
+      g.wsClients.push({
+        id: uid(),
+        name: COMPANY_NAMES[Ri(0, COMPANY_NAMES.length)] || 'Local Shop',
+        joinedDay: g.day,
+        totalPurchased: 0,
+      });
+    }
+  }
+
+  // ── E-COMMERCE — high intensity bots unlock ecom ──
+  if (!g.hasEcom && intensity >= 6 && g.reputation >= 30 && g.cash > 50000 && Math.random() < 0.03) {
+    g.hasEcom = true;
+    g.ecomStaff = g.ecomStaff || {};
+    g.ecomUpgrades = g.ecomUpgrades || [];
+  }
+
+  // E-commerce revenue
+  if (g.hasEcom && Math.random() < 0.15 + t * 0.1) {
+    const ecomRev = Math.floor(R(200, 1500) * t);
+    const ecomOrders = Ri(1, 5 + Math.floor(t * 5));
+    g.ecomDailyOrders = ecomOrders;
+    g.ecomDailyRev = ecomRev;
+    g.cash += ecomRev;
+    g.dayRev += ecomRev;
+    g.totalRev += ecomRev;
+  }
+
+  // ── DISTRIBUTION — top bots unlock distribution ──
+  if (!g.hasDist && intensity >= 8 && g.reputation >= 50 && (g.locations || []).length >= 5 && g.hasWholesale && g.cash > 600000 && Math.random() < 0.02) {
+    g.hasDist = true;
+    g.cash -= 500000;
+    g.distClients = g.distClients || [];
+  }
+
+  // ── INSURANCE — moderate+ bots get insurance ──
+  if (!g.insurance && intensity >= 5 && g.cash > 30000 && Math.random() < 0.02) {
+    g.insurance = intensity >= 8 ? 'premium' : 'business';
+  }
+
+  // ── FLEA MARKET / VAN SALES — casual bots do these more ──
+  if (intensity <= 5 && Math.random() < 0.08) {
+    const fleaRev = Math.floor(R(100, 500));
+    g.fleaMarketTotalSold = (g.fleaMarketTotalSold || 0) + Ri(2, 8);
+    g.cash += fleaRev;
+    g.dayRev += fleaRev;
+    g.totalRev += fleaRev;
+  }
+  if (intensity <= 4 && Math.random() < 0.1) {
+    const vanRev = Math.floor(R(50, 300));
+    g.vanTotalSold = (g.vanTotalSold || 0) + Ri(1, 5);
+    g.vanOnlyDays = (g.vanOnlyDays || 0) + 1;
+    g.cash += vanRev;
+  }
+
+  // ── WEEKLY SNAPSHOT — for tournament tracking ──
+  if (g.day % 7 === 0) {
+    g.weeklySnapshot = {
+      totalRev: g.totalRev,
+      totalProfit: g.totalProfit,
+      cash: g.cash,
+      reputation: g.reputation,
+    };
+  }
+
+  // ── EXPENSES — rent, staff payroll, insurance, marketing ──
+  const locCount = (g.locations || []).length;
+  const dailyRent = locCount * 4500 / 30;
+  const dailyStaffCost = (g.locations || []).reduce((a, loc) => {
+    const s = loc.staff || {};
+    return a + ((s.techs || 0) * 3000 + (s.sales || 0) * 2500 + (s.managers || 0) * 5000) / 30;
+  }, 0);
+  const dailyInsurance = g.insurance === 'premium' ? 200 : g.insurance === 'business' ? 100 : 0;
+  g.cash -= (dailyRent + dailyStaffCost + dailyInsurance);
 
   // Occasionally deposit to bank
   if (Math.random() < 0.1 && g.cash > 50000) {
@@ -639,14 +789,41 @@ export function simAIPlayerDay(g) {
     g.bankBalance += deposit;
   }
 
+  // Withdraw from bank if cash is low
+  if (g.cash < 5000 && g.bankBalance > 10000) {
+    const withdraw = Math.min(g.bankBalance, Math.floor(R(10000, 50000)));
+    g.bankBalance -= withdraw;
+    g.cash += withdraw;
+  }
+
   // Round reputation
   g.reputation = Math.round(g.reputation * 100) / 100;
 
-  // AI stock trading — place random orders if they have a brokerage
+  // Keep cash non-negative
+  if (g.cash < 0) g.cash = 0;
+
+  // ── STOCK TRADING — bots participate in TESX ──
   if (g.stockExchange?.hasBrokerage && Math.random() < 0.15 && g.cash > 5000) {
     if (!g._aiTradeIntent) g._aiTradeIntent = {};
     g._aiTradeIntent.budget = Math.floor(g.cash * R(0.02, 0.08));
     g._aiTradeIntent.action = Math.random() < 0.6 ? 'buy' : 'sell';
+  }
+
+  // ── IPO — high intensity bots go public ──
+  if (g.stockExchange?.hasBrokerage && !g.stockExchange.isPublic && intensity >= 7 && g.day > 100 && g.reputation >= 40 && g.cash > 200000 && Math.random() < 0.01) {
+    g.stockExchange.isPublic = true;
+    g.stockExchange.ipoDay = g.day;
+    // Generate a ticker symbol from company name
+    const words = (g.companyName || 'BOT').split(/\s+/);
+    g.stockExchange.ticker = words.map(w => w[0]).join('').toUpperCase().slice(0, 4);
+    g.stockExchange.founderSharesLocked = g.day + 30;
+  }
+
+  // ── HISTORY TRACKING — for charts/sparklines ──
+  g.history = g.history || [];
+  if (g.day % 7 === 0) {
+    g.history.push({ day: g.day, rev: g.dayRev, cash: g.cash, rep: g.reputation });
+    if (g.history.length > 52) g.history.shift();
   }
 
   return g;

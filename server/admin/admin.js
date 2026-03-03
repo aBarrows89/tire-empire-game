@@ -158,7 +158,7 @@ async function loadPlayers() {
       else if (p.isAI) statusBadges.push('<span class="badge badge-gray">AI</span>');
 
       tr.innerHTML = `
-        <td><strong>${esc(p.companyName)}</strong><br><span style="color:#555;font-size:11px">${esc(p.id.slice(0, 12))}...</span></td>
+        <td><strong>${esc(p.companyName)}</strong>${p.factoryBrand ? `<br><span style="color:#4ea8de;font-size:11px">Brand: ${esc(p.factoryBrand)}</span>` : ''}<br><span style="color:#555;font-size:11px">${esc(p.id.slice(0, 12))}...</span></td>
         <td>$${fmt(p.cash)}</td>
         <td>${fmt(p.tireCoins)}</td>
         <td>${p.reputation}</td>

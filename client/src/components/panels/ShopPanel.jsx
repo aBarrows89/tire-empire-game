@@ -679,7 +679,7 @@ export default function ShopPanel() {
                   )}
                 </div>
 
-                {/* AI Shops in this city */}
+                {/* Competitor shops in this city */}
                 {(cityAIShops[city.id] || []).length > 0 && (
                   <div className="card-section">
                     <div className="text-xs font-bold mb-4">Existing Shops ({(cityAIShops[city.id] || []).length})</div>
