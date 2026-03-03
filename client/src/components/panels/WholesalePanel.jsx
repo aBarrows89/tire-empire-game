@@ -21,10 +21,16 @@ export default function WholesalePanel() {
   const [savingPrices, setSavingPrices] = React.useState(false);
   const [tab, setTab] = React.useState('buy'); // buy | sell | history
 
+  const [wsError, setWsError] = React.useState('');
   const unlockWholesale = async () => {
     setBusy(true);
-    const res = await postAction('unlockWholesale');
-    if (res.ok) { hapticsMedium(); refreshState(); }
+    setWsError('');
+    try {
+      const res = await postAction('unlockWholesale');
+      if (res.error) { setWsError(res.error); }
+      else if (res.ok) { hapticsMedium(); refreshState(); }
+      else { setWsError('Something went wrong'); }
+    } catch (e) { setWsError(e.message); }
     setBusy(false);
   };
 
@@ -120,6 +126,7 @@ export default function WholesalePanel() {
           >
             {busy ? 'Opening...' : canUnlock ? 'Open Wholesale Channel' : 'Requirements Not Met'}
           </button>
+          {wsError && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>{wsError}</div>}
         </div>
       </>
     );

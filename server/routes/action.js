@@ -82,10 +82,13 @@ router.post('/', authMiddleware, async (req, res) => {
           if (added < whFree) {
             g.warehouseInventory[k] = (g.warehouseInventory[k] || 0) + 1;
           } else if (g.locations.length > 0) {
-            // Overflow to first location with space
-            const loc = g.locations.find(l => getLocInv(l) < getLocCap(l)) || g.locations[0];
-            if (!loc.inventory) loc.inventory = {};
-            loc.inventory[k] = (loc.inventory[k] || 0) + 1;
+            // Overflow to first location with space (skip if all full)
+            const loc = g.locations.find(l => getLocInv(l) < getLocCap(l));
+            if (loc) {
+              if (!loc.inventory) loc.inventory = {};
+              loc.inventory[k] = (loc.inventory[k] || 0) + 1;
+            }
+            // else: all locations full — tire is lost (global cap should prevent this)
           } else {
             g.warehouseInventory[k] = (g.warehouseInventory[k] || 0) + 1;
           }
@@ -207,9 +210,11 @@ router.post('/', authMiddleware, async (req, res) => {
         if (toWh > 0) g.warehouseInventory[tire] = (g.warehouseInventory[tire] || 0) + toWh;
         const overflow = qty - toWh;
         if (overflow > 0 && g.locations.length > 0) {
-          const loc = g.locations.find(l => getLocInv(l) < getLocCap(l)) || g.locations[0];
-          if (!loc.inventory) loc.inventory = {};
-          loc.inventory[tire] = (loc.inventory[tire] || 0) + overflow;
+          const loc = g.locations.find(l => getLocInv(l) < getLocCap(l));
+          if (loc) {
+            if (!loc.inventory) loc.inventory = {};
+            loc.inventory[tire] = (loc.inventory[tire] || 0) + overflow;
+          }
         } else if (overflow > 0) {
           g.warehouseInventory[tire] = (g.warehouseInventory[tire] || 0) + overflow;
         }

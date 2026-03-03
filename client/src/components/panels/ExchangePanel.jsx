@@ -150,6 +150,10 @@ export default function ExchangePanel() {
   const [scratchRevealed, setScratchRevealed] = useState(new Set());
   const [scratchClaimed, setScratchClaimed] = useState(false);
   const [stockSearch, setStockSearch] = useState('');
+  const [divRatio, setDivRatio] = useState(Math.round((se.dividendPayoutRatio || 0.25) * 100));
+  const [ipoDivRatio, setIpoDivRatio] = useState(25);
+  const [showExchangeInfo, setShowExchangeInfo] = useState(false);
+  const divTimerRef = React.useRef(null);
 
   const load = useCallback(async () => {
     try {
@@ -261,7 +265,31 @@ export default function ExchangePanel() {
 
   return (
     <div className="panel">
-      <h2>TESX Exchange</h2>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h2 style={{ margin: 0 }}>TESX Exchange</h2>
+        <span
+          onClick={() => setShowExchangeInfo(!showExchangeInfo)}
+          style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 24, height: 24, borderRadius: '50%', fontSize: 14, fontWeight: 700,
+            background: showExchangeInfo ? '#2196f3' : 'rgba(33,150,243,0.15)',
+            color: showExchangeInfo ? '#fff' : '#2196f3',
+            cursor: 'pointer',
+          }}
+        >i</span>
+      </div>
+      {showExchangeInfo && (
+        <div style={{ background: 'rgba(33,150,243,0.08)', borderRadius: 8, padding: '10px 12px', margin: '8px 0', fontSize: 12, lineHeight: 1.6, color: 'var(--text-dim)' }}>
+          <div style={{ fontWeight: 600, color: '#2196f3', marginBottom: 4 }}>How the Stock Exchange Works</div>
+          <p style={{ margin: '0 0 6px' }}>The TESX (Tire Empire Stock Exchange) lets players trade shares of public companies.</p>
+          <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>IPO</b> — Take your company public once you meet requirements. You keep 51% as founder shares. The remaining 49% are sold to investors.</p>
+          <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Stock Price</b> — Driven by company performance (revenue, profit, reputation, assets) and supply/demand from trades.</p>
+          <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Dividends</b> — Public companies pay a % of weekly profit to shareholders. Set your payout ratio (0-75%) in the IPO tab.</p>
+          <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Market/Limit Orders</b> — Market orders execute instantly at current price. Limit orders wait until price hits your target.</p>
+          <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Short Selling</b> — Borrow shares and sell high, buy back low. Risky — losses are unlimited if the price rises.</p>
+          <p style={{ margin: '6px 0 0', color: 'var(--text)' }}>Commission is ~1.5% per trade. Build a diversified portfolio for steady income!</p>
+        </div>
+      )}
       <div className="tab-bar">
         {TABS.map((t, i) => (
           <button key={t} className={`tab-btn ${tab === i ? 'active' : ''}`} onClick={() => { setTab(i); setMsg(''); }}>
@@ -665,13 +693,17 @@ export default function ExchangePanel() {
               </div>
               <h4 style={{ margin: '12px 0 6px' }}>Dividend Payout Ratio</h4>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input type="range" min="0" max="75" value={(se.dividendPayoutRatio || 0.25) * 100}
+                <input type="range" min="0" max="75" value={divRatio}
                   onChange={e => {
-                    const ratio = parseInt(e.target.value) / 100;
-                    doAction(() => setDividendRatio(ratio), 'Dividend ratio updated!');
+                    const val = parseInt(e.target.value);
+                    setDivRatio(val);
+                    clearTimeout(divTimerRef.current);
+                    divTimerRef.current = setTimeout(() => {
+                      doAction(() => setDividendRatio(val / 100), `Dividend ratio set to ${val}%`);
+                    }, 500);
                   }}
                   style={{ flex: 1 }} />
-                <span style={{ fontWeight: 700 }}>{Math.round((se.dividendPayoutRatio || 0.25) * 100)}%</span>
+                <span style={{ fontWeight: 700 }}>{divRatio}%</span>
               </div>
               <p style={{ fontSize: 11, color: 'var(--text-dim)' }}>% of weekly profit distributed to shareholders as dividends.</p>
             </div>
@@ -698,8 +730,10 @@ export default function ExchangePanel() {
               <div style={{ marginBottom: 12 }}>
                 <h4 style={{ margin: '0 0 4px' }}>Dividend Ratio</h4>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="range" min="0" max="75" defaultValue="25" id="ipo-div-ratio" style={{ flex: 1 }} />
-                  <span style={{ fontWeight: 700 }}>25%</span>
+                  <input type="range" min="0" max="75" value={ipoDivRatio}
+                    onChange={e => setIpoDivRatio(parseInt(e.target.value))}
+                    style={{ flex: 1 }} />
+                  <span style={{ fontWeight: 700 }}>{ipoDivRatio}%</span>
                 </div>
               </div>
               <div style={{ marginBottom: 8, fontSize: 12, color: 'var(--text-dim)' }}>
@@ -707,9 +741,7 @@ export default function ExchangePanel() {
               </div>
               <button className="btn btn-green" style={{ width: '100%' }} disabled={loading}
                 onClick={() => {
-                  const el = document.getElementById('ipo-div-ratio');
-                  const ratio = el ? parseInt(el.value) / 100 : 0.25;
-                  doAction(() => applyForIPO({ dividendPayoutRatio: ratio }), 'IPO successful!');
+                  doAction(() => applyForIPO({ dividendPayoutRatio: ipoDivRatio / 100 }), 'IPO successful!');
                 }}>
                 {loading ? 'Processing...' : 'Launch IPO'}
               </button>

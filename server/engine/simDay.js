@@ -127,8 +127,10 @@ export function simDay(g, shared = {}) {
     const arriving = s.pendingImports.filter(imp => s.day >= imp.arrivalDay);
     s.pendingImports = s.pendingImports.filter(imp => s.day < imp.arrivalDay);
     for (const imp of arriving) {
-      s.warehouseInventory[imp.tire] = (s.warehouseInventory[imp.tire] || 0) + imp.qty;
-      s.log.push({ msg: `📦 Import arrived: ${imp.qty} ${TIRES[imp.tire]?.n || imp.tire}`, cat: 'source' });
+      const space = Math.max(0, getCap(s) - getInv(s));
+      const qty = Math.min(imp.qty, space);
+      if (qty > 0) s.warehouseInventory[imp.tire] = (s.warehouseInventory[imp.tire] || 0) + qty;
+      s.log.push({ msg: `📦 Import arrived: ${qty} ${TIRES[imp.tire]?.n || imp.tire}${qty < imp.qty ? ` (${imp.qty - qty} didn't fit)` : ''}`, cat: 'source' });
     }
   }
 
@@ -140,7 +142,9 @@ export function simDay(g, shared = {}) {
     for (const r of completed) {
       const rate = (RETREADING.successRate && RETREADING.successRate[r.tire]) || 0.75;
       if (Math.random() < rate) {
-        s.warehouseInventory[RETREADING.outputGrade] = (s.warehouseInventory[RETREADING.outputGrade] || 0) + 1;
+        if (getInv(s) < getCap(s)) {
+          s.warehouseInventory[RETREADING.outputGrade] = (s.warehouseInventory[RETREADING.outputGrade] || 0) + 1;
+        }
         successCount++;
       } else {
         failCount++;
@@ -193,8 +197,10 @@ export function simDay(g, shared = {}) {
       const goodQty = Math.max(1, Math.floor(q.qty * (1 - defectRate)));
       // Store with brand_ prefix
       const storeKey = q.tire.startsWith('brand_') ? q.tire : getBrandTireKey(q.tire);
-      s.warehouseInventory[storeKey] = (s.warehouseInventory[storeKey] || 0) + goodQty;
-      producedTotal += goodQty;
+      const factorySpace = Math.max(0, getCap(s) - getInv(s));
+      const storeQty = Math.min(goodQty, factorySpace);
+      if (storeQty > 0) s.warehouseInventory[storeKey] = (s.warehouseInventory[storeKey] || 0) + storeQty;
+      producedTotal += storeQty;
       const tireName = allTiresMap[storeKey]?.n || allTiresMap[q.tire]?.n || q.tire;
       if (goodQty < q.qty) {
         s.log.push({ msg: `\u{1F3ED} Factory produced ${goodQty}/${q.qty} ${tireName} (${q.qty - goodQty} defective)`, cat: 'sale' });
@@ -1305,12 +1311,15 @@ export function simDay(g, shared = {}) {
   for (const [supIdx, rel] of Object.entries(s.supplierRelationships || {})) {
     const tier = getSupplierRelTier(rel.totalPurchased || 0);
     if (tier.freeSampleChance > 0 && Math.random() < tier.freeSampleChance / 30) {
-      const newTireKeys = Object.keys(TIRES).filter(k => !TIRES[k].used);
-      if (newTireKeys.length > 0) {
-        const k = newTireKeys[R(0, newTireKeys.length - 1)];
-        const qty = R(2, 5);
-        s.warehouseInventory[k] = (s.warehouseInventory[k] || 0) + qty;
-        s.log.push({ msg: `🎁 Free sample: ${qty} ${TIRES[k].n} from supplier!`, cat: 'source' });
+      const sampleSpace = Math.max(0, getCap(s) - getInv(s));
+      if (sampleSpace > 0) {
+        const newTireKeys = Object.keys(TIRES).filter(k => !TIRES[k].used);
+        if (newTireKeys.length > 0) {
+          const k = newTireKeys[R(0, newTireKeys.length - 1)];
+          const qty = Math.min(R(2, 5), sampleSpace);
+          s.warehouseInventory[k] = (s.warehouseInventory[k] || 0) + qty;
+          s.log.push({ msg: `🎁 Free sample: ${qty} ${TIRES[k].n} from supplier!`, cat: 'source' });
+        }
       }
     }
   }
