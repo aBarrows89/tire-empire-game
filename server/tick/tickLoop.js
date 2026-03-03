@@ -496,18 +496,19 @@ export async function runTick(clients) {
     if (day % 7 === 0) {
       const prevTcValue = game.economy.tcValue;
 
-      // ── Factor 1: Per-Capita TC Scarcity ──
-      // TC value is driven by how scarce TC is *per player*.
-      // Baseline: 10 TC per player is "normal" → factor = 1.0
-      // 1M players with 1 TC each → 0.001 per capita → extremely scarce → big multiplier
-      // 10 players with 10,000 TC each → 1000 per capita → abundant → value drops
+      // ── Factor 1: Per-Capita TC Scarcity (log-scale) ──
+      // Baseline: 10 TC per player = neutral (factor 1.0)
+      // Uses power-law (exponent 0.35) for gentle scaling across all player counts:
+      //   tcPerCapita=1  → factor ≈ 2.2  (scarce)
+      //   tcPerCapita=10 → factor = 1.0  (baseline)
+      //   tcPerCapita=42 → factor ≈ 0.6  (moderate abundance)
+      //   tcPerCapita=100 → factor ≈ 0.45 (abundant)
+      //   tcPerCapita=1000 → factor ≈ 0.3  (floor)
       const playerCount = Math.max(1, realPlayers.length);
       const tcPerCapita = totalTC / playerCount;
       const scarcityBaseline = 10; // 10 TC per player = neutral
-      // Log scale so it works from 1 player to 1M players
-      // tcPerCapita=0.001 → factor≈4.0, tcPerCapita=1 → ≈2.0, tcPerCapita=10 → 1.0, tcPerCapita=100 → ≈0.5, tcPerCapita=1000 → ≈0.25
       const tcSupplyFactor = totalTC > 0
-        ? Math.max(0.15, Math.min(5.0, scarcityBaseline / Math.max(0.001, tcPerCapita)))
+        ? Math.max(0.3, Math.min(3.0, Math.pow(scarcityBaseline / Math.max(0.1, tcPerCapita), 0.35)))
         : 1.0;
 
       // ── Factor 2: Velocity of Money (Cash Inflation) ──
@@ -560,10 +561,18 @@ export async function runTick(clients) {
       // ── Random noise ±5% ──
       const tcNoise = 1 + (Math.random() - 0.5) * 0.10;
 
-      // ── Combine all factors ──
-      const combinedMult = tcSupplyFactor * velocityFactor * rubberFactor * sentimentFactor * marketMakerFactor * chaosFactor * tcNoise;
+      // ── Combine factors into a TARGET value, then mean-revert ──
+      // Instead of multiplying current value (which compounds and crashes),
+      // calculate where the value *should* be, then move 10% toward it each week.
+      const baseTargetValue = 50000;
+      const targetFactor = tcSupplyFactor * velocityFactor * rubberFactor * sentimentFactor * marketMakerFactor * chaosFactor;
+      const targetValue = Math.max(5000, Math.min(500000, baseTargetValue * targetFactor));
+
+      // Mean reversion: move 10% toward target each week + random noise
+      const reversionRate = 0.10;
+      const newValue = game.economy.tcValue + (targetValue - game.economy.tcValue) * reversionRate;
       game.economy.tcValue = Math.round(
-        Math.max(1000, Math.min(500000, game.economy.tcValue * combinedMult))
+        Math.max(5000, Math.min(500000, newValue * tcNoise))
       );
 
       // Store metrics for dashboard
@@ -581,6 +590,8 @@ export async function runTick(clients) {
         recentFarmLabPurchases,
         topPlayerId,
         prevTcValue,
+        tcPerCapita: +tcPerCapita.toFixed(2),
+        targetValue: Math.round(targetValue),
       };
 
       // History for charting (keep last 52 weeks)
@@ -660,8 +671,8 @@ export async function runTick(clients) {
       console.error('AI phase-out error:', err);
     }
 
-    // Weekly tournaments — every 7 days, rank players and award TireCoins
-    if (day % 7 === 0 && players.length > 0) {
+    // Monthly tournaments — every 30 days, rank players and award TireCoins
+    if (day % 30 === 0 && players.length > 0) {
       try {
         const ranked = players
           .map(p => {
@@ -680,7 +691,7 @@ export async function runTick(clients) {
           })
           .sort((a, b) => b.weeklyRevenue - a.weeklyRevenue);
 
-        const prizes = [20, 10, 5];
+        const prizes = [1];  // 1 TC for 1st place only (~12 TC/year entering economy)
         for (let i = 0; i < Math.min(ranked.length, prizes.length); i++) {
           const winner = players.find(p => p.id === ranked[i].id);
           if (winner) {
@@ -691,12 +702,12 @@ export async function runTick(clients) {
             for (let j = 0; j < wLvl && j < MONET.tcStorage.upgrades.length; j++) wCap += MONET.tcStorage.upgrades[j].addCap;
             ws.tireCoins = Math.min((ws.tireCoins || 0) + prizes[i], wCap);
             ws.log = ws.log || [];
-            ws.log.push({ msg: `🏆 Weekly tournament: #${i + 1} place (+${prizes[i]} TC)`, cat: 'event' });
+            ws.log.push({ msg: `🏆 Monthly tournament: #${i + 1} place (+${prizes[i]} TC)`, cat: 'event' });
             await savePlayerState(winner.id, winner.game_state);
           }
         }
 
-        await saveTournament(`week-${Math.floor(day / 7)}`, {
+        await saveTournament(`month-${Math.floor(day / 30)}`, {
           day,
           rankings: ranked.slice(0, 10),
           prizes,

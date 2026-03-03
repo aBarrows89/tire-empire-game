@@ -1413,9 +1413,9 @@ export function simDay(g, shared = {}) {
     s.marketPrices = mktPrices;
   }
 
-  // ── TIRE COINS — 1 every other day (reduced from 1/day to limit inflation) ──
+  // ── TIRE COINS — 1 every 36 days (~10 TC per game year) ──
   const tcCap = getTcCap(s);
-  if (s.day % 2 === 0) s.tireCoins = Math.min((s.tireCoins || 0) + 1, tcCap);
+  if (s.day % 36 === 0) s.tireCoins = Math.min((s.tireCoins || 0) + 1, tcCap);
 
   // Premium TC stipend — 50 TC every 30 days
   if (s.isPremium && s.day % 30 === 0) {
