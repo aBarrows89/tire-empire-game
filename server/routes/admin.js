@@ -105,10 +105,14 @@ router.post('/players/:id/edit', async (req, res) => {
     const g = player.game_state;
     const changes = {};
 
-    const { cash, tireCoins, reputation, day, hasFactory, factoryLevel, tcStorageLevel, cosmetics, inventory, companyName, name, isAI } = req.body;
+    const { cash, tireCoins, reputation, day, hasFactory, factoryLevel, tcStorageLevel, cosmetics, inventory, companyName, name, isAI, botIntensity } = req.body;
     if (companyName !== undefined) { g.companyName = String(companyName); changes.companyName = g.companyName; }
     if (name !== undefined) { g.name = String(name); changes.name = g.name; }
     if (isAI !== undefined) { g.isAI = !!isAI; changes.isAI = g.isAI; }
+    if (botIntensity !== undefined && g._botConfig) {
+      g._botConfig.intensity = Math.max(1, Math.min(10, Number(botIntensity)));
+      changes.botIntensity = g._botConfig.intensity;
+    }
     if (cash !== undefined) { g.cash = Number(cash); changes.cash = g.cash; }
     if (tireCoins !== undefined) { g.tireCoins = Number(tireCoins); changes.tireCoins = g.tireCoins; }
     if (reputation !== undefined) { g.reputation = Number(reputation); changes.reputation = g.reputation; }

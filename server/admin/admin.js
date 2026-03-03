@@ -239,6 +239,11 @@ async function loadPlayerDetail(id) {
       <div class="edit-field"><label>Reputation</label><input type="number" id="edit-rep" value="${(g.reputation || 0).toFixed(1)}" step="0.1" onFocus="this.select()"></div>
       <div class="edit-field"><label>TC Storage Lvl</label><input type="number" id="edit-tc-storage" value="${g.tcStorageLevel || 0}" min="0" max="5" onFocus="this.select()"></div>
       <div class="edit-field"><label>Factory Lvl</label><input type="number" id="edit-factory-lvl" value="${g.factory?.level || 0}" min="0" max="3" onFocus="this.select()"></div>
+      ${g._botConfig ? `
+      <div class="edit-field" style="grid-column:1/-1">
+        <label>Bot Intensity <span id="edit-intensity-label" style="color:#4ea8de">${g._botConfig.intensity} - ${intensityLabel(g._botConfig.intensity)}</span></label>
+        <input type="range" id="edit-intensity" min="1" max="10" value="${g._botConfig.intensity}" oninput="document.getElementById('edit-intensity-label').textContent = this.value + ' - ' + intensityLabel(+this.value)" style="width:200px">
+      </div>` : ''}
       <button class="btn btn-green btn-sm" onclick="editPlayer('${esc(id)}')">Save Changes</button>
       <hr style="border-color:#333;margin:12px 0">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -282,6 +287,11 @@ async function editPlayer(id) {
     body.factoryLevel = factoryLvl;
   } else {
     body.hasFactory = false;
+  }
+
+  const intensityEl = document.getElementById('edit-intensity');
+  if (intensityEl) {
+    body.botIntensity = Number(intensityEl.value);
   }
 
   try {
@@ -791,9 +801,14 @@ async function createStealthPlayer() {
   } catch (e) { console.error(e); }
 }
 
-function updateIntensityLabel(val) {
+function intensityLabel(val) {
   const labels = { 1: 'Casual', 2: 'Casual', 3: 'Casual', 4: 'Normal', 5: 'Competitive', 6: 'Competitive', 7: 'Aggressive', 8: 'Aggressive', 9: 'Disruptor', 10: 'Disruptor' };
-  document.getElementById('create-intensity-label').textContent = `${val} - ${labels[val] || 'Competitive'}`;
+  return labels[val] || 'Competitive';
+}
+window.intensityLabel = intensityLabel; // expose for inline oninput
+
+function updateIntensityLabel(val) {
+  document.getElementById('create-intensity-label').textContent = `${val} - ${intensityLabel(val)}`;
 }
 
 // ═══════════════════════════════════════
