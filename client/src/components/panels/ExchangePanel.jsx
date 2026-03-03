@@ -514,11 +514,12 @@ export default function ExchangePanel() {
                 </div>
               ) : (
                 portfolio.positions.map(p => (
-                  <div key={p.ticker} className="card" style={{ padding: '8px 12px', marginBottom: 4 }}>
+                  <div key={p.ticker} className="card" style={{ padding: '8px 12px', marginBottom: 4, cursor: 'pointer' }}
+                    onClick={() => { selectStock(p.ticker); setTab(2); }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <span style={{ fontWeight: 700 }}>${p.ticker}</span>
-                        <span style={{ color: 'var(--text-dim)', marginLeft: 6, fontSize: 12 }}>{p.qty} shares</span>
+                        <span style={{ color: 'var(--text-dim)', marginLeft: 6, fontSize: 12 }}>{p.qty} shares @ {fmt(p.avgPrice)}</span>
                       </div>
                       <div style={{ textAlign: 'right' }}>
                         <div>{fmt(p.currentPrice)}</div>
@@ -530,10 +531,20 @@ export default function ExchangePanel() {
                     {p.priceHistory && p.priceHistory.length > 2 && (
                       <PriceChart data={p.priceHistory} width={280} height={40} />
                     )}
-                    <button className="btn btn-small" style={{ marginTop: 4 }}
-                      onClick={() => { setSelectedTicker(p.ticker); selectStock(p.ticker); setTab(2); setOrderForm({ side: 'sell', type: 'market', qty: String(p.qty), limitPrice: '' }); }}>
-                      Sell
-                    </button>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                      <button className="btn btn-small btn-green" style={{ flex: 1 }}
+                        onClick={(e) => { e.stopPropagation(); selectStock(p.ticker); setTab(2); setOrderForm({ side: 'buy', type: 'market', qty: '', limitPrice: '' }); }}>
+                        Buy More
+                      </button>
+                      <button className="btn btn-small btn-red" style={{ flex: 1 }}
+                        onClick={(e) => { e.stopPropagation(); selectStock(p.ticker); setTab(2); setOrderForm({ side: 'sell', type: 'market', qty: String(p.qty), limitPrice: '' }); }}>
+                        Sell
+                      </button>
+                      <button className="btn btn-small" style={{ flex: 1 }}
+                        onClick={(e) => { e.stopPropagation(); selectStock(p.ticker); setTab(2); }}>
+                        Details
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
