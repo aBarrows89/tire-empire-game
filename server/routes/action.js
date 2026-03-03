@@ -910,13 +910,14 @@ router.post('/', authMiddleware, async (req, res) => {
         const { marketId } = params;
         const market = FLEA_MARKETS.find(m => m.id === marketId);
         if (!market) return res.status(400).json({ error: 'Invalid flea market' });
-        if (g.cash < FLEA_STAND_COST) return res.status(400).json({ error: `Need $${FLEA_STAND_COST}` });
+        const transportCost = FLEA_TRANSPORT[market.transport] || 50;
+        const totalFleaCost = FLEA_STAND_COST + transportCost;
+        if (g.cash < totalFleaCost) return res.status(400).json({ error: `Need $${totalFleaCost}` });
         if (!g.fleaMarketStands) g.fleaMarketStands = [];
         if (g.fleaMarketStands.some(s => s.marketId === marketId)) {
           return res.status(400).json({ error: 'Already have a stand there' });
         }
-        const transportCost = FLEA_TRANSPORT[market.transport] || 50;
-        g.cash -= FLEA_STAND_COST + transportCost;
+        g.cash -= totalFleaCost;
         g.fleaMarketStands.push({ id: uid(), marketId, cityId: market.cityId, name: market.name });
         g.log.push(`Opened flea stand at ${market.name} (-$${FLEA_STAND_COST + transportCost})`);
         break;
@@ -1218,6 +1219,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
       case 'hireEcomStaff': {
         const { role } = params;
+        if (!g.hasEcom || !g.ecomStaff) return res.status(400).json({ error: 'Unlock e-commerce first' });
         const { ECOM_STAFF: ESTAFF } = await import('../../shared/constants/ecommerce.js');
         if (!ESTAFF[role]) return res.status(400).json({ error: 'Invalid role' });
         if (g.ecomStaff[role]) return res.status(400).json({ error: 'Already hired' });

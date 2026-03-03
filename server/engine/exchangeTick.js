@@ -78,12 +78,16 @@ export function runExchangeTick(exchangeState, players, day) {
 
   const modifiedPlayers = [];
 
-  // 1. Update fundamentals for all listed stocks
+  // 1. Update fundamentals for all listed stocks (remove orphaned stocks)
   for (const [ticker, stock] of Object.entries(exchangeState.stocks)) {
     const owner = players.find(p => p.id === stock.playerId);
-    if (owner) {
-      updateFundamentals(stock, owner.game_state);
+    if (!owner) {
+      // Player was deleted — delist their stock
+      delete exchangeState.stocks[ticker];
+      delete exchangeState.orderBooks[ticker];
+      continue;
     }
+    updateFundamentals(stock, owner.game_state);
     stock._currentDay = day;
   }
 
@@ -97,10 +101,11 @@ export function runExchangeTick(exchangeState, players, day) {
     }
   }
 
-  // 2b. AI IPOs — eligible AI companies go public
+  // 2b. Bot IPOs — eligible bot companies go public
   for (const p of players) {
     const g = p.game_state;
-    if (!g.isAI || !g.stockExchange || g.stockExchange.isPublic) continue;
+    const isBot = g.isAI || g._botConfig;
+    if (!isBot || !g.stockExchange || g.stockExchange.isPublic) continue;
     if ((g.reputation || 0) >= IPO_MIN_REP &&
         (g.totalRev || 0) >= IPO_MIN_REVENUE &&
         (g.locations || []).length >= IPO_MIN_LOCATIONS &&
@@ -117,7 +122,7 @@ export function runExchangeTick(exchangeState, players, day) {
   const tickers = Object.keys(exchangeState.stocks);
   for (const p of players) {
     const g = p.game_state;
-    if (!g.isAI || !g._aiTradeIntent || tickers.length === 0) continue;
+    if (!(g.isAI || g._botConfig) || !g._aiTradeIntent || tickers.length === 0) continue;
     const intent = g._aiTradeIntent;
     delete g._aiTradeIntent;
 

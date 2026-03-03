@@ -286,7 +286,7 @@ router.delete('/chat/messages/:id', async (req, res) => {
     const clients = req.app.locals.wsClients || new Set();
     const payload = JSON.stringify({ type: 'chatDelete', messageId: req.params.id });
     for (const client of clients) {
-      if (client.readyState === 1) client.send(payload);
+      if (client.readyState === 1) try { client.send(payload); } catch {}
     }
 
     res.json({ ok: true });

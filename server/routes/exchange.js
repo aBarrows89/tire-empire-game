@@ -212,6 +212,7 @@ router.post('/order', authMiddleware, async (req, res) => {
       const filledCommission = calculateCommission(totalCost, g.isPremium);
       if (side === 'buy') {
         g.cash -= totalCost + filledCommission;
+        if (!g.stockExchange.portfolio) g.stockExchange.portfolio = {};
         if (!g.stockExchange.portfolio[ticker]) g.stockExchange.portfolio[ticker] = { qty: 0, avgCost: 0, acquiredDay: day };
         const prev = g.stockExchange.portfolio[ticker];
         const prevTotal = prev.qty * prev.avgCost;

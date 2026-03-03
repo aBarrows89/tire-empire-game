@@ -626,22 +626,26 @@ export async function runTick(clients) {
         );
         continue;
       }
-      applyAutoPrice(state);
-      applyAutoSource(state);
-      if (state.hasAutoRestock || state.isPremium) applyAutoSupplier(state);
-      const newState = simDay(state, shared);
-      await savePlayerState(player.id, newState);
+      try {
+        applyAutoPrice(state);
+        applyAutoSource(state);
+        if (state.hasAutoRestock || state.isPremium) applyAutoSupplier(state);
+        const newState = simDay(state, shared);
+        await savePlayerState(player.id, newState);
 
-      await upsertLeaderboard(
-        player.id,
-        newState.companyName || newState.name || 'Unknown',
-        getWealth(newState),
-        newState.reputation,
-        newState.locations.length,
-        newState.day,
-        newState.isPremium,
-        newState.stockExchange?.ticker || null
-      );
+        await upsertLeaderboard(
+          player.id,
+          newState.companyName || newState.name || 'Unknown',
+          getWealth(newState),
+          newState.reputation,
+          newState.locations.length,
+          newState.day,
+          newState.isPremium,
+          newState.stockExchange?.ticker || null
+        );
+      } catch (playerErr) {
+        console.error(`[Tick] Error processing player ${player.id}:`, playerErr.message);
+      }
     }
 
     // Resolve expired marketplace auctions
