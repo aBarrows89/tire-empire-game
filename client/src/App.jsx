@@ -208,11 +208,35 @@ function GameLayout() {
 }
 
 class ErrorBoundary extends React.Component {
-  state = { hasError: false };
+  state = { hasError: false, error: null, asyncErrors: [] };
 
-  static getDerivedStateFromError() {
-    return { hasError: true };
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
   }
+
+  componentDidMount() {
+    window.addEventListener('error', this.handleGlobalError);
+    window.addEventListener('unhandledrejection', this.handleUnhandledRejection);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener('error', this.handleGlobalError);
+    window.removeEventListener('unhandledrejection', this.handleUnhandledRejection);
+  }
+
+  handleGlobalError = (event) => {
+    this.setState(prev => ({
+      asyncErrors: [...prev.asyncErrors, `[window.error] ${event.message} at ${event.filename}:${event.lineno}`].slice(-5),
+    }));
+  };
+
+  handleUnhandledRejection = (event) => {
+    const reason = event.reason;
+    const msg = reason instanceof Error ? `${reason.message}\n${reason.stack}` : String(reason);
+    this.setState(prev => ({
+      asyncErrors: [...prev.asyncErrors, `[unhandledrejection] ${msg}`].slice(-5),
+    }));
+  };
 
   componentDidCatch(error, errorInfo) {
     console.error('React Error Boundary:', error, errorInfo);
@@ -225,6 +249,10 @@ class ErrorBoundary extends React.Component {
           <div style={{ fontSize: 48, marginBottom: 16 }}>&#x1F6A8;</div>
           <h2 style={{ margin: '0 0 8px' }}>Something went wrong</h2>
           <p style={{ color: 'var(--text-dim)', marginBottom: 16 }}>The app hit an unexpected error.</p>
+          <pre style={{ color: '#ef5350', fontSize: 11, maxWidth: '90vw', overflow: 'auto', padding: 8, background: '#1a1a2e', borderRadius: 6, marginBottom: 16, whiteSpace: 'pre-wrap', wordBreak: 'break-all', textAlign: 'left' }}>
+            {this.state.error?.message || 'Unknown error'}{'\n'}{this.state.error?.stack || ''}
+            {this.state.asyncErrors.length > 0 ? '\n\n--- Async Errors ---\n' + this.state.asyncErrors.join('\n') : ''}
+          </pre>
           <button className="btn btn-green" onClick={() => window.location.reload()}>
             Restart App
           </button>

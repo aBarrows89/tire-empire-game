@@ -16,16 +16,19 @@ export default function AuthGate({ children }) {
     }
 
     const unsub = onAuthChange(async (firebaseUser) => {
+      console.log('[AuthGate] onAuthChange:', firebaseUser ? `uid=${firebaseUser.uid}` : 'null');
       if (firebaseUser) {
         setUser(firebaseUser);
         setLoading(false);
       } else {
         // No user — sign in anonymously for zero-friction onboarding
         try {
+          console.log('[AuthGate] Attempting anonymous sign-in...');
           await signInAnon();
+          console.log('[AuthGate] Anonymous sign-in succeeded');
           // onAuthChange will fire again with the new user
         } catch (err) {
-          console.error('Anonymous sign-in failed:', err);
+          console.error('[AuthGate] Anonymous sign-in failed:', err);
           setLoading(false);
         }
       }

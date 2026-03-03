@@ -125,6 +125,7 @@ export default function DashboardPanel() {
   const tcFillPct = tcCap > 0 ? Math.min(100, Math.round((tcCurrent / tcCap) * 100)) : 0;
   const nextUpgrade = tcStorageLevel < MONET.tcStorage.upgrades.length ? MONET.tcStorage.upgrades[tcStorageLevel] : null;
   const [tcUpgradeBusy, setTcUpgradeBusy] = useState(false);
+  const [showTcInfo, setShowTcInfo] = useState(false);
 
   return (
     <>
@@ -607,7 +608,32 @@ export default function DashboardPanel() {
 
       {/* TC Economy */}
       <div className="card" style={{ borderLeft: '3px solid #f0c040' }}>
-        <div className="card-title" style={{ color: '#f0c040' }}>TireCoin Economy</div>
+        <div className="card-title" style={{ color: '#f0c040', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          TireCoin Economy
+          <span
+            onClick={() => setShowTcInfo(!showTcInfo)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 20, height: 20, borderRadius: '50%', fontSize: 12, fontWeight: 700,
+              background: showTcInfo ? '#f0c040' : 'rgba(240,192,64,0.15)',
+              color: showTcInfo ? '#000' : '#f0c040',
+              cursor: 'pointer', lineHeight: 1,
+            }}
+          >i</span>
+        </div>
+        {showTcInfo && (
+          <div style={{ background: 'rgba(240,192,64,0.08)', borderRadius: 8, padding: '8px 10px', marginBottom: 8, fontSize: 12, lineHeight: 1.5, color: 'var(--text-dim)' }}>
+            <div style={{ fontWeight: 600, color: '#f0c040', marginBottom: 4 }}>How TireCoins Work</div>
+            <p style={{ margin: '0 0 6px' }}>TireCoins (TC) are the premium currency in Tire Empire. Their value fluctuates based on real market forces:</p>
+            <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Supply</b> — More TC in circulation pushes the price down. Scarce TC drives it up.</p>
+            <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Velocity</b> — Active spending and trading increases demand and raises the price.</p>
+            <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Rubber</b> — Global rubber output affects tire production costs and TC value.</p>
+            <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Sentiment</b> — Player reputation levels signal market confidence.</p>
+            <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Whale</b> — If one player holds a huge share of TC, it destabilizes the market.</p>
+            <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Events</b> — Global events (rubber shortage, trade wars, etc.) cause price swings.</p>
+            <p style={{ margin: '6px 0 0', color: 'var(--text)' }}>Upgrade your TC Storage to hold more coins. Buy low, sell high!</p>
+          </div>
+        )}
         <div className="row-between text-sm mb-4">
           <span className="text-dim">TC Value</span>
           <span className="font-bold text-gold">${fmt(tcValue)}</span>
