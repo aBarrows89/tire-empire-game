@@ -31,7 +31,8 @@ export async function adminAuthMiddleware(req, res, next) {
     const token = authHeader.split('Bearer ')[1];
     const decoded = await admin.auth().verifyIdToken(token);
     if (!ADMIN_UIDS.includes(decoded.uid)) {
-      return res.status(403).json({ error: 'Not an admin' });
+      console.log(`[adminAuth] Rejected UID: ${decoded.uid} (email: ${decoded.email || 'unknown'}). Add to ADMIN_UIDS to grant access.`);
+      return res.status(403).json({ error: 'Not an admin', uid: decoded.uid });
     }
     req.adminId = decoded.uid;
     next();
