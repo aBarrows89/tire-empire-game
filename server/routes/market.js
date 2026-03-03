@@ -108,12 +108,12 @@ router.get('/city-shops/:cityId', async (req, res) => {
         shops.push({
           id: loc.id,
           name: g.companyName || g.name || 'Unknown',
-          personality: g.isAI ? 'AI Competitor' : 'Player',
-          icon: g.isAI ? '\u{1F916}' : '\u{1F464}',
+          personality: 'Player',
+          icon: '\u{1F464}',
           reputation: Math.round((g.reputation || 0) * 10) / 10,
           wealth: 0,
           forSale: false,
-          type: g.isAI ? 'ai_player' : 'player',
+          type: 'player',
           playerId: p.id,
         });
       }

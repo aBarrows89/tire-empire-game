@@ -93,6 +93,10 @@ tr:hover td { background: #1a1a2e; }
 .badge-red { background: #4a0000; color: #ef5350; }
 .badge-gold { background: #4a3800; color: #ffd54f; }
 .badge-gray { background: #333; color: #999; }
+.badge-blue { background: #0d3b66; color: #4ea8de; }
+
+/* Admin list items */
+.admin-list-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: #1a1a2e; border: 1px solid #333; border-radius: 6px; margin-bottom: 6px; }
 
 /* Controls row */
 .controls-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }

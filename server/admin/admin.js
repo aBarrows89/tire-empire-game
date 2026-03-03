@@ -95,6 +95,7 @@ function onAuthSuccess(displayName) {
   document.getElementById('admin-tabs').style.display = 'flex';
   document.getElementById('admin-content').style.display = 'block';
   loadPlayers();
+  initCreatePlayerForm();
 }
 
 // ═══════════════════════════════════════
@@ -117,6 +118,7 @@ document.getElementById('admin-tabs').addEventListener('click', e => {
   if (id === 'events') loadEvents();
   if (id === 'server') loadServerStats();
   if (id === 'audit') loadAuditLog();
+  if (id === 'settings') loadSettings();
 
   clearInterval(serverStatsInterval);
   if (id === 'server') {
@@ -152,7 +154,8 @@ async function loadPlayers() {
       const statusBadges = [];
       if (p.isPremium) statusBadges.push('<span class="badge badge-gold">PRO</span>');
       if (p.isBanned) statusBadges.push('<span class="badge badge-red">BANNED</span>');
-      if (p.isAI) statusBadges.push('<span class="badge badge-gray">AI</span>');
+      if (p.isBot) statusBadges.push(`<span class="badge badge-blue">Bot (${p.botIntensity})</span>`);
+      else if (p.isAI) statusBadges.push('<span class="badge badge-gray">AI</span>');
 
       tr.innerHTML = `
         <td><strong>${esc(p.companyName)}</strong><br><span style="color:#555;font-size:11px">${esc(p.id.slice(0, 12))}...</span></td>
@@ -731,6 +734,130 @@ function actionColor(action) {
   if (['setPremium', 'triggerEvent', 'broadcast'].includes(action)) return 'gold';
   if (['editPlayer', 'setIndices', 'setTcValue', 'setTickSpeed'].includes(action)) return 'green';
   return 'gray';
+}
+
+// ═══════════════════════════════════════
+// CREATE STEALTH PLAYER
+// ═══════════════════════════════════════
+
+let citiesCache = null;
+
+async function loadCities() {
+  if (citiesCache) return citiesCache;
+  try {
+    const res = await fetch(`${API}/cities`, { headers: AUTH_HEADER });
+    citiesCache = await res.json();
+    return citiesCache;
+  } catch (e) { console.error(e); return []; }
+}
+
+async function initCreatePlayerForm() {
+  const cities = await loadCities();
+  const sel = document.getElementById('create-city');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Random City</option>';
+  for (const c of cities) {
+    sel.innerHTML += `<option value="${c.id}">${esc(c.name)}, ${esc(c.state)}</option>`;
+  }
+}
+
+async function createStealthPlayer() {
+  const name = document.getElementById('create-name').value.trim();
+  const companyName = document.getElementById('create-company').value.trim();
+  const cityId = document.getElementById('create-city').value || null;
+  const intensity = Number(document.getElementById('create-intensity').value) || 5;
+
+  if (!name || !companyName) { alert('Name and company name are required'); return; }
+
+  try {
+    const res = await fetch(`${API}/create-stealth-player`, {
+      method: 'POST', headers: AUTH_HEADER,
+      body: JSON.stringify({ name, companyName, cityId, intensity }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      document.getElementById('create-result').textContent = `Created "${companyName}" (intensity ${intensity})`;
+      document.getElementById('create-result').style.color = '#4caf50';
+      document.getElementById('create-name').value = '';
+      document.getElementById('create-company').value = '';
+      document.getElementById('create-intensity').value = '5';
+      document.getElementById('create-intensity-label').textContent = '5 - Competitive';
+      loadPlayers();
+    } else {
+      document.getElementById('create-result').textContent = data.error || 'Failed';
+      document.getElementById('create-result').style.color = '#ef5350';
+    }
+    setTimeout(() => { document.getElementById('create-result').textContent = ''; }, 4000);
+  } catch (e) { console.error(e); }
+}
+
+function updateIntensityLabel(val) {
+  const labels = { 1: 'Casual', 2: 'Casual', 3: 'Casual', 4: 'Normal', 5: 'Competitive', 6: 'Competitive', 7: 'Aggressive', 8: 'Aggressive', 9: 'Disruptor', 10: 'Disruptor' };
+  document.getElementById('create-intensity-label').textContent = `${val} - ${labels[val] || 'Competitive'}`;
+}
+
+// ═══════════════════════════════════════
+// SETTINGS — ADMIN WHITELIST
+// ═══════════════════════════════════════
+
+async function loadSettings() {
+  try {
+    const res = await fetch(`${API}/settings`, { headers: AUTH_HEADER });
+    const data = await res.json();
+    const list = document.getElementById('admin-list');
+    list.innerHTML = '';
+
+    for (const a of data.admins) {
+      const div = document.createElement('div');
+      div.className = 'admin-list-item';
+      const isEnv = a.source === 'env';
+      div.innerHTML = `
+        <div>
+          <strong>${esc(a.uid.slice(0, 20))}${a.uid.length > 20 ? '...' : ''}</strong>
+          ${a.email ? `<br><span style="color:#888;font-size:12px">${esc(a.email)}</span>` : ''}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="badge badge-${isEnv ? 'gold' : 'blue'}">${isEnv ? 'ENV' : 'DB'}</span>
+          ${isEnv ? '' : `<button class="btn btn-red btn-sm" onclick="removeAdmin('${esc(a.uid)}')">Remove</button>`}
+        </div>
+      `;
+      list.appendChild(div);
+    }
+  } catch (e) { console.error(e); }
+}
+
+async function addAdmin() {
+  const uid = document.getElementById('add-admin-uid').value.trim();
+  const email = document.getElementById('add-admin-email').value.trim();
+  if (!uid) { alert('UID is required'); return; }
+
+  try {
+    const res = await fetch(`${API}/settings/add-admin`, {
+      method: 'POST', headers: AUTH_HEADER,
+      body: JSON.stringify({ uid, email }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      document.getElementById('add-admin-uid').value = '';
+      document.getElementById('add-admin-email').value = '';
+      loadSettings();
+    } else {
+      alert(data.error || 'Failed');
+    }
+  } catch (e) { console.error(e); }
+}
+
+async function removeAdmin(uid) {
+  if (!confirm('Remove this admin?')) return;
+  try {
+    const res = await fetch(`${API}/settings/remove-admin`, {
+      method: 'POST', headers: AUTH_HEADER,
+      body: JSON.stringify({ uid }),
+    });
+    const data = await res.json();
+    if (data.ok) loadSettings();
+    else alert(data.error || 'Failed');
+  } catch (e) { console.error(e); }
 }
 
 // ═══════════════════════════════════════

@@ -34,14 +34,9 @@ const app = express();
 if (NODE_ENV === 'production') app.set('trust proxy', 1);
 
 // ── Security Middleware ──
-app.use(cors({
-  origin: CORS_ORIGIN === '*' ? true : (
-    NODE_ENV === 'production'
-      ? ['capacitor://localhost', 'ionic://localhost', 'http://localhost', 'https://localhost']
-      : CORS_ORIGIN
-  ),
-  credentials: true,
-}));
+// Open CORS — game uses Firebase token auth, not cookies, so this is safe.
+// Needed for Capacitor native apps which send requests from various origins.
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '100kb' }));
 
 // Rate limiting

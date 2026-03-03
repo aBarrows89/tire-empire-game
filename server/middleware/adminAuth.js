@@ -1,21 +1,30 @@
 import admin from 'firebase-admin';
 import { NODE_ENV, ADMIN_UIDS } from '../config.js';
+import { getGame } from '../db/queries.js';
 
 const ALLOW_DEV_AUTH = process.env.ALLOW_DEV_AUTH === 'true';
 
+/** Check if a UID is in the admin whitelist (env vars + DB). */
+async function isAdminUid(uid) {
+  if (ADMIN_UIDS.includes(uid)) return true;
+  try {
+    const game = await getGame('default');
+    const dbAdmins = game?.economy?.adminUids || [];
+    return dbAdmins.some(a => a.uid === uid);
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Admin auth middleware: verifies the requester is in ADMIN_UIDS.
+ * Admin auth middleware: verifies the requester is in ADMIN_UIDS (env + DB).
  * Uses Firebase token verification in production, X-Player-Id in dev.
  */
 export async function adminAuthMiddleware(req, res, next) {
-  if (ADMIN_UIDS.length === 0) {
-    return res.status(503).json({ error: 'No admin UIDs configured' });
-  }
-
   // Dev mode fallback
   if (NODE_ENV !== 'production' || ALLOW_DEV_AUTH) {
     const devId = req.headers['x-player-id'];
-    if (devId && ADMIN_UIDS.includes(devId)) {
+    if (devId && await isAdminUid(devId)) {
       req.adminId = devId;
       return next();
     }
@@ -30,7 +39,7 @@ export async function adminAuthMiddleware(req, res, next) {
   try {
     const token = authHeader.split('Bearer ')[1];
     const decoded = await admin.auth().verifyIdToken(token);
-    if (!ADMIN_UIDS.includes(decoded.uid)) {
+    if (!await isAdminUid(decoded.uid)) {
       console.log(`[adminAuth] Rejected UID: ${decoded.uid} (email: ${decoded.email || 'unknown'}). Add to ADMIN_UIDS to grant access.`);
       return res.status(403).json({ error: 'Not an admin', uid: decoded.uid });
     }

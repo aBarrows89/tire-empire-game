@@ -27,6 +27,7 @@
       <button class="tab" data-tab="events">Events</button>
       <button class="tab" data-tab="server">Server</button>
       <button class="tab" data-tab="audit">Audit Log</button>
+      <button class="tab" data-tab="settings">Settings</button>
     </nav>
 
     <main id="admin-content" style="display:none">
@@ -44,6 +45,23 @@
           <tbody id="player-tbody"></tbody>
         </table>
         <div id="player-pagination" style="margin-top:8px;text-align:center"></div>
+
+        <div style="margin-top:24px;padding:16px;background:#1a1a2e;border-radius:8px;border:1px solid #333">
+          <h3 style="margin-bottom:12px;font-size:15px">Create Player</h3>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-width:500px">
+            <div class="edit-field"><label>Player Name</label><input type="text" id="create-name" placeholder="e.g. Jake Mitchell"></div>
+            <div class="edit-field"><label>Company Name</label><input type="text" id="create-company" placeholder="e.g. Apex Tire Co"></div>
+            <div class="edit-field"><label>Starting City</label><select id="create-city"><option value="">Random</option></select></div>
+            <div class="edit-field">
+              <label>Intensity <span id="create-intensity-label" style="color:#4ea8de">5 - Competitive</span></label>
+              <input type="range" id="create-intensity" min="1" max="10" value="5" oninput="updateIntensityLabel(this.value)">
+            </div>
+          </div>
+          <div style="margin-top:10px;display:flex;align-items:center;gap:12px">
+            <button class="btn btn-green btn-sm" onclick="createStealthPlayer()">Create Player</button>
+            <span id="create-result" style="font-size:13px"></span>
+          </div>
+        </div>
       </section>
 
       <!-- Chat Tab -->
@@ -133,6 +151,20 @@
           <thead><tr><th>Time</th><th>Admin</th><th>Action</th><th>Target</th><th>Details</th></tr></thead>
           <tbody id="audit-tbody"></tbody>
         </table>
+      </section>
+
+      <!-- Settings Tab -->
+      <section id="tab-settings" class="tab-content">
+        <h3 style="margin-bottom:12px">Admin Whitelist</h3>
+        <div id="admin-list" style="margin-bottom:16px"></div>
+        <div style="padding:12px;background:#1a1a2e;border-radius:8px;border:1px solid #333">
+          <h4 style="margin-bottom:8px;font-size:14px">Add Admin</h4>
+          <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">
+            <div class="edit-field"><label>Firebase UID</label><input type="text" id="add-admin-uid" placeholder="Firebase UID" style="width:260px"></div>
+            <div class="edit-field"><label>Email (optional)</label><input type="text" id="add-admin-email" placeholder="email@example.com" style="width:200px"></div>
+            <button class="btn btn-green btn-sm" onclick="addAdmin()">Add Admin</button>
+          </div>
+        </div>
       </section>
     </main>
 

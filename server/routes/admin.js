@@ -5,10 +5,12 @@ import {
   getChatMessages, deleteChatMessage, getChatMutes, setChatMute, removeChatMute,
   removePlayer,
 } from '../db/queries.js';
-import { NODE_ENV, STORAGE_TYPE } from '../config.js';
+import { NODE_ENV, STORAGE_TYPE, ADMIN_UIDS } from '../config.js';
 import { getWealth } from '../../shared/helpers/wealth.js';
 import { init } from '../engine/init.js';
 import { GLOBAL_EVENTS } from '../../shared/constants/globalEvents.js';
+import { createStealthPlayer, isBotPlayer } from '../engine/aiPlayers.js';
+import { CITIES } from '../../shared/constants/cities.js';
 
 const router = Router();
 router.use(adminAuthMiddleware);
@@ -60,6 +62,8 @@ router.get('/players', async (req, res) => {
         isPremium: !!g.isPremium,
         isBanned: !!g.isBanned,
         isAI: !!g.isAI,
+        isBot: !!g._botConfig,
+        botIntensity: g._botConfig?.intensity || null,
         day: g.day || 0,
         wealth: Math.round(getWealth(g)),
       };
@@ -208,6 +212,7 @@ router.post('/players/:id/reset', async (req, res) => {
     const freshState = init(req.params.id, player.name || 'Unknown');
     freshState.companyName = oldState.companyName || 'Reset Company';
     freshState.isAI = !!oldState.isAI; // Preserve AI status on reset
+    if (oldState._botConfig) freshState._botConfig = oldState._botConfig; // Preserve stealth bot config
     freshState.log = [`[ADMIN] Progress reset by admin ${req.adminId}`];
 
     await savePlayerState(req.params.id, freshState);
@@ -398,7 +403,7 @@ router.get('/economy', async (req, res) => {
   try {
     const all = await getAllActivePlayers();
     const game = await getGame('default');
-    const real = all.filter(p => !p.game_state?.isAI && p.game_state?.companyName);
+    const real = all.filter(p => !isBotPlayer(p.game_state || {}) && p.game_state?.companyName);
 
     let totalCash = 0, totalTC = 0, totalRep = 0, totalBankRate = 0, totalBankBalance = 0;
     const withWealth = [];
@@ -569,6 +574,96 @@ router.post('/tick/resume', async (req, res) => {
     if (tl?.startTickLoop) tl.startTickLoop(clients);
     await auditLog(req, 'resumeTick', null, {});
     res.json({ ok: true, running: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════
+// AUDIT LOG
+// ═══════════════════════════════════════
+
+// ═══════════════════════════════════════
+// STEALTH PLAYER CREATION
+// ═══════════════════════════════════════
+
+router.get('/cities', (req, res) => {
+  res.json(CITIES.map(c => ({ id: c.id, name: c.name, state: c.state })));
+});
+
+router.post('/create-stealth-player', async (req, res) => {
+  try {
+    const { name, companyName, cityId, intensity } = req.body;
+    if (!name || !companyName) return res.status(400).json({ error: 'Name and company name required' });
+    const int = Math.max(1, Math.min(10, Number(intensity) || 5));
+
+    const player = createStealthPlayer(name, companyName, cityId || null, int, req.adminId);
+    await savePlayerState(player.id, player.game_state);
+    await auditLog(req, 'createStealthPlayer', player.id, { name, companyName, intensity: int, cityId });
+    res.json({ ok: true, id: player.id, companyName });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════
+// ADMIN WHITELIST MANAGEMENT
+// ═══════════════════════════════════════
+
+router.get('/settings', async (req, res) => {
+  try {
+    const game = await getGame('default');
+    const dbAdmins = game?.economy?.adminUids || [];
+    // Merge env admins (immutable) with DB admins
+    const envAdmins = ADMIN_UIDS.map(uid => ({ uid, source: 'env' }));
+    const allAdmins = [...envAdmins, ...dbAdmins.map(a => ({ ...a, source: 'db' }))];
+    res.json({ admins: allAdmins });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/settings/add-admin', async (req, res) => {
+  try {
+    const { uid, email } = req.body;
+    if (!uid) return res.status(400).json({ error: 'UID required' });
+
+    const game = await getGame('default');
+    if (!game) return res.status(500).json({ error: 'Game not found' });
+    if (!game.economy) game.economy = {};
+    if (!game.economy.adminUids) game.economy.adminUids = [];
+
+    // Check for duplicates
+    if (ADMIN_UIDS.includes(uid) || game.economy.adminUids.some(a => a.uid === uid)) {
+      return res.status(400).json({ error: 'UID already whitelisted' });
+    }
+
+    game.economy.adminUids.push({ uid, email: email || '', addedAt: Date.now(), addedBy: req.adminId });
+    await saveGame('default', game.day, game.economy, game.ai_shops, game.liquidation || []);
+    await auditLog(req, 'addAdmin', null, { uid, email });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/settings/remove-admin', async (req, res) => {
+  try {
+    const { uid } = req.body;
+    if (!uid) return res.status(400).json({ error: 'UID required' });
+    if (ADMIN_UIDS.includes(uid)) return res.status(400).json({ error: 'Cannot remove env-var admin' });
+
+    const game = await getGame('default');
+    if (!game) return res.status(500).json({ error: 'Game not found' });
+    if (!game.economy?.adminUids) return res.status(400).json({ error: 'No DB admins' });
+
+    const before = game.economy.adminUids.length;
+    game.economy.adminUids = game.economy.adminUids.filter(a => a.uid !== uid);
+    if (game.economy.adminUids.length === before) return res.status(404).json({ error: 'Admin not found' });
+
+    await saveGame('default', game.day, game.economy, game.ai_shops, game.liquidation || []);
+    await auditLog(req, 'removeAdmin', null, { uid });
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

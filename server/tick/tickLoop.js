@@ -1,7 +1,7 @@
 import { TICK_MS } from '../config.js';
 import { getAllActivePlayers, savePlayerState, getGame, saveGame, upsertLeaderboard, getPlayerListings, updatePlayerListing, getPlayer, removePlayer } from '../db/queries.js';
 import { simDay } from '../engine/simDay.js';
-import { simAIPlayerDay, createAIPlayers } from '../engine/aiPlayers.js';
+import { simAIPlayerDay, createAIPlayers, isBotPlayer } from '../engine/aiPlayers.js';
 import { initAIShops } from '../engine/aiShops.js';
 import { getWealth } from '../../shared/helpers/wealth.js';
 import { getStorageCap, getLocInv, getLocCap, rebuildGlobalInv, getCap, getInv } from '../../shared/helpers/inventory.js';
@@ -36,8 +36,10 @@ const MIN_AI_PLAYERS = 2;             // Keep a couple AI players for leaderboar
  * Prioritizes removing AI shops in cities where real players have shops.
  */
 async function phaseOutAI(game, players) {
-  const realPlayers = players.filter(p => !p.game_state.isAI && p.game_state.companyName);
-  const aiPlayers = players.filter(p => p.game_state.isAI);
+  // Real = not a bot of any kind. Stealth bots count as "real" for phase-out purposes (admin-managed).
+  const realPlayers = players.filter(p => !isBotPlayer(p.game_state) && p.game_state.companyName);
+  // Only auto-phase-out legacy isAI players (not stealth _botConfig — those are admin-managed)
+  const aiPlayers = players.filter(p => p.game_state.isAI && !p.game_state._botConfig);
   const realCount = realPlayers.length;
 
   if (realCount === 0) return; // No real players yet, keep all AI
@@ -462,7 +464,7 @@ export async function runTick(clients) {
     if (!game.economy.tcHistory) game.economy.tcHistory = [];
 
     // Collect economic data from all players
-    const realPlayers = players.filter(p => !p.game_state.isAI);
+    const realPlayers = players.filter(p => !isBotPlayer(p.game_state));
     const totalCash = players.reduce((sum, p) =>
       sum + (p.game_state.cash || 0) + (p.game_state.bankBalance || 0), 0
     );
@@ -617,8 +619,8 @@ export async function runTick(clients) {
 
     for (const player of players) {
       const state = player.game_state;
-      if (state.isAI) {
-        // Lightweight AI player simulation
+      if (isBotPlayer(state)) {
+        // Lightweight bot simulation (legacy isAI + stealth _botConfig)
         const newState = simAIPlayerDay(state);
         await savePlayerState(player.id, newState);
         await upsertLeaderboard(

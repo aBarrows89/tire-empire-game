@@ -286,16 +286,209 @@ function createAIPlayer(name, company, stage, playerDay, globalDay) {
   };
 }
 
+/** Check if a player is any kind of bot (legacy isAI or stealth _botConfig). */
+export function isBotPlayer(state) {
+  return !!(state.isAI || state._botConfig);
+}
+
 /**
- * Lightweight daily tick for AI players.
- * Grows their stats without running the full simDay.
+ * Create a stealth AI player — indistinguishable from a real player.
+ * No ai- prefix, no isAI flag. Uses _botConfig internally.
+ */
+export function createStealthPlayer(name, company, cityId, intensity, adminId) {
+  const id = uid(); // Regular ID — no ai- prefix
+  const i = Math.max(1, Math.min(10, intensity)); // clamp 1-10
+  const t = i / 10; // normalized 0.1-1.0
+
+  // Scale starting resources by intensity
+  const cash = Math.floor(R(5000, 50000) + t * R(200000, 950000));
+  const reputation = Math.min(100, Math.floor(t * R(40, 80)));
+  const bankBalance = i > 3 ? Math.floor(R(10000, 100000) * t) : 0;
+
+  // Locations — high intensity gets more shops
+  const numLocations = i <= 3 ? Ri(0, 2) : i <= 6 ? Ri(1, 4) : Ri(3, 7);
+  const locations = [];
+  const usedCities = new Set();
+
+  // First location uses the specified city
+  if (numLocations > 0 && cityId) {
+    const city = CITIES.find(c => c.id === cityId);
+    if (city) {
+      usedCities.add(city.id);
+      const loyalty = Math.min(100, Math.floor(R(10, 30) + t * R(20, 50)));
+      const dailyRev = Math.floor(R(300, 800) + t * R(500, 4000));
+      const inv = {};
+      const tireKeys = Object.keys(TIRES).filter(k => !TIRES[k].used);
+      for (let j = 0; j < Ri(3, 7); j++) {
+        const k = tireKeys[Ri(0, tireKeys.length)];
+        inv[k] = Ri(5, 20 + Math.floor(t * 40));
+      }
+      locations.push({
+        id: uid(), cityId: city.id, locStorage: Ri(0, 3) * 50, inventory: inv,
+        loyalty, openedDay: 1,
+        dailyStats: { rev: dailyRev, sold: Math.floor(dailyRev / 80), profit: Math.floor(dailyRev * 0.35) },
+        staff: { techs: Ri(1, 2 + Math.floor(t * 3)), sales: Ri(1, 1 + Math.floor(t * 2)), managers: i > 5 ? 1 : 0 },
+      });
+    }
+  }
+
+  // Additional random locations
+  for (let idx = locations.length; idx < numLocations; idx++) {
+    let city; let attempts = 0;
+    do { city = CITIES[Ri(0, CITIES.length)]; attempts++; } while (usedCities.has(city.id) && attempts < 20);
+    if (usedCities.has(city.id)) continue;
+    usedCities.add(city.id);
+    const loyalty = Math.min(100, Math.floor(R(5, 25) + t * R(15, 50)));
+    const dailyRev = Math.floor(R(200, 600) + t * R(400, 3000));
+    const inv = {};
+    const tireKeys = Object.keys(TIRES).filter(k => !TIRES[k].used);
+    for (let j = 0; j < Ri(2, 5); j++) {
+      const k = tireKeys[Ri(0, tireKeys.length)];
+      inv[k] = Ri(3, 15 + Math.floor(t * 30));
+    }
+    locations.push({
+      id: uid(), cityId: city.id, locStorage: Ri(0, 2) * 50, inventory: inv,
+      loyalty, openedDay: 1,
+      dailyStats: { rev: dailyRev, sold: Math.floor(dailyRev / 80), profit: Math.floor(dailyRev * 0.35) },
+      staff: { techs: Ri(1, 2 + Math.floor(t * 2)), sales: Ri(1, 1 + Math.floor(t * 2)), managers: 0 },
+    });
+  }
+
+  // Prices — intensity 7+ undercuts market, 1-3 prices above
+  const prices = {};
+  for (const [k, tire] of Object.entries(TIRES)) {
+    if (i >= 7) {
+      prices[k] = Math.round(tire.def * R(0.75, 0.90)); // undercut
+    } else if (i <= 3) {
+      prices[k] = Math.round(tire.def * R(1.05, 1.15)); // premium
+    } else {
+      prices[k] = Math.round(tire.def * R(0.90, 1.10)); // competitive
+    }
+  }
+
+  // Revenue history scaled by intensity
+  const totalRev = Math.floor(R(10000, 50000) + t * R(100000, 1500000));
+  const totalProfit = Math.floor(totalRev * R(0.2, 0.4));
+  const totalSold = Math.floor(totalRev / R(60, 120));
+  const dayRev = Math.floor(R(100, 400) + t * R(500, 5000));
+  const dayProfit = Math.floor(dayRev * R(0.25, 0.4));
+
+  // Warehouse
+  const warehouseInventory = {};
+  if (i > 2) {
+    const tireKeys = Object.keys(TIRES).filter(k => !TIRES[k].used);
+    for (let j = 0; j < Ri(3, 6); j++) {
+      const k = tireKeys[Ri(0, tireKeys.length)];
+      warehouseInventory[k] = Ri(5, 30 + Math.floor(t * 80));
+    }
+  }
+
+  const storage = [{ type: 'van', id: uid() }];
+  if (i > 2) storage.push({ type: i > 6 ? 'warehouse' : 'garage', id: uid() });
+
+  return {
+    id,
+    game_state: {
+      id, name, companyName: company,
+      _botConfig: { intensity: i, createdBy: adminId || 'system', createdAt: Date.now() },
+      day: Ri(30, 300),
+      startDay: 1,
+      cash, reputation,
+      totalRev, totalProfit, totalSold,
+      dayRev, dayProfit, daySold: Math.floor(dayRev / R(60, 120)),
+      inventory: {}, prices,
+      marketPrices: { ...prices },
+      storage, locations,
+      staff: { techs: 0, sales: 0, managers: 0, drivers: 0, pricingAnalyst: 0 },
+      autoPrice: {}, autoSource: null,
+      servicePrices: { flatRepair: 25, balance: 20, install: 35, nitrogen: 10 },
+      dayServiceRev: 0, dayServiceJobs: 0,
+      totalServiceRev: Math.floor(totalRev * 0.1),
+      whStaff: {}, corpStaff: {},
+      loans: [],
+      warehouseInventory,
+      hasWarehouse: storage.length > 1,
+      disposalFee: 3,
+      bankBalance, bankRate: 0.042,
+      bankInterestEarned: 0, bankTotalInterest: 0,
+      unlockedSources: ['scrapYard', 'garageCleanout', 'fleaMarket'],
+      unlockedSuppliers: i > 3 ? ['budget_wholesale'] : [],
+      unlockedMfgs: [],
+      hasWholesale: i > 4, wsClients: [], monthlyPurchaseVol: 0,
+      hasEcom: i > 6, ecomStaff: {}, ecomUpgrades: [], ecomTotalSpent: 0,
+      ecomDailyOrders: 0, ecomDailyRev: 0,
+      marketplaceSpecialist: i > 3, marketplaceChannels: [],
+      hasDist: i > 8, distClients: [],
+      tpoContracts: [], returnDeals: [], govContracts: [],
+      fleetOffers: [], installers: [], isInstaller: false,
+      liquidationListings: [],
+      log: [], achievements: {},
+      tireCoins: Math.floor(t * R(5, 50)),
+      tutorialStep: 0, tutorialDone: true,
+      vinnieSeen: [], aiShops: [], history: [],
+      prevDayRev: dayRev, prevDayProfit: dayProfit, prevDaySold: 0,
+      prevCash: cash, prevRep: reputation,
+      insurance: i > 5 ? 'business' : null,
+      retreadQueue: [], supplierRelationships: {},
+      pendingLot: null, marketShare: {}, pendingImports: [],
+      weeklySnapshot: null, hasFranchise: false, franchiseTemplates: [],
+      hasFactory: i >= 9,
+      factory: i >= 9 ? {
+        level: i === 10 ? 2 : 1,
+        brandName: company + ' Tires',
+        productionQueue: [], dailyCapacity: i === 10 ? 150 : 50,
+        qualityRating: 0.80 + t * 0.1, brandReputation: Math.floor(t * 40),
+        rawMaterials: { rubber: 1.0, steel: 1.0, chemicals: 1.0 },
+        currentLine: null, switchCooldown: 0,
+        isDistributor: i === 10,
+        discountTiers: [
+          { min: 0, disc: 0, label: 'Standard' },
+          { min: 50, disc: 0.03, label: 'Bronze' },
+          { min: 200, disc: 0.06, label: 'Silver' },
+        ],
+        wholesalePrices: { allSeason: 85, performance: 120, winter: 110 },
+        mapPrices: {}, minOrders: {}, rdProjects: [],
+        unlockedSpecials: [], certifications: [],
+        totalWholesaleRev: 0, totalWholesaleOrders: 0,
+        customerList: [], orderHistory: [],
+        vinnieInventory: {}, vinnieTotalLoss: 0, hasCFO: false,
+      } : null,
+      fleaMarketStands: [], fleaMarketTotalSold: 0,
+      carMeetAttendance: [], carMeetTotalSold: 0, carMeetsAttended: 0,
+      vanTotalSold: 0, vanOnlyDays: 0,
+      autoSuppliers: [], blockedPlayers: [], isBanned: false,
+      stockExchange: i > 4 ? {
+        hasBrokerage: true, brokerageOpenedDay: 1, portfolio: {}, openOrders: [], tradeHistory: [],
+        marginEnabled: false, marginDebt: 0, marginCallDay: null, darkPoolAccess: false,
+        advancedCharting: false, shortSellingEnabled: false, ipoPriority: false,
+        realTimeAlerts: false, priceAlerts: [], dividendIncome: 0, capitalGains: 0,
+        taxesPaid: 0, brokerageFeePaid: 0, wealthTaxPaid: 0,
+        isPublic: false, ipoDay: null, ticker: null, dividendPayoutRatio: 0.25,
+        founderSharesLocked: 0, shortPositions: {},
+      } : null,
+      shopListings: [], shopBids: [], shopRevenueShares: [],
+      shopInstallments: [], _events: [],
+    },
+  };
+}
+
+/**
+ * Lightweight daily tick for AI players (both legacy isAI and stealth _botConfig).
+ * Intensity (from _botConfig) scales all behavior: 1=casual, 10=disruptor.
  */
 export function simAIPlayerDay(g) {
   g.day++;
 
-  // Daily revenue — fluctuates around their level
+  // Get intensity: stealth bots use _botConfig.intensity, legacy defaults to 5
+  const intensity = g._botConfig?.intensity || 5;
+  const t = intensity / 10; // normalized 0.1-1.0
+
+  // Revenue multiplier: casual=0.6-0.8x, normal=0.9-1.1x, disruptor=1.2-1.5x
+  const revMult = intensity <= 3 ? R(0.6, 0.8) : intensity <= 6 ? R(0.9, 1.1) : R(1.2, 1.5);
+
+  // Daily revenue — fluctuates around their level, scaled by intensity
   const baseRev = (g.locations || []).reduce((a, loc) => {
-    const locRev = (loc.dailyStats?.rev || 0) * R(0.7, 1.3);
+    const locRev = (loc.dailyStats?.rev || 0) * R(0.7, 1.3) * revMult;
     if (loc.dailyStats) loc.dailyStats.rev = Math.floor(locRev);
     return a + locRev;
   }, 0);
@@ -317,29 +510,29 @@ export function simAIPlayerDay(g) {
   g.totalSold += daySold;
   g.cash += dayProfit;
 
-  // Slow reputation growth
-  if (Math.random() < 0.15 && g.reputation < 95) {
-    g.reputation = Math.min(100, g.reputation + R(0.05, 0.2));
+  // Reputation growth — scales with intensity
+  const repChance = intensity <= 3 ? 0.05 : intensity <= 6 ? 0.15 : 0.30;
+  const repGrowth = intensity <= 3 ? R(0.02, 0.1) : intensity <= 6 ? R(0.05, 0.2) : R(0.1, 0.4);
+  if (Math.random() < repChance && g.reputation < 95) {
+    g.reputation = Math.min(100, g.reputation + repGrowth);
   }
 
   // Loyalty growth at locations
   for (const loc of (g.locations || [])) {
-    if (loc.loyalty < 95 && Math.random() < 0.2) {
-      loc.loyalty = Math.min(100, loc.loyalty + R(0.1, 0.5));
+    if (loc.loyalty < 95 && Math.random() < 0.1 + t * 0.2) {
+      loc.loyalty = Math.min(100, loc.loyalty + R(0.1, 0.3 + t * 0.3));
     }
   }
 
-  // ── INVENTORY REPLENISHMENT ──
-  // AI players restock their locations periodically
-  if (Math.random() < 0.3) {
+  // ── INVENTORY REPLENISHMENT — higher intensity restocks more ──
+  if (Math.random() < 0.2 + t * 0.2) {
     const tireKeys = Object.keys(TIRES).filter(k => !TIRES[k].used);
     for (const loc of (g.locations || [])) {
       if (!loc.inventory) loc.inventory = {};
       const locTotal = Object.values(loc.inventory).reduce((a, b) => a + b, 0);
       const locCap = 50 + (loc.locStorage || 0);
       if (locTotal < locCap * 0.5) {
-        // Restock with random tires
-        const toAdd = Ri(5, Math.min(20, locCap - locTotal));
+        const toAdd = Ri(5, Math.min(20 + Math.floor(t * 15), locCap - locTotal));
         for (let j = 0; j < toAdd; j++) {
           const k = tireKeys[Ri(0, tireKeys.length)];
           loc.inventory[k] = (loc.inventory[k] || 0) + 1;
@@ -348,27 +541,35 @@ export function simAIPlayerDay(g) {
     }
   }
 
-  // ── PRICE ADJUSTMENTS ──
-  // AI players occasionally adjust prices toward market competitive range
-  if (Math.random() < 0.1) {
-    for (const [k, t] of Object.entries(TIRES)) {
+  // ── PRICE ADJUSTMENTS — intensity drives strategy ──
+  const priceAdjustChance = intensity <= 3 ? 0.05 : intensity <= 6 ? 0.1 : 0.2;
+  if (Math.random() < priceAdjustChance) {
+    for (const [k, tire] of Object.entries(TIRES)) {
       if (!g.prices[k]) continue;
-      // Drift toward default ±15%
-      const target = t.def * R(0.85, 1.15);
-      g.prices[k] = Math.round(g.prices[k] * 0.9 + target * 0.1);
-      g.prices[k] = Math.max(t.lo, Math.min(t.hi, g.prices[k]));
+      let target;
+      if (intensity >= 7) {
+        // Disruptors undercut market aggressively
+        target = tire.def * R(0.75, 0.90);
+      } else if (intensity <= 3) {
+        // Casuals price above market
+        target = tire.def * R(1.05, 1.15);
+      } else {
+        // Competitive: near market price
+        target = tire.def * R(0.90, 1.10);
+      }
+      g.prices[k] = Math.round(g.prices[k] * 0.85 + target * 0.15);
+      g.prices[k] = Math.max(tire.lo, Math.min(tire.hi, g.prices[k]));
     }
   }
 
   // ── WAREHOUSE INVENTORY ──
-  // AI players restock their warehouse
-  if (Math.random() < 0.2 && g.cash > 10000) {
+  if (Math.random() < 0.1 + t * 0.15 && g.cash > 10000) {
     const tireKeys = Object.keys(TIRES).filter(k => !TIRES[k].used);
     if (!g.warehouseInventory) g.warehouseInventory = {};
     const whTotal = Object.values(g.warehouseInventory).reduce((a, b) => a + b, 0);
-    if (whTotal < 100) {
-      const toAdd = Ri(10, 30);
-      const cost = toAdd * 50; // ~$50/tire avg
+    if (whTotal < 50 + intensity * 20) {
+      const toAdd = Ri(10, 20 + Math.floor(t * 20));
+      const cost = toAdd * 50;
       if (g.cash > cost) {
         g.cash -= cost;
         for (let j = 0; j < toAdd; j++) {
@@ -395,8 +596,11 @@ export function simAIPlayerDay(g) {
   }
   g.loans = (g.loans || []).filter(l => l.remaining > 0);
 
-  // Occasionally open new shop (every ~60 days, if they can afford it)
-  if (Math.random() < 0.015 && g.cash > 200000 && (g.locations || []).length < 8) {
+  // ── SHOP EXPANSION — higher intensity expands faster ──
+  const expandChance = intensity <= 3 ? 0.005 : intensity <= 6 ? 0.015 : 0.03 + t * 0.02;
+  const expandCashThresh = intensity <= 3 ? 300000 : intensity <= 6 ? 200000 : 100000;
+  const maxLocs = intensity <= 3 ? 3 : intensity <= 6 ? 6 : 10;
+  if (Math.random() < expandChance && g.cash > expandCashThresh && (g.locations || []).length < maxLocs) {
     const city = CITIES[Ri(0, CITIES.length)];
     const cost = shopCost(city);
     if (g.cash > cost * 1.5) {
@@ -410,15 +614,18 @@ export function simAIPlayerDay(g) {
     }
   }
 
-  // Occasionally hire staff for understaffed locations
-  if (Math.random() < 0.05) {
+  // ── STAFF HIRING — scales with intensity ──
+  const hireChance = intensity <= 3 ? 0.02 : intensity <= 6 ? 0.05 : 0.10;
+  if (Math.random() < hireChance) {
     for (const loc of (g.locations || [])) {
       if (!loc.staff) loc.staff = { techs: 1, sales: 1, managers: 0 };
-      if (loc.staff.techs < 3 && g.cash > 10000) {
+      const maxTechs = intensity <= 3 ? 2 : intensity <= 6 ? 3 : 5;
+      const maxSales = intensity <= 3 ? 1 : intensity <= 6 ? 2 : 4;
+      if (loc.staff.techs < maxTechs && g.cash > 10000) {
         loc.staff.techs++;
         g.cash -= 3000;
       }
-      if (loc.staff.sales < 2 && g.cash > 8000) {
+      if (loc.staff.sales < maxSales && g.cash > 8000) {
         loc.staff.sales++;
         g.cash -= 2500;
       }
@@ -437,8 +644,6 @@ export function simAIPlayerDay(g) {
 
   // AI stock trading — place random orders if they have a brokerage
   if (g.stockExchange?.hasBrokerage && Math.random() < 0.15 && g.cash > 5000) {
-    // AI will place orders during exchangeTick via the order book
-    // Store intent; exchangeTick picks it up
     if (!g._aiTradeIntent) g._aiTradeIntent = {};
     g._aiTradeIntent.budget = Math.floor(g.cash * R(0.02, 0.08));
     g._aiTradeIntent.action = Math.random() < 0.6 ? 'buy' : 'sell';
