@@ -115,6 +115,7 @@ export async function getGame(id = 'default') {
   const { rows } = await pool.query('SELECT * FROM games WHERE id = $1', [id]);
   const row = rows[0] || null;
   if (row) {
+    row.day = row.week; // Map DB column name to code property name
     row.economy = parseJson(row.economy);
     row.ai_shops = parseJson(row.ai_shops);
     row.liquidation = parseJson(row.liquidation);

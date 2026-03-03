@@ -3,6 +3,7 @@ import { adminAuthMiddleware } from '../middleware/adminAuth.js';
 import {
   getPlayer, savePlayerState, getAllActivePlayers, getGame, saveGame,
   getChatMessages, deleteChatMessage, getChatMutes, setChatMute, removeChatMute,
+  removePlayer,
 } from '../db/queries.js';
 import { NODE_ENV, STORAGE_TYPE } from '../config.js';
 import { getWealth } from '../../shared/helpers/wealth.js';
@@ -202,12 +203,27 @@ router.post('/players/:id/reset', async (req, res) => {
     const player = await getPlayer(req.params.id);
     if (!player) return res.status(404).json({ error: 'Player not found' });
 
+    const oldState = player.game_state || {};
     const freshState = init(req.params.id, player.name || 'Unknown');
-    freshState.companyName = player.game_state?.companyName || 'Reset Company';
+    freshState.companyName = oldState.companyName || 'Reset Company';
+    freshState.isAI = !!oldState.isAI; // Preserve AI status on reset
     freshState.log = [`[ADMIN] Progress reset by admin ${req.adminId}`];
 
     await savePlayerState(req.params.id, freshState);
     await auditLog(req, 'resetPlayer', req.params.id, {});
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/players/:id', async (req, res) => {
+  try {
+    const player = await getPlayer(req.params.id);
+    if (!player) return res.status(404).json({ error: 'Player not found' });
+
+    await removePlayer(req.params.id);
+    await auditLog(req, 'deletePlayer', req.params.id, { companyName: player.game_state?.companyName });
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

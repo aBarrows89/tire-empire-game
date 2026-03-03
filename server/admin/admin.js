@@ -242,6 +242,7 @@ async function loadPlayerDetail(id) {
         <button class="btn ${g.isBanned ? 'btn-green' : 'btn-red'} btn-sm" onclick="banPlayer('${esc(id)}', ${!g.isBanned})">${g.isBanned ? 'Unban' : 'Ban'} Player</button>
         <button class="btn ${g.isPremium ? 'btn-outline' : 'btn-yellow'} btn-sm" onclick="setPremium('${esc(id)}', ${!g.isPremium})">${g.isPremium ? 'Revoke Premium' : 'Grant Premium'}</button>
         <button class="btn btn-red btn-sm" onclick="if(confirm('Reset all progress for this player?'))resetPlayer('${esc(id)}')">Reset Progress</button>
+        <button class="btn btn-red btn-sm" onclick="if(confirm('PERMANENTLY DELETE this player? This cannot be undone.'))deletePlayer('${esc(id)}')">Delete Player</button>
       </div>
     `;
     document.getElementById('detail-actions').innerHTML = actionsHtml;
@@ -355,6 +356,16 @@ async function resetPlayer(id) {
   try {
     await fetch(`${API}/players/${id}/reset`, {
       method: 'POST', headers: AUTH_HEADER,
+    });
+    closeModal();
+    loadPlayers();
+  } catch (e) { console.error(e); }
+}
+
+async function deletePlayer(id) {
+  try {
+    await fetch(`${API}/players/${id}`, {
+      method: 'DELETE', headers: AUTH_HEADER,
     });
     closeModal();
     loadPlayers();
