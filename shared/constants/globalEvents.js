@@ -76,6 +76,15 @@ export const GLOBAL_EVENTS = [
     effects: { demandMult: 1.40, overtimeCostMult: 1.25 },
     description: 'Holiday shopping frenzy. Demand up, overtime costs rise.',
   },
+  {
+    id: 'earthquake',
+    name: 'Earthquake',
+    icon: '\u{1F30B}',
+    durationMin: 7,
+    durationMax: 14,
+    effects: { demandMult: 0.60, productionCostMult: 1.50, earthquake: true },
+    description: 'Major earthquake! Shops and factories damaged. Repair costs incoming.',
+  },
 ];
 
 /** Chance per event per day to trigger (~2%) */

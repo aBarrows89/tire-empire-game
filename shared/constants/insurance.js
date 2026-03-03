@@ -8,13 +8,13 @@ export const INSURANCE = {
   business: {
     name: 'Business Insurance',
     costPerMonth: 1500,
-    covers: ['chargeback', 'workersComp', 'recall'],
+    covers: ['chargeback', 'workersComp', 'recall', 'earthquake'],
     icon: '🛡️🛡️',
   },
   premium: {
     name: 'Premium Insurance',
     costPerMonth: 3000,
-    covers: ['chargeback', 'workersComp', 'recall', 'techQuit', 'badReview', 'junkFine', 'shipping'],
+    covers: ['chargeback', 'workersComp', 'recall', 'techQuit', 'badReview', 'junkFine', 'shipping', 'earthquake'],
     replacementDiscount: 0.10,
     icon: '🛡️🛡️🛡️',
   },

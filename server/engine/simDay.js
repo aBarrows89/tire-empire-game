@@ -463,6 +463,42 @@ export function simDay(g, shared = {}) {
     // Log event start once
     if (ge.startDay === s.day) {
       s.log.push({ msg: `${def.icon} Global Event: ${def.name} — ${def.description}`, cat: 'event' });
+
+      // ── EARTHQUAKE DAMAGE — one-time hit on event start ──
+      if (fx.earthquake) {
+        const ins = s.insurance && INSURANCE[s.insurance];
+        const hasEarthquakeCover = ins && ins.covers.includes('earthquake');
+        let totalDamage = 0;
+
+        // Damage each shop: $5K-$20K per location based on loyalty (better shop = more to fix)
+        for (const loc of (s.locations || [])) {
+          const shopDamage = 5000 + Math.floor(Math.random() * 15000) + (loc.loyalty || 0) * 100;
+          totalDamage += shopDamage;
+          loc.loyalty = Math.max(0, (loc.loyalty || 0) - Math.floor(Math.random() * 8 + 2));
+        }
+
+        // Damage factory: $25K-$75K if they have one
+        if (s.factory) {
+          const factoryDamage = 25000 + Math.floor(Math.random() * 50000) * (s.factory.level || 1);
+          totalDamage += factoryDamage;
+          // Halt production for a few days by clearing queue
+          s.factory.productionQueue = [];
+        }
+
+        if (totalDamage > 0) {
+          if (hasEarthquakeCover) {
+            // Insured: pay 20% deductible
+            const deductible = Math.round(totalDamage * 0.20);
+            s.cash -= deductible;
+            s.log.push({ msg: `${def.icon} Earthquake damage: $${deductible.toLocaleString()} deductible (insurance covered $${(totalDamage - deductible).toLocaleString()})`, cat: 'event' });
+          } else {
+            // Uninsured: pay full repair cost
+            s.cash -= totalDamage;
+            s.log.push({ msg: `${def.icon} Earthquake damage: $${totalDamage.toLocaleString()} in repairs (NO INSURANCE!)`, cat: 'event' });
+          }
+          s.reputation = Math.max(0, s.reputation - 2);
+        }
+      }
     }
   }
 
