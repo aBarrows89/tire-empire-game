@@ -38,6 +38,13 @@ async function ensureSchema() {
         week          INTEGER NOT NULL DEFAULT 0,
         updated_at    TIMESTAMPTZ DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS files (
+        id            TEXT PRIMARY KEY,
+        filename      TEXT NOT NULL,
+        content_type  TEXT NOT NULL DEFAULT 'application/octet-stream',
+        data          BYTEA NOT NULL,
+        uploaded_at   TIMESTAMPTZ DEFAULT NOW()
+      );
       CREATE INDEX IF NOT EXISTS idx_leaderboard_wealth ON leaderboard(wealth DESC);
       CREATE INDEX IF NOT EXISTS idx_players_updated ON players(updated_at);
       INSERT INTO games (id) VALUES ('default') ON CONFLICT DO NOTHING;
@@ -263,4 +270,19 @@ export async function removeShopSaleListing(id) {
   if (idx === -1) return false;
   shopSaleListings.splice(idx, 1);
   return true;
+}
+
+// ── File Storage ──
+
+export async function saveFile(id, filename, contentType, data) {
+  await pool.query(
+    `INSERT INTO files (id, filename, content_type, data) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (id) DO UPDATE SET filename = $2, content_type = $3, data = $4, uploaded_at = NOW()`,
+    [id, filename, contentType, data]
+  );
+}
+
+export async function getFile(id) {
+  const { rows } = await pool.query('SELECT * FROM files WHERE id = $1', [id]);
+  return rows[0] || null;
 }

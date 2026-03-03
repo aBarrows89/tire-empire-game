@@ -3,7 +3,7 @@ import { adminAuthMiddleware } from '../middleware/adminAuth.js';
 import {
   getPlayer, savePlayerState, getAllActivePlayers, getGame, saveGame,
   getChatMessages, deleteChatMessage, getChatMutes, setChatMute, removeChatMute,
-  removePlayer,
+  removePlayer, saveFile, getFile,
 } from '../db/queries.js';
 import { NODE_ENV, STORAGE_TYPE, ADMIN_UIDS } from '../config.js';
 import { getWealth } from '../../shared/helpers/wealth.js';
@@ -682,6 +682,38 @@ router.get('/audit-log', async (req, res) => {
     const game = await getGame('default');
     const log = (game?.economy?.adminLog || []).slice(-200).reverse();
     res.json({ log });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════
+// APK UPLOAD / DOWNLOAD
+// ═══════════════════════════════════════
+
+router.post('/upload-apk', async (req, res) => {
+  try {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const data = Buffer.concat(chunks);
+    if (data.length === 0) return res.status(400).json({ error: 'No file data' });
+    if (data.length > 100 * 1024 * 1024) return res.status(400).json({ error: 'File too large (100MB max)' });
+    const filename = req.headers['x-filename'] || 'tire-empire.apk';
+    await saveFile('latest-apk', filename, 'application/vnd.android.package-archive', data);
+    res.json({ ok: true, size: data.length, filename });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/download-apk', async (req, res) => {
+  try {
+    const file = await getFile('latest-apk');
+    if (!file) return res.status(404).json({ error: 'No APK uploaded yet' });
+    res.set('Content-Type', file.content_type);
+    res.set('Content-Disposition', `attachment; filename="${file.filename}"`);
+    res.set('Content-Length', file.data.length);
+    res.send(file.data);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

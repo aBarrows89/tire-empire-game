@@ -90,6 +90,19 @@ app.get('/admin/firebase-config', (req, res) => {
 
 app.use('/admin', express.static(path.join(__dirname, 'admin')));
 
+// Public APK download (no auth required)
+app.get('/download/apk', async (req, res) => {
+  try {
+    const { getFile } = await import('./db/queries.js');
+    const file = await getFile('latest-apk');
+    if (!file) return res.status(404).send('No APK available');
+    res.set('Content-Type', file.content_type);
+    res.set('Content-Disposition', `attachment; filename="${file.filename}"`);
+    res.set('Content-Length', file.data.length);
+    res.send(file.data);
+  } catch (e) { res.status(500).send('Error'); }
+});
+
 // ── Legal Pages (Terms of Service, Privacy Policy) ──
 app.use('/legal', express.static(path.join(__dirname, 'legal')));
 

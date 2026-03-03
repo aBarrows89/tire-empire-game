@@ -839,6 +839,7 @@ async function loadSettings() {
       list.appendChild(div);
     }
   } catch (e) { console.error(e); }
+  checkApkStatus();
 }
 
 async function addAdmin() {
@@ -873,6 +874,60 @@ async function removeAdmin(uid) {
     if (data.ok) loadSettings();
     else alert(data.error || 'Failed');
   } catch (e) { console.error(e); }
+}
+
+// ═══════════════════════════════════════
+// APK DISTRIBUTION
+// ═══════════════════════════════════════
+
+async function checkApkStatus() {
+  try {
+    const res = await fetch('/download/apk', { method: 'HEAD' });
+    const statusEl = document.getElementById('apk-status');
+    const linkEl = document.getElementById('apk-download-link');
+    const urlEl = document.getElementById('apk-share-url');
+    if (res.ok) {
+      const size = res.headers.get('Content-Length');
+      const sizeMB = size ? (Number(size) / 1024 / 1024).toFixed(1) + ' MB' : 'unknown size';
+      statusEl.textContent = `Latest APK available (${sizeMB})`;
+      statusEl.style.color = '#4caf50';
+      linkEl.style.display = '';
+      urlEl.textContent = window.location.origin + '/download/apk';
+    } else {
+      statusEl.textContent = 'No APK uploaded yet';
+      statusEl.style.color = '#888';
+      linkEl.style.display = 'none';
+      urlEl.textContent = 'Upload an APK first';
+    }
+  } catch { }
+}
+
+async function uploadApk() {
+  const input = document.getElementById('apk-file-input');
+  const progress = document.getElementById('apk-upload-progress');
+  if (!input.files[0]) { alert('Select an APK file first'); return; }
+  const file = input.files[0];
+  if (!file.name.endsWith('.apk')) { alert('File must be an APK'); return; }
+  progress.textContent = `Uploading ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)...`;
+  try {
+    const res = await fetch(`${API}/upload-apk`, {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, 'X-Filename': file.name },
+      body: file,
+    });
+    const data = await res.json();
+    if (data.ok) {
+      progress.textContent = `Uploaded successfully! (${(data.size / 1024 / 1024).toFixed(1)} MB)`;
+      progress.style.color = '#4caf50';
+      checkApkStatus();
+    } else {
+      progress.textContent = data.error || 'Upload failed';
+      progress.style.color = '#f44336';
+    }
+  } catch (e) {
+    progress.textContent = 'Upload failed: ' + e.message;
+    progress.style.color = '#f44336';
+  }
 }
 
 // ═══════════════════════════════════════
