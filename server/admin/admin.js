@@ -239,6 +239,7 @@ async function loadPlayerDetail(id) {
       <button class="btn btn-green btn-sm" onclick="editPlayer('${esc(id)}')">Save Changes</button>
       <hr style="border-color:#333;margin:12px 0">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn ${g.isAI ? 'btn-outline' : 'btn-gray'} btn-sm" onclick="toggleAI('${esc(id)}', ${!g.isAI})">${g.isAI ? 'Remove AI Flag' : 'Mark as AI'}</button>
         <button class="btn ${g.isBanned ? 'btn-green' : 'btn-red'} btn-sm" onclick="banPlayer('${esc(id)}', ${!g.isBanned})">${g.isBanned ? 'Unban' : 'Ban'} Player</button>
         <button class="btn ${g.isPremium ? 'btn-outline' : 'btn-yellow'} btn-sm" onclick="setPremium('${esc(id)}', ${!g.isPremium})">${g.isPremium ? 'Revoke Premium' : 'Grant Premium'}</button>
         <button class="btn btn-red btn-sm" onclick="if(confirm('Reset all progress for this player?'))resetPlayer('${esc(id)}')">Reset Progress</button>
@@ -346,6 +347,17 @@ async function setPremium(id, isPremium) {
     await fetch(`${API}/players/${id}/set-premium`, {
       method: 'POST', headers: AUTH_HEADER,
       body: JSON.stringify({ isPremium }),
+    });
+    loadPlayerDetail(id);
+    loadPlayers();
+  } catch (e) { console.error(e); }
+}
+
+async function toggleAI(id, isAI) {
+  try {
+    await fetch(`${API}/players/${id}/edit`, {
+      method: 'POST', headers: AUTH_HEADER,
+      body: JSON.stringify({ isAI }),
     });
     loadPlayerDetail(id);
     loadPlayers();
