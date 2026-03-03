@@ -40,6 +40,19 @@ export const MONET = {
   marketIntelCost: 100,
   marketIntelDuration: 7, // days
 
+  // TC Storage Cap system — players must upgrade to hold more TC
+  tcStorage: {
+    baseCap: 500,            // free players start with 500 TC cap
+    premiumBonus: 1500,      // premium adds +1500 TC storage
+    upgrades: [
+      { level: 1, addCap: 250,  tcCost: 100 },
+      { level: 2, addCap: 500,  tcCost: 250 },
+      { level: 3, addCap: 1000, tcCost: 500 },
+      { level: 4, addCap: 2000, tcCost: 1000 },
+      { level: 5, addCap: 3000, tcCost: 2000 },
+    ],
+  },
+
   cosmetics: [
     { id: "gold_name", n: "Gold Company Name", cost: 500, desc: "Your company name glows gold in the header — always visible" },
     { id: "neon_sign", n: "Neon Shop Glow", cost: 300, desc: "Your shop cards pulse with a neon border effect" },

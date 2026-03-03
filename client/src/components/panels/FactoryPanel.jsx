@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { postAction } from '../../api/client.js';
 import { FACTORY } from '@shared/constants/factory.js';
-import { RAW_MATERIALS, RD_PROJECTS, CERTIFICATIONS, FACTORY_DISCOUNT_TIERS_DEFAULT, EXCLUSIVE_TIRES, CFO_ROLE } from '@shared/constants/factoryBrand.js';
+import { RAW_MATERIALS, RD_PROJECTS, CERTIFICATIONS, FACTORY_DISCOUNT_TIERS_DEFAULT, EXCLUSIVE_TIRES, CFO_ROLE, RUBBER_FARM, SYNTHETIC_LAB } from '@shared/constants/factoryBrand.js';
 import { TIRES } from '@shared/constants/tires.js';
 import { fmt } from '@shared/helpers/format.js';
-import { getEffectiveProductionCost } from '@shared/helpers/factoryBrand.js';
+import { getEffectiveProductionCost, computeTireAttributes } from '@shared/helpers/factoryBrand.js';
 import { hapticsMedium } from '../../api/haptics.js';
 
 const PRODUCIBLE_TYPES = Object.keys(FACTORY.productionCost);
@@ -118,7 +118,7 @@ export default function FactoryPanel() {
   // Raw material color helper
   const rmColor = (val) => val < 0.9 ? 'text-green' : val > 1.1 ? 'text-red' : 'text-accent';
 
-  const TABS = [['dashboard', 'Dashboard'], ['production', 'Production'], ['wholesale', 'Wholesale'], ['rd', 'R&D'], ['staff', 'Staff']];
+  const TABS = [['dashboard', 'Dashboard'], ['production', 'Production'], ['wholesale', 'Wholesale'], ['rd', 'R&D'], ['staff', 'Staff'], ['supply', 'Supply Chain']];
 
   return (
     <>
@@ -183,6 +183,26 @@ export default function FactoryPanel() {
             <div className="progress-bar mb-4">
               <div className="progress-fill" style={{ width: `${(qualityPct / qualityCapPct) * 100}%`, background: 'var(--accent)' }} />
             </div>
+            {/* Tire Performance Attributes */}
+            {factory && (() => {
+              const attrs = computeTireAttributes(factory);
+              const attrColor = v => v > 70 ? 'var(--green)' : v >= 40 ? 'var(--accent)' : 'var(--red)';
+              return (
+                <div style={{ marginBottom: 8 }}>
+                  <div className="text-xs text-dim mb-4">Tire Performance</div>
+                  {[['Grip', attrs.grip], ['Durability', attrs.durability], ['Comfort', attrs.comfort], ['Tread Life', attrs.treadLife], ['Efficiency', attrs.efficiency]].map(([label, val]) => (
+                    <div key={label} className="row-between mb-4" style={{ alignItems: 'center' }}>
+                      <span className="text-xs" style={{ width: 70 }}>{label}</span>
+                      <div style={{ flex: 1, height: 8, background: 'var(--bg)', borderRadius: 4, marginLeft: 8, marginRight: 8, overflow: 'hidden' }}>
+                        <div style={{ width: `${val}%`, height: '100%', background: attrColor(val), borderRadius: 4, transition: 'width 0.3s' }} />
+                      </div>
+                      <span className="text-xs font-bold" style={{ width: 24, textAlign: 'right' }}>{val}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
             <div className="row-between mb-4">
               <span className="text-sm text-dim">Defect Rate</span>
               <span className={`font-bold ${defectRate <= 5 ? 'text-green' : defectRate <= 10 ? 'text-accent' : 'text-red'}`}>{defectRate}%</span>
@@ -682,6 +702,134 @@ export default function FactoryPanel() {
                 Fire
               </button>
             </div>
+          </div>
+        </>
+      )}
+
+      {/* ═══ SUPPLY CHAIN TAB ═══ */}
+      {tab === 'supply' && (
+        <>
+          {/* Rubber Farm */}
+          <div className="card">
+            <div className="card-title">{'\u{1F331}'} Rubber Farm</div>
+            {factory?.rubberFarm ? (() => {
+              const farmLevel = RUBBER_FARM.levels.find(l => l.level === factory.rubberFarm.level) || RUBBER_FARM.levels[0];
+              const nextFarmLevel = RUBBER_FARM.levels.find(l => l.level === factory.rubberFarm.level + 1);
+              return (
+                <>
+                  <div className="row-between text-sm mb-4">
+                    <span className="text-dim">Level</span>
+                    <span className="font-bold">{farmLevel.level}</span>
+                  </div>
+                  <div className="row-between text-sm mb-4">
+                    <span className="text-dim">Daily Output</span>
+                    <span className="font-bold text-green">{farmLevel.dailyOutput} units/day</span>
+                  </div>
+                  <div className="row-between text-sm mb-4">
+                    <span className="text-dim">Operating Cost</span>
+                    <span className="font-bold text-red">${fmt(RUBBER_FARM.operatingCost)}/day</span>
+                  </div>
+                  <div className="text-xs text-dim mb-4">Vulnerable to weather events (production -50%)</div>
+                  {nextFarmLevel && (
+                    <button className="btn btn-full btn-sm btn-outline" disabled={busy || (g.tireCoins || 0) < nextFarmLevel.upgradeTcCost || g.cash < nextFarmLevel.upgradeCashCost}
+                      onClick={() => doAction('upgradeRubberFarm')}>
+                      Upgrade to Lv{nextFarmLevel.level} ({nextFarmLevel.upgradeTcCost} TC + ${fmt(nextFarmLevel.upgradeCashCost)})
+                    </button>
+                  )}
+                  {!nextFarmLevel && <div className="text-xs text-green font-bold">Max Level</div>}
+                </>
+              );
+            })() : (
+              <>
+                <div className="text-sm text-dim mb-4">
+                  Grow natural rubber to reduce raw material costs. Produces rubber units daily that lower your effective rubber index.
+                </div>
+                <button className="btn btn-full btn-green" disabled={busy || (g.tireCoins || 0) < RUBBER_FARM.tcCost}
+                  onClick={() => doAction('buyRubberFarm')}>
+                  {(g.tireCoins || 0) < RUBBER_FARM.tcCost ? `Need ${RUBBER_FARM.tcCost} TC` : `Buy Rubber Farm (${RUBBER_FARM.tcCost} TC)`}
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Synthetic Lab */}
+          <div className="card">
+            <div className="card-title">{'\u{1F9EA}'} Synthetic Rubber Lab</div>
+            {factory?.syntheticLab ? (() => {
+              const labLevel = SYNTHETIC_LAB.levels.find(l => l.level === factory.syntheticLab.level) || SYNTHETIC_LAB.levels[0];
+              const nextLabLevel = SYNTHETIC_LAB.levels.find(l => l.level === factory.syntheticLab.level + 1);
+              return (
+                <>
+                  <div className="row-between text-sm mb-4">
+                    <span className="text-dim">Level</span>
+                    <span className="font-bold">{labLevel.level}</span>
+                  </div>
+                  <div className="row-between text-sm mb-4">
+                    <span className="text-dim">Daily Output</span>
+                    <span className="font-bold text-green">{labLevel.dailyOutput} units/day</span>
+                  </div>
+                  <div className="row-between text-sm mb-4">
+                    <span className="text-dim">Operating Cost</span>
+                    <span className="font-bold text-red">${fmt(SYNTHETIC_LAB.operatingCost)}/day</span>
+                  </div>
+                  <div className="text-xs text-green mb-4">Immune to weather events</div>
+                  <div className="text-xs text-dim mb-4">Increases chemical index slightly (+{SYNTHETIC_LAB.chemicalIndexIncrease}/mo)</div>
+                  {nextLabLevel && (
+                    <button className="btn btn-full btn-sm btn-outline" disabled={busy || (g.tireCoins || 0) < nextLabLevel.upgradeTcCost || g.cash < nextLabLevel.upgradeCashCost}
+                      onClick={() => doAction('upgradeSyntheticLab')}>
+                      Upgrade to Lv{nextLabLevel.level} ({nextLabLevel.upgradeTcCost} TC + ${fmt(nextLabLevel.upgradeCashCost)})
+                    </button>
+                  )}
+                  {!nextLabLevel && <div className="text-xs text-green font-bold">Max Level</div>}
+                </>
+              );
+            })() : (
+              <>
+                <div className="text-sm text-dim mb-4">
+                  Produce synthetic rubber — more effective than natural, immune to weather, but increases chemical costs.
+                </div>
+                <button className="btn btn-full btn-green" disabled={busy || (g.tireCoins || 0) < SYNTHETIC_LAB.tcCost || g.cash < SYNTHETIC_LAB.cashCost}
+                  onClick={() => doAction('buySyntheticLab')}>
+                  {(g.tireCoins || 0) < SYNTHETIC_LAB.tcCost
+                    ? `Need ${SYNTHETIC_LAB.tcCost} TC`
+                    : g.cash < SYNTHETIC_LAB.cashCost
+                      ? `Need $${fmt(SYNTHETIC_LAB.cashCost)}`
+                      : `Buy Synthetic Lab (${SYNTHETIC_LAB.tcCost} TC + $${fmt(SYNTHETIC_LAB.cashCost)})`}
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Rubber Supply */}
+          <div className="card">
+            <div className="card-title">Rubber Supply</div>
+            <div className="row-between text-sm mb-4">
+              <span className="text-dim">Accumulated Units</span>
+              <span className="font-bold">{factory?.rubberSupply || 0}</span>
+            </div>
+            <div className="row-between text-sm mb-4">
+              <span className="text-dim">Effective Rubber Index</span>
+              <span className={`font-bold ${(factory?._effectiveRubberIndex || rm.rubber) < 0.9 ? 'text-green' : 'text-accent'}`}>
+                {((factory?._effectiveRubberIndex || rm.rubber) * 100).toFixed(0)}%
+              </span>
+            </div>
+            <div className="row-between text-sm mb-4">
+              <span className="text-dim">Market Rubber Price</span>
+              <span className="font-bold">{(rm.rubber * 100).toFixed(0)}%</span>
+            </div>
+            {(factory?.rubberSupply || 0) > 0 && (() => {
+              const pricePerUnit = Math.round((rm.rubber || 1.0) * 500);
+              const totalValue = (factory?.rubberSupply || 0) * pricePerUnit;
+              return (
+                <button className="btn btn-full btn-sm btn-green" disabled={busy}
+                  onClick={() => doAction('sellRubberSurplus')}>
+                  Sell {factory.rubberSupply} units (${fmt(totalValue)})
+                </button>
+              );
+            })()}
+            {(factory?.rubberSupply || 0) === 0 && (
+              <div className="text-xs text-dim">No surplus to sell. Build a farm or lab to produce rubber.</div>
+            )}
           </div>
         </>
       )}

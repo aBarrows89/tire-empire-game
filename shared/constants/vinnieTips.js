@@ -128,6 +128,42 @@ export const VINNIE_TIPS = [
   { condKey: "exchangeVinnieTip", tip: "For 200 TC I'll give you an insider stock tip. Am I right 60% of the time? Sure. Is 60% better than your guessing? Absolutely." },
 
   // ═══════════════════════════════════════════
+  // GLOBAL MARKET EVENTS
+  // ═══════════════════════════════════════════
+  { condKey: "geRubberShortage", tip: "Rubber Shortage in effect! Raw material costs are through the roof. If you've got a rubber farm, now's when it pays for itself. If not, tighten your margins and ride it out." },
+  { condKey: "gePortStrike", tip: "Port strike is shutting down supplier orders! Hope you stocked up. Players with rubber farms and synthetic labs are sitting pretty right now." },
+  { condKey: "geWinterStorm", tip: "Winter storm warning! Winter tire demand just went through the roof. If you've got winter stock, crank those prices up. If not, scramble to source some before they're gone." },
+  { condKey: "geEconomicBoom", tip: "Economic boom, baby! Everyone's buying. All demand is up 25%. Stock heavy, sell fast, and ride this wave while it lasts." },
+  { condKey: "geSteelSurplus", tip: "Steel surplus means cheap production costs. If you've got a factory running, now's the time to ramp up output and stockpile inventory." },
+  { condKey: "geSafetyRecall", tip: "Safety recall is killing branded tire demand. Used tires are flying off the shelves though — flip that junk inventory while the getting's good." },
+  { condKey: "geEvMandate", tip: "EV mandate just hit. EV tire demand is up 60% while standard tires dip. If your factory makes EV tires, congratulations — you're printing money." },
+  { condKey: "geHolidayRush", tip: "Holiday rush! Demand is up 40% across the board. Staff overtime costs more, but the sales volume makes it worth every penny." },
+  { condKey: "geGeneral", tip: "Global events affect every player equally. The ones who prepared come out ahead. Keep cash reserves, diversify inventory, and stay flexible." },
+
+  // ═══════════════════════════════════════════
+  // TC ECONOMY & STORAGE
+  // ═══════════════════════════════════════════
+  { condKey: "tcStorageFull", tip: "Your TC storage is maxed out! You're losing coins every time you earn them. Upgrade your storage capacity before you waste any more." },
+  { condKey: "tcStorageAlmostFull", tip: "TC storage is getting tight. Consider upgrading before you hit the cap — nothing worse than earning coins you can't keep." },
+  { condKey: "tcUpgradeAvailable", tip: "You've got enough TC to upgrade your storage capacity. More storage means more room to save up for the big purchases — farms, labs, market intel." },
+  { condKey: "tcValueHigh", tip: "TC value is sky-high right now. If you've been hoarding coins, this might be the time to spend them — buy a rubber farm, upgrade storage, or grab market intel." },
+  { condKey: "tcValueLow", tip: "TC is cheap right now. Smart move is to hold onto your coins — the market always bounces back. Patience pays in the TC economy too." },
+  { condKey: "tcValueVolatile", tip: "TC value swings with the economy — rubber shortages, player spending, even global events. Watch the factors on your dashboard and time your big TC purchases." },
+
+  // ═══════════════════════════════════════════
+  // TIRE ATTRIBUTES & SUPPLY CHAIN
+  // ═══════════════════════════════════════════
+  { condKey: "tireAttrsLow", tip: "Your tire attributes are mediocre. Grip, durability, comfort — these scores drive sales. Invest in R&D and certifications to boost them." },
+  { condKey: "tireAttrsHigh", tip: "Your tire attributes are top-notch! High grip, durability, and comfort scores mean your branded tires outsell the competition. Keep investing in R&D to stay ahead." },
+  { condKey: "rubberFarmReady", tip: "You're spending a fortune on raw materials. A rubber farm cuts your production costs by reducing your rubber index. It's a big TC investment, but it pays dividends forever." },
+  { condKey: "rubberFarmActive", tip: "Your rubber farm is producing! Every unit it makes lowers your effective rubber cost. Consider upgrading to level 2 or 3 for serious output." },
+  { condKey: "syntheticLabReady", tip: "Synthetic rubber is immune to weather events and produces more efficiently. If you've got the TC and cash, a synthetic lab is the smarter long-term play." },
+  { condKey: "syntheticLabActive", tip: "Synthetic lab is cranking out rubber. It's weather-proof and more efficient than natural farms. Upgrade it for even more output." },
+  { condKey: "rubberSurplus", tip: "You've got surplus rubber piling up. Sell it on the market at the current rubber index rate — no sense sitting on inventory you can't use." },
+  { condKey: "supplyChainDiversified", tip: "You've got both a rubber farm AND a synthetic lab. Smart diversification — natural rubber for cost, synthetic for reliability. Weather events can't touch you now." },
+  { condKey: "noSupplyChain", tip: "Every tire you make depends on market rubber prices. A rubber farm or synthetic lab gives you cost control. Think vertical integration, kid." },
+
+  // ═══════════════════════════════════════════
   // DEFAULTS (multiple fallbacks for variety)
   // ═══════════════════════════════════════════
   { condKey: "default", tip: "Keep grinding, kid. The tire game rewards patience and hustle. Every day you show up is a day closer to empire." },

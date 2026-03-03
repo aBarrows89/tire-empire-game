@@ -267,7 +267,11 @@ router.post('/fulfill', authMiddleware, async (req, res) => {
             return res.status(400).json({ error: 'Sender no longer has enough TireCoins' });
           }
           sender.game_state.tireCoins -= trade.tcAmount;
-          g.tireCoins = (g.tireCoins || 0) + trade.tcAmount;
+          const { MONET } = await import('../../shared/constants/monetization.js');
+          let tradeCap = MONET.tcStorage.baseCap;
+          if (g.isPremium) tradeCap += MONET.tcStorage.premiumBonus;
+          for (let ti = 0; ti < (g.tcStorageLevel || 0) && ti < MONET.tcStorage.upgrades.length; ti++) tradeCap += MONET.tcStorage.upgrades[ti].addCap;
+          g.tireCoins = Math.min((g.tireCoins || 0) + trade.tcAmount, tradeCap);
           sender.game_state.log = sender.game_state.log || [];
           sender.game_state.log.push({ msg: `Traded ${trade.tcAmount} TC to ${g.companyName || g.name} for $${trade.cashAmount.toLocaleString()}`, cat: 'event' });
           await savePlayerState(trade.senderId, sender.game_state);

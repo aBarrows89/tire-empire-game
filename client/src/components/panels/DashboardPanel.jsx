@@ -9,6 +9,7 @@ import { PAY } from '@shared/constants/staff.js';
 import { MARKETING } from '@shared/constants/marketing.js';
 import { INSURANCE } from '@shared/constants/insurance.js';
 import { FACTORY } from '@shared/constants/factory.js';
+import { MONET } from '@shared/constants/monetization.js';
 import { PROGRESSION_MILESTONES } from '@shared/constants/progression.js';
 import { getCalendar } from '@shared/helpers/calendar.js';
 import { getTireSeasonMult } from '@shared/constants/tireSeasonal.js';
@@ -109,9 +110,44 @@ export default function DashboardPanel() {
   // Net daily P&L
   const netPL = (g.dayRev || 0) - totalDailyExpenses;
 
+  // Global events from tick broadcast
+  const globalEvents = state.globalEvents || [];
+  const tcValue = state.tcValue || 50000;
+  const tcMetrics = state.tcMetrics || null;
+  const tcHistory = state.tcHistory || [];
+
+  // TC storage cap
+  const tcStorageLevel = g.tcStorageLevel || 0;
+  let tcCap = MONET.tcStorage.baseCap;
+  if (g.isPremium) tcCap += MONET.tcStorage.premiumBonus;
+  for (let i = 0; i < tcStorageLevel && i < MONET.tcStorage.upgrades.length; i++) tcCap += MONET.tcStorage.upgrades[i].addCap;
+  const tcCurrent = g.tireCoins || 0;
+  const tcFillPct = tcCap > 0 ? Math.min(100, Math.round((tcCurrent / tcCap) * 100)) : 0;
+  const nextUpgrade = tcStorageLevel < MONET.tcStorage.upgrades.length ? MONET.tcStorage.upgrades[tcStorageLevel] : null;
+  const [tcUpgradeBusy, setTcUpgradeBusy] = useState(false);
+
   return (
     <>
       <VinnieTip />
+
+      {/* Active Global Events */}
+      {globalEvents.length > 0 && (
+        <div className="card" style={{ borderLeft: '3px solid #f0c040', borderColor: '#f0c040' }}>
+          <div className="card-title" style={{ color: '#f0c040' }}>Global Events</div>
+          {globalEvents.map(evt => (
+            <div key={evt.id} className="row-between text-sm mb-4">
+              <span>
+                <span style={{ marginRight: 6 }}>{evt.icon}</span>
+                <span className="font-bold">{evt.name}</span>
+              </span>
+              <span className="text-dim">{evt.daysLeft}d left</span>
+            </div>
+          ))}
+          <div className="text-xs text-dim" style={{ marginTop: 4 }}>
+            {globalEvents.map(evt => evt.description).join(' | ')}
+          </div>
+        </div>
+      )}
 
       {/* Daily Summary Card */}
       {g.day >= 1 && (
@@ -559,7 +595,7 @@ export default function DashboardPanel() {
         </div>
         <div className="row-between mb-4">
           <span className="text-sm text-dim">TireCoins</span>
-          <span className="font-bold text-gold">{g.tireCoins || 0}</span>
+          <span className="font-bold text-gold">{tcCurrent} / {tcCap}</span>
         </div>
         <div className="row-between mb-4">
           <span className="text-sm text-dim">Avg Margin</span>
@@ -567,6 +603,65 @@ export default function DashboardPanel() {
             {g.totalRev > 0 ? (g.totalProfit / g.totalRev * 100).toFixed(1) : '0.0'}%
           </span>
         </div>
+      </div>
+
+      {/* TC Economy */}
+      <div className="card" style={{ borderLeft: '3px solid #f0c040' }}>
+        <div className="card-title" style={{ color: '#f0c040' }}>TireCoin Economy</div>
+        <div className="row-between text-sm mb-4">
+          <span className="text-dim">TC Value</span>
+          <span className="font-bold text-gold">${fmt(tcValue)}</span>
+        </div>
+        {tcHistory.length >= 2 && (
+          <div className="row-between mb-4">
+            <span className="text-sm text-dim">TC Price History</span>
+            <span className="sparkline-container">
+              <Sparkline data={tcHistory.map(h => h.value)} color="#f0c040" />
+            </span>
+          </div>
+        )}
+        <div className="text-xs text-dim mb-4">Storage: {tcCurrent} / {tcCap} TC ({tcFillPct}%)</div>
+        <div className="progress-bar mb-4" style={{ height: 6 }}>
+          <div className="progress-fill" style={{ width: `${tcFillPct}%`, background: tcFillPct >= 90 ? 'var(--red)' : tcFillPct >= 70 ? '#f0c040' : 'var(--green)' }} />
+        </div>
+        {nextUpgrade && (
+          <button
+            className="btn btn-full btn-sm"
+            style={{ background: tcCurrent >= nextUpgrade.tcCost ? 'linear-gradient(135deg, #f0c040, #d4a020)' : undefined, color: tcCurrent >= nextUpgrade.tcCost ? '#000' : undefined }}
+            disabled={tcCurrent < nextUpgrade.tcCost || tcUpgradeBusy}
+            onClick={async () => {
+              if (!window.confirm(`Upgrade TC Storage for ${nextUpgrade.tcCost} TC?\n\n+${nextUpgrade.addCap} TC capacity`)) return;
+              setTcUpgradeBusy(true);
+              const result = await postAction('upgradeTcStorage', {});
+              await refreshState();
+              setTcUpgradeBusy(false);
+              if (result?.error) alert(result.error);
+            }}
+          >
+            {tcUpgradeBusy ? 'Upgrading...' : `Upgrade Storage +${nextUpgrade.addCap} TC (${nextUpgrade.tcCost} TC)`}
+          </button>
+        )}
+        {!nextUpgrade && <div className="text-xs text-dim">Max storage level reached</div>}
+        {tcMetrics && (
+          <div style={{ marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
+            <div className="text-xs text-dim mb-4">Market Factors</div>
+            {[
+              ['Supply', tcMetrics.tcSupplyFactor],
+              ['Velocity', tcMetrics.velocityFactor],
+              ['Rubber', tcMetrics.rubberFactor],
+              ['Sentiment', tcMetrics.sentimentFactor],
+              ['Whale', tcMetrics.marketMakerFactor],
+              ['Events', tcMetrics.chaosFactor],
+            ].map(([label, val]) => (
+              <div key={label} className="row-between text-xs mb-4">
+                <span className="text-dim">{label}</span>
+                <span style={{ color: val > 1.02 ? 'var(--green)' : val < 0.98 ? 'var(--red)' : 'var(--text-dim)' }}>
+                  {val != null ? (val > 1 ? '+' : '') + ((val - 1) * 100).toFixed(1) + '%' : '--'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Progression Roadmap */}

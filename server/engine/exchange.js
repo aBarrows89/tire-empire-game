@@ -343,7 +343,7 @@ export function updateCommodityIndices(commodities) {
   }
 }
 
-export function updateSentiment(sentiment, stocks, day) {
+export function updateSentiment(sentiment, stocks, day, bankruptcies) {
   if (sentiment.crashActive) {
     sentiment.crashDaysLeft--;
     if (sentiment.crashDaysLeft <= 0) { sentiment.crashActive = false; sentiment.crashSeverity = 0; }
@@ -354,9 +354,16 @@ export function updateSentiment(sentiment, stocks, day) {
     sentiment.value = C(sentiment.value + 0.02, 0.4, 1.2);
     return;
   }
-  sentiment.value = C(sentiment.value + (Math.random() - 0.48) * 0.05, 0.6, 1.4);
+  // Recent bankruptcies drag sentiment down and increase crash probability
+  const recentBankruptcies = (bankruptcies || []).filter(b => day - b.day <= 30).length;
+  const bankruptcyDrag = recentBankruptcies * 0.03; // each recent bankruptcy pulls sentiment -3%
+  sentiment.value = C(sentiment.value + (Math.random() - 0.48) * 0.05 - bankruptcyDrag, 0.6, 1.4);
   let crashTriggered = false;
   if (Math.random() < BLACK_SWAN_CHANCE) crashTriggered = true;
+  // Bankruptcies increase crash probability
+  if (!crashTriggered && recentBankruptcies >= 2 && Math.random() < recentBankruptcies * 0.01) {
+    crashTriggered = true;
+  }
   if (!crashTriggered) {
     const stockList = Object.values(stocks);
     if (stockList.length > 0) {

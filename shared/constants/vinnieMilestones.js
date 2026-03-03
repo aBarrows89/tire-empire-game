@@ -145,6 +145,74 @@ export const VINNIE_MILESTONES = [
     emotion: 'serious',
   },
 
+  // ── Global Events & Supply Chain milestones ──
+  {
+    id: 'first_global_event',
+    check: g => (g._events || []).length > 0 || (g.day || 1) > 14,
+    title: "The World Doesn't Wait",
+    message: "Global events are hitting the market — rubber shortages, port strikes, storms. These affect EVERY player. Check your dashboard for active events and adjust your strategy. The ones who adapt fastest come out on top.",
+    emotion: 'serious',
+    hint: 'View Dashboard',
+    panel: 'dashboard',
+  },
+  {
+    id: 'rubber_farm_purchased',
+    check: g => g.factory?.rubberFarm != null,
+    title: "Vertical Integration!",
+    message: "You bought a rubber farm! Every day it produces raw rubber units that lower your production costs. Upgrade it for more output. And if you've got surplus? Sell it on the open market.",
+    emotion: 'money',
+    hint: 'View Factory',
+    panel: 'factory',
+  },
+  {
+    id: 'synthetic_lab_purchased',
+    check: g => g.factory?.syntheticLab != null,
+    title: "Science Pays Off",
+    message: "Synthetic rubber lab is online! It produces more efficiently than natural rubber AND it's immune to weather events. When droughts and floods hit, your competition suffers — you don't.",
+    emotion: 'excited',
+    hint: 'View Factory',
+    panel: 'factory',
+  },
+  {
+    id: 'supply_chain_complete',
+    check: g => g.factory?.rubberFarm != null && g.factory?.syntheticLab != null,
+    title: "Full Supply Chain",
+    message: "Farm AND lab running — you've got the most diversified supply chain in the game. Natural rubber for baseline costs, synthetic for reliability. Global events can't touch your production.",
+    emotion: 'thumbsup',
+  },
+  {
+    id: 'tc_storage_full',
+    check: g => {
+      const tc = g.tireCoins || 0;
+      const lvl = g.tcStorageLevel || 0;
+      let cap = 500;
+      if (g.isPremium) cap += 1500;
+      const adds = [250, 500, 1000, 2000, 3000];
+      for (let i = 0; i < lvl && i < adds.length; i++) cap += adds[i];
+      return tc >= cap && cap < 8250; // not max level
+    },
+    title: "TC Storage Maxed!",
+    message: "You're at your TireCoin storage cap! Every TC you earn is getting wasted. Upgrade your storage capacity to hold more — there are big purchases waiting for players who save up.",
+    emotion: 'serious',
+    hint: 'View Dashboard',
+    panel: 'dashboard',
+  },
+  {
+    id: 'tire_attrs_excellent',
+    check: g => {
+      if (!g.factory) return false;
+      const qr = g.factory.qualityRating || 0.80;
+      const rdDone = (g.factory.unlockedSpecials || []).length;
+      const certsDone = (g.factory.certifications || []).filter(c => c.earned).length;
+      return qr >= 0.95 && rdDone >= 2 && certsDone >= 1;
+    },
+    title: "Premium Product!",
+    message: g => `Your tires are top-tier, kid. Quality rating ${((g.factory?.qualityRating || 0.80) * 100).toFixed(0)}%, multiple R&D projects done, certifications earned — your grip, durability, and comfort scores are driving serious demand. This is what separates a tire shop from a tire EMPIRE.`,
+    emotion: 'excited',
+    hint: 'View Factory',
+    panel: 'factory',
+  },
+
   // ── Premium pitch milestones ──
   {
     id: 'premium_pitch_shops',

@@ -54,8 +54,8 @@ export const TUTORIAL_STEPS = [
   },
   {
     title: "Think Bigger",
-    text: "This game goes deep. Supplier relationships with volume discounts. Auto-ordering to keep shelves stocked. Marketing campaigns. Insurance. Retreading operations. Tire manufacturing with your own brand. Franchise systems. E-commerce. Government contracts. Flea market stands and car meet events. Even a factory floor. The ceiling is as high as you want to build.",
-    panel: null,
+    text: "You're just getting started. As your reputation grows, new features unlock:\n\nRep 8 \u2192 Supplier deals & volume discounts.\nRep 10 \u2192 Stock exchange & player trading.\nRep 15 \u2192 Open shops in new cities.\nRep 25 \u2192 Wholesale distribution.\nRep 30 \u2192 Launch your E-commerce store.\nRep 50 \u2192 Build your own tire factory.\n\nOnce you've got a factory, you can invest in R&D to boost tire attributes like grip, durability, and comfort — that's what makes YOUR brand outsell the competition. Build rubber farms and synthetic labs to control your own supply chain. And keep an eye on global market events — rubber shortages, port strikes, and economic booms affect every player. The ones who prepare come out on top.\n\nCheck the roadmap on your Dashboard to track progress. The ceiling is as high as you want to build.",
+    panel: "dashboard",
     vinnieEmotion: "serious",
   },
   {

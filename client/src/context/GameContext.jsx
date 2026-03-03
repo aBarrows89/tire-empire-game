@@ -41,6 +41,14 @@ function gameReducer(state, action) {
       return { ...state, error: action.payload };
     case 'SET_OFFLINE':
       return { ...state, offline: action.payload };
+    case 'SET_TICK_DATA':
+      return {
+        ...state,
+        globalEvents: action.payload.globalEvents || [],
+        tcValue: action.payload.tcValue || 50000,
+        tcMetrics: action.payload.tcMetrics || state.tcMetrics || null,
+        tcHistory: action.payload.tcHistory || state.tcHistory || [],
+      };
     default:
       return state;
   }
@@ -96,8 +104,17 @@ export function GameProvider({ children }) {
   useEffect(() => { refreshState(); }, [refreshState]);
 
   // WebSocket tick handler — refresh state on each tick
-  const onTick = useCallback(() => {
+  const onTick = useCallback((tickMsg) => {
     refreshState();
+    // Capture global events and TC value from tick broadcast
+    if (tickMsg) {
+      dispatch({ type: 'SET_TICK_DATA', payload: {
+        globalEvents: tickMsg.globalEvents,
+        tcValue: tickMsg.tcValue,
+        tcMetrics: tickMsg.tcMetrics,
+        tcHistory: tickMsg.tcHistory,
+      } });
+    }
     window.dispatchEvent(new CustomEvent('gameTick'));
   }, [refreshState]);
 

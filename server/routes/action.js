@@ -24,7 +24,7 @@ import { FRANCHISE } from '../../shared/constants/franchise.js';
 import { FLEA_MARKETS, FLEA_STAND_COST, FLEA_TRANSPORT } from '../../shared/constants/fleaMarkets.js';
 import { CAR_MEETS, CAR_MEET_SUMMER_START, CAR_MEET_SUMMER_END, CAR_MEET_TRANSPORT } from '../../shared/constants/carMeets.js';
 import { FACTORY } from '../../shared/constants/factory.js';
-import { RAW_MATERIALS, FACTORY_DISCOUNT_TIERS_DEFAULT, RD_PROJECTS, CERTIFICATIONS, EXCLUSIVE_TIRES, CFO_ROLE, LINE_SWITCH_DAYS } from '../../shared/constants/factoryBrand.js';
+import { RAW_MATERIALS, FACTORY_DISCOUNT_TIERS_DEFAULT, RD_PROJECTS, CERTIFICATIONS, EXCLUSIVE_TIRES, CFO_ROLE, LINE_SWITCH_DAYS, RUBBER_FARM, SYNTHETIC_LAB } from '../../shared/constants/factoryBrand.js';
 import { getEffectiveProductionCost, getBrandTireKey } from '../../shared/helpers/factoryBrand.js';
 import { MANUFACTURERS } from '../../shared/constants/manufacturers.js';
 import { PAY } from '../../shared/constants/staff.js';
@@ -390,6 +390,25 @@ router.post('/', authMiddleware, async (req, res) => {
             day: globalDay, open: stock.price, high: stock.price,
             low: crashPrice, close: crashPrice, volume: 0,
           });
+
+          // Track bankruptcy in exchange state for sentiment impact
+          const exchange = game.economy.exchange;
+          if (exchange) {
+            if (!exchange.bankruptcies) exchange.bankruptcies = [];
+            exchange.bankruptcies.push({
+              ticker: oldTicker,
+              companyName: g.companyName || 'Unknown',
+              day: globalDay,
+              preCrashPrice: stock.price / 0.05, // approximate pre-crash
+            });
+            // Keep last 50
+            if (exchange.bankruptcies.length > 50) exchange.bankruptcies = exchange.bankruptcies.slice(-50);
+            // Immediate sentiment hit
+            if (exchange.sentiment) {
+              exchange.sentiment.value = Math.max(0.5, (exchange.sentiment.value || 1) - 0.15);
+            }
+          }
+
           await saveGame('default', globalDay, game.economy, game.ai_shops || [], game.liquidation || []);
         }
 
@@ -713,6 +732,9 @@ router.post('/', authMiddleware, async (req, res) => {
           vinnieInventory: {},
           vinnieTotalLoss: 0,
           hasCFO: false,
+          rubberFarm: null,    // { level: 1, purchasedDay }
+          syntheticLab: null,  // { level: 1, purchasedDay }
+          rubberSupply: 0,     // accumulated rubber units
         };
         break;
       }
@@ -1122,7 +1144,11 @@ router.post('/', authMiddleware, async (req, res) => {
           return res.status(429).json({ error: 'Daily ad reward limit reached' });
         }
         g.adRewards.count += 1;
-        g.tireCoins = (g.tireCoins || 0) + 50;
+        const { MONET: monetAd } = await import('../../shared/constants/monetization.js');
+        let adCap = monetAd.tcStorage.baseCap;
+        if (g.isPremium) adCap += monetAd.tcStorage.premiumBonus;
+        for (let i = 0; i < (g.tcStorageLevel || 0) && i < monetAd.tcStorage.upgrades.length; i++) adCap += monetAd.tcStorage.upgrades[i].addCap;
+        g.tireCoins = Math.min((g.tireCoins || 0) + 50, adCap);
         g.log.push(`Earned 50 TC from watching an ad (${g.adRewards.count}/3 today)`);
         break;
       }
@@ -1150,6 +1176,21 @@ router.post('/', authMiddleware, async (req, res) => {
         const { targetPlayerId: unblockId } = params;
         if (!unblockId) return res.status(400).json({ error: 'Missing targetPlayerId' });
         g.blockedPlayers = (g.blockedPlayers || []).filter(b => b.id !== unblockId);
+        break;
+      }
+
+      // ── NOTIFICATION PREFERENCES ──
+      case 'updateNotifications': {
+        const allowed = ['globalEvents', 'cashReserve', 'cashReserveThreshold', 'tcStorage', 'inventory', 'loanPayments', 'factoryProduction'];
+        if (!g.notifications) g.notifications = { globalEvents: true, cashReserve: true, cashReserveThreshold: 5000, tcStorage: true, inventory: true, loanPayments: false, factoryProduction: false };
+        for (const [key, val] of Object.entries(params)) {
+          if (!allowed.includes(key)) continue;
+          if (key === 'cashReserveThreshold') {
+            g.notifications[key] = Math.max(0, Math.min(10000000, Number(val) || 5000));
+          } else {
+            g.notifications[key] = !!val;
+          }
+        }
         break;
       }
 
@@ -1437,6 +1478,95 @@ router.post('/', authMiddleware, async (req, res) => {
         g.tireCoins -= intelCost;
         g.log = g.log || [];
         g.log.push({ msg: `Market Intel purchased: ${intelDuration}-day city demand analysis (${intelCost} TC)`, cat: 'event' });
+        break;
+      }
+
+      // ── TC STORAGE UPGRADE ──
+      case 'upgradeTcStorage': {
+        const { MONET: monetTcStore } = await import('../../shared/constants/monetization.js');
+        const tcStore = monetTcStore.tcStorage;
+        const currentLevel = g.tcStorageLevel || 0;
+        const nextUpgrade = tcStore.upgrades.find(u => u.level === currentLevel + 1);
+        if (!nextUpgrade) return res.status(400).json({ error: 'TC storage already at max level' });
+        if ((g.tireCoins || 0) < nextUpgrade.tcCost) {
+          return res.status(400).json({ error: `Need ${nextUpgrade.tcCost} TC (you have ${g.tireCoins || 0})` });
+        }
+        g.tireCoins -= nextUpgrade.tcCost;
+        g.tcStorageLevel = nextUpgrade.level;
+        const newCap = tcStore.baseCap
+          + (g.isPremium ? tcStore.premiumBonus : 0)
+          + tcStore.upgrades.filter(u => u.level <= nextUpgrade.level).reduce((a, u) => a + u.addCap, 0);
+        g.log = g.log || [];
+        g.log.push({ msg: `Upgraded TC Storage to Level ${nextUpgrade.level} (+${nextUpgrade.addCap} capacity, new cap: ${newCap} TC)`, cat: 'event' });
+        break;
+      }
+
+      // ── RAW MATERIAL SUPPLY CHAIN ──
+      case 'buyRubberFarm': {
+        if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });
+        if (g.factory.rubberFarm) return res.status(400).json({ error: 'Already own a rubber farm' });
+        if ((g.tireCoins || 0) < RUBBER_FARM.tcCost) return res.status(400).json({ error: `Need ${RUBBER_FARM.tcCost} TC (you have ${g.tireCoins || 0})` });
+        g.tireCoins -= RUBBER_FARM.tcCost;
+        g.factory.rubberFarm = { level: 1, purchasedDay: g.day };
+        g.log = g.log || [];
+        g.log.push({ msg: `\u{1F331} Purchased Rubber Farm (Level 1) for ${RUBBER_FARM.tcCost} TC`, cat: 'event' });
+        break;
+      }
+
+      case 'upgradeRubberFarm': {
+        if (!g.hasFactory || !g.factory?.rubberFarm) return res.status(400).json({ error: 'No rubber farm' });
+        const currentFarmLevel = g.factory.rubberFarm.level;
+        const nextFarmLevel = RUBBER_FARM.levels.find(l => l.level === currentFarmLevel + 1);
+        if (!nextFarmLevel) return res.status(400).json({ error: 'Already at max level' });
+        if ((g.tireCoins || 0) < nextFarmLevel.upgradeTcCost) return res.status(400).json({ error: `Need ${nextFarmLevel.upgradeTcCost} TC` });
+        if (g.cash < nextFarmLevel.upgradeCashCost) return res.status(400).json({ error: `Need $${nextFarmLevel.upgradeCashCost.toLocaleString()} cash` });
+        g.tireCoins -= nextFarmLevel.upgradeTcCost;
+        g.cash -= nextFarmLevel.upgradeCashCost;
+        g.factory.rubberFarm.level = nextFarmLevel.level;
+        g.log = g.log || [];
+        g.log.push({ msg: `\u{1F331} Rubber Farm upgraded to Level ${nextFarmLevel.level} (${nextFarmLevel.dailyOutput}/day)`, cat: 'event' });
+        break;
+      }
+
+      case 'buySyntheticLab': {
+        if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });
+        if (g.factory.syntheticLab) return res.status(400).json({ error: 'Already own a synthetic lab' });
+        if ((g.tireCoins || 0) < SYNTHETIC_LAB.tcCost) return res.status(400).json({ error: `Need ${SYNTHETIC_LAB.tcCost} TC (you have ${g.tireCoins || 0})` });
+        if (g.cash < SYNTHETIC_LAB.cashCost) return res.status(400).json({ error: `Need $${SYNTHETIC_LAB.cashCost.toLocaleString()} cash` });
+        g.tireCoins -= SYNTHETIC_LAB.tcCost;
+        g.cash -= SYNTHETIC_LAB.cashCost;
+        g.factory.syntheticLab = { level: 1, purchasedDay: g.day };
+        g.log = g.log || [];
+        g.log.push({ msg: `\u{1F9EA} Purchased Synthetic Lab (Level 1) for ${SYNTHETIC_LAB.tcCost} TC + $${SYNTHETIC_LAB.cashCost.toLocaleString()}`, cat: 'event' });
+        break;
+      }
+
+      case 'upgradeSyntheticLab': {
+        if (!g.hasFactory || !g.factory?.syntheticLab) return res.status(400).json({ error: 'No synthetic lab' });
+        const currentLabLevel = g.factory.syntheticLab.level;
+        const nextLabLevel = SYNTHETIC_LAB.levels.find(l => l.level === currentLabLevel + 1);
+        if (!nextLabLevel) return res.status(400).json({ error: 'Already at max level' });
+        if ((g.tireCoins || 0) < nextLabLevel.upgradeTcCost) return res.status(400).json({ error: `Need ${nextLabLevel.upgradeTcCost} TC` });
+        if (g.cash < nextLabLevel.upgradeCashCost) return res.status(400).json({ error: `Need $${nextLabLevel.upgradeCashCost.toLocaleString()} cash` });
+        g.tireCoins -= nextLabLevel.upgradeTcCost;
+        g.cash -= nextLabLevel.upgradeCashCost;
+        g.factory.syntheticLab.level = nextLabLevel.level;
+        g.log = g.log || [];
+        g.log.push({ msg: `\u{1F9EA} Synthetic Lab upgraded to Level ${nextLabLevel.level} (${nextLabLevel.dailyOutput}/day)`, cat: 'event' });
+        break;
+      }
+
+      case 'sellRubberSurplus': {
+        if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });
+        const supply = g.factory.rubberSupply || 0;
+        if (supply <= 0) return res.status(400).json({ error: 'No rubber surplus to sell' });
+        const rubberIdx = g.factory.rawMaterials?.rubber || 1.0;
+        const pricePerUnit = Math.round(rubberIdx * 500);
+        const revenue = supply * pricePerUnit;
+        g.cash += revenue;
+        g.factory.rubberSupply = 0;
+        g.log = g.log || [];
+        g.log.push({ msg: `Sold ${supply} rubber units for $${revenue.toLocaleString()} ($${pricePerUnit}/unit)`, cat: 'sale' });
         break;
       }
 

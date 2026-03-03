@@ -22,7 +22,7 @@ function pushTip(tips, key) {
   }
 }
 
-function collectMatchingTips(g) {
+function collectMatchingTips(g, stateGlobalEvents) {
   const inv = getInv(g);
   const cap = getCap(g);
   const tips = [];
@@ -136,6 +136,59 @@ function collectMatchingTips(g) {
   if (inv > 10 && sold === 0 && day > 7) pushTip(tips, 'overpriced');
   if (sold === 0 && inv > 0) pushTip(tips, 'noSales');
 
+  // ─── GLOBAL MARKET EVENTS ───
+  const globalEvents = stateGlobalEvents || [];
+  const geIds = new Set(globalEvents.map(e => e.id));
+
+  if (geIds.has('rubber_shortage')) pushTip(tips, 'geRubberShortage');
+  if (geIds.has('port_strike')) pushTip(tips, 'gePortStrike');
+  if (geIds.has('winter_storm')) pushTip(tips, 'geWinterStorm');
+  if (geIds.has('economic_boom')) pushTip(tips, 'geEconomicBoom');
+  if (geIds.has('steel_surplus')) pushTip(tips, 'geSteelSurplus');
+  if (geIds.has('safety_recall')) pushTip(tips, 'geSafetyRecall');
+  if (geIds.has('ev_mandate')) pushTip(tips, 'geEvMandate');
+  if (geIds.has('holiday_rush')) pushTip(tips, 'geHolidayRush');
+  if (geIds.size > 0) pushTip(tips, 'geGeneral');
+
+  // ─── TC ECONOMY & STORAGE ───
+  const tcCurrent = g.tireCoins || 0;
+  const tcLevel = g.tcStorageLevel || 0;
+  // Simple cap calculation (mirroring MONET.tcStorage constants)
+  const tcBaseCap = 500;
+  const tcPremiumBonus = g.isPremium ? 1500 : 0;
+  const tcUpgradeCaps = [250, 500, 1000, 2000, 3000];
+  let tcCap = tcBaseCap + tcPremiumBonus;
+  for (let i = 0; i < tcLevel && i < tcUpgradeCaps.length; i++) tcCap += tcUpgradeCaps[i];
+
+  if (tcCurrent >= tcCap) pushTip(tips, 'tcStorageFull');
+  else if (tcCap > 0 && tcCurrent / tcCap >= 0.85) pushTip(tips, 'tcStorageAlmostFull');
+  const tcUpgradeCosts = [100, 250, 500, 1000, 2000];
+  if (tcLevel < 5 && tcCurrent >= (tcUpgradeCosts[tcLevel] || 9999)) pushTip(tips, 'tcUpgradeAvailable');
+  // TC value awareness (requires tick data — we don't have it in g, so check for high TC balance scenarios)
+  if (tcCurrent > 300) pushTip(tips, 'tcValueVolatile');
+
+  // ─── TIRE ATTRIBUTES & SUPPLY CHAIN ───
+  if (g.hasFactory && g.factory) {
+    const farm = g.factory.rubberFarm;
+    const lab = g.factory.syntheticLab;
+    const rubberSupply = g.factory.rubberSupply || 0;
+
+    if (!farm && !lab) pushTip(tips, 'noSupplyChain');
+    if (!farm && (tcCurrent >= 2000 || g.cash > 500000)) pushTip(tips, 'rubberFarmReady');
+    if (farm && !lab) pushTip(tips, 'rubberFarmActive');
+    if (!lab && (tcCurrent >= 1500 || g.cash > 300000)) pushTip(tips, 'syntheticLabReady');
+    if (lab && !farm) pushTip(tips, 'syntheticLabActive');
+    if (farm && lab) pushTip(tips, 'supplyChainDiversified');
+    if (rubberSupply > 50) pushTip(tips, 'rubberSurplus');
+
+    // Tire attribute quality hints
+    const qr = g.factory.qualityRating || 0.80;
+    const rdDone = (g.factory.unlockedSpecials || []).length;
+    const certsDone = (g.factory.certifications || []).filter(c => c.earned).length;
+    if (qr < 0.90 && rdDone === 0) pushTip(tips, 'tireAttrsLow');
+    if (qr >= 0.95 && (rdDone >= 2 || certsDone >= 2)) pushTip(tips, 'tireAttrsHigh');
+  }
+
   // ─── STOCK EXCHANGE / INVESTMENTS ───
   const se = g.stockExchange || {};
   if (!se.hasBrokerage && g.reputation >= 10 && locCount >= 1) {
@@ -177,7 +230,7 @@ export default function VinnieTip() {
   const g = state.game;
   if (!g) return null;
 
-  const tips = collectMatchingTips(g);
+  const tips = collectMatchingTips(g, state.globalEvents);
   if (!tips || tips.length === 0) return null;
 
   // Rotate tips based on day for variety

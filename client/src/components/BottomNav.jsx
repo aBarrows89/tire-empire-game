@@ -91,10 +91,9 @@ export default function BottomNav() {
   const unlocked = getUnlockedTabs(g);
 
   const primaryVisible = PRIMARY_TABS.filter(t => unlocked.has(t.id));
-  const secondaryVisible = SECONDARY_TABS.filter(t => unlocked.has(t.id));
 
   // Check if active panel is in secondary — if so, highlight "More"
-  const activeInSecondary = secondaryVisible.some(t => t.id === state.activePanel);
+  const activeInSecondary = SECONDARY_TABS.some(t => t.id === state.activePanel);
 
   const selectTab = (id) => {
     hapticsLight();
@@ -108,16 +107,20 @@ export default function BottomNav() {
       {showMore && (
         <div className="more-overlay" onClick={() => setShowMore(false)}>
           <div className="more-grid" onClick={e => e.stopPropagation()}>
-            {secondaryVisible.map(tab => (
-              <button
-                key={tab.id}
-                className={`more-grid-btn ${state.activePanel === tab.id ? 'active' : ''}`}
-                onClick={() => selectTab(tab.id)}
-              >
-                <span className="more-grid-icon">{tab.icon}</span>
-                <span className="more-grid-label">{tab.label}</span>
-              </button>
-            ))}
+            {SECONDARY_TABS.map(tab => {
+              const isUnlocked = unlocked.has(tab.id);
+              return (
+                <button
+                  key={tab.id}
+                  className={`more-grid-btn${!isUnlocked ? ' locked' : ''}${state.activePanel === tab.id ? ' active' : ''}`}
+                  onClick={() => selectTab(tab.id)}
+                >
+                  <span className="more-grid-icon">{tab.icon}</span>
+                  {!isUnlocked && <span className="lock-badge">{'\u{1F512}'}</span>}
+                  <span className="more-grid-label">{tab.label}</span>
+                </button>
+              );
+            })}
             <button
               className="more-grid-btn"
               onClick={() => {

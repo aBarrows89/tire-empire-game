@@ -12,8 +12,11 @@
       <h1>Tire Empire Admin</h1>
       <div id="auth-status">Not authenticated</div>
       <div id="auth-form">
-        <input id="admin-uid-input" placeholder="Admin UID (dev mode)">
-        <button class="btn btn-blue" id="auth-btn">Authenticate</button>
+        <button class="btn btn-blue" id="google-signin-btn" style="display:none">Sign in with Google</button>
+        <div id="dev-auth-form">
+          <input id="admin-uid-input" placeholder="Admin UID (dev mode)">
+          <button class="btn btn-blue" id="auth-btn">Authenticate</button>
+        </div>
       </div>
     </header>
 
@@ -21,7 +24,9 @@
       <button class="tab active" data-tab="players">Players</button>
       <button class="tab" data-tab="chat">Chat</button>
       <button class="tab" data-tab="economy">Economy</button>
+      <button class="tab" data-tab="events">Events</button>
       <button class="tab" data-tab="server">Server</button>
+      <button class="tab" data-tab="audit">Audit Log</button>
     </nav>
 
     <main id="admin-content" style="display:none">
@@ -65,16 +70,69 @@
       <!-- Economy Tab -->
       <section id="tab-economy" class="tab-content">
         <div class="stat-grid" id="economy-stats"></div>
-        <h3 style="margin:12px 0 8px">Top 10 by Wealth</h3>
+        <h3 style="margin:12px 0 8px">Commodity Indices</h3>
+        <div class="controls-row" id="commodity-controls"></div>
+        <div class="controls-row" style="margin-top:12px">
+          <div class="index-control">
+            <label>TC Value ($)</label>
+            <input type="number" id="tc-value-input" min="1000" step="1000" style="width:100px">
+            <button class="btn btn-blue btn-sm" onclick="setTcValue()">Set</button>
+          </div>
+        </div>
+        <h3 style="margin:16px 0 8px">Top 10 by Wealth</h3>
         <table>
           <thead><tr><th>#</th><th>Company</th><th>Wealth</th><th>Cash</th><th>Rep</th><th>Shops</th></tr></thead>
           <tbody id="top10-tbody"></tbody>
         </table>
       </section>
 
+      <!-- Events Tab -->
+      <section id="tab-events" class="tab-content">
+        <h3 style="margin-bottom:8px">Active Global Events</h3>
+        <div id="active-events"><em style="color:#555">None</em></div>
+        <h3 style="margin:16px 0 8px">Trigger Event</h3>
+        <div class="controls-row">
+          <select id="event-select" style="flex:1"></select>
+          <input type="number" id="event-duration" placeholder="Days (optional)" min="1" max="60" style="width:130px">
+          <button class="btn btn-green btn-sm" onclick="triggerEvent()">Trigger</button>
+        </div>
+      </section>
+
       <!-- Server Tab -->
       <section id="tab-server" class="tab-content">
         <div class="stat-grid" id="server-stats"></div>
+        <h3 style="margin:16px 0 8px">Tick Control</h3>
+        <div class="controls-row">
+          <div class="index-control">
+            <label>Tick Speed (ms)</label>
+            <input type="number" id="tick-speed-input" min="1000" max="120000" step="1000" style="width:100px">
+            <button class="btn btn-blue btn-sm" onclick="changeTickSpeed()">Set</button>
+          </div>
+          <button class="btn btn-red btn-sm" id="pause-btn" onclick="pauseTick()">Pause</button>
+          <button class="btn btn-green btn-sm" id="resume-btn" onclick="resumeTick()">Resume</button>
+        </div>
+        <h3 style="margin:16px 0 8px">Broadcast Announcement</h3>
+        <div class="broadcast-form">
+          <textarea id="broadcast-msg" placeholder="Message to all players..." rows="2"></textarea>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+            <select id="broadcast-severity">
+              <option value="info">Info</option>
+              <option value="warning">Warning</option>
+              <option value="critical">Critical</option>
+            </select>
+            <button class="btn btn-blue btn-sm" onclick="sendBroadcast()">Send to All</button>
+            <span id="broadcast-result" style="color:#4caf50;font-size:12px"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Audit Log Tab -->
+      <section id="tab-audit" class="tab-content">
+        <button class="btn btn-outline btn-sm" onclick="loadAuditLog()" style="margin-bottom:8px">Refresh</button>
+        <table>
+          <thead><tr><th>Time</th><th>Admin</th><th>Action</th><th>Target</th><th>Details</th></tr></thead>
+          <tbody id="audit-tbody"></tbody>
+        </table>
       </section>
     </main>
 
@@ -84,6 +142,7 @@
         <button class="modal-close" onclick="closeModal()">&times;</button>
         <h2 id="detail-name" style="margin-bottom:12px"></h2>
         <div id="detail-stats"></div>
+        <div id="detail-boosts" style="margin:12px 0"></div>
         <div id="detail-actions" style="margin:12px 0"></div>
         <details style="margin-top:12px">
           <summary style="cursor:pointer;color:#888;font-size:13px">Raw Game State (JSON)</summary>
@@ -91,7 +150,15 @@
         </details>
       </div>
     </div>
+
+    <footer style="text-align:center;padding:20px 12px;margin-top:24px;border-top:1px solid #333;color:#666;font-size:13px">
+      <a href="/legal/terms.html" target="_blank" style="color:#4ea8de;text-decoration:none;margin:0 8px">Terms of Service</a>
+      &nbsp;|&nbsp;
+      <a href="/legal/privacy.html" target="_blank" style="color:#4ea8de;text-decoration:none;margin:0 8px">Privacy Policy</a>
+    </footer>
   </div>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="admin.js"></script>
 </body>
 </html>

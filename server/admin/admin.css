@@ -2,8 +2,8 @@
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f23; color: #e0e0e0; }
 a { color: #6ec6ff; }
 button { cursor: pointer; font-family: inherit; }
-input, select { font-family: inherit; background: #1e1e3a; color: #e0e0e0; border: 1px solid #333; border-radius: 6px; padding: 6px 10px; font-size: 14px; }
-input:focus, select:focus { outline: none; border-color: #6ec6ff; }
+input, select, textarea { font-family: inherit; background: #1e1e3a; color: #e0e0e0; border: 1px solid #333; border-radius: 6px; padding: 6px 10px; font-size: 14px; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: #6ec6ff; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th { text-align: left; padding: 8px 10px; background: #1a1a3a; color: #aaa; font-weight: 600; border-bottom: 2px solid #333; }
 td { padding: 6px 10px; border-bottom: 1px solid #222; }
@@ -55,6 +55,7 @@ tr:hover td { background: #1a1a2e; }
 .stat-card .value.green { color: #4caf50; }
 .stat-card .value.gold { color: #ffd54f; }
 .stat-card .value.blue { color: #6ec6ff; }
+.stat-card .value.red { color: #ef5350; }
 
 /* Modal */
 .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 100; }
@@ -92,6 +93,33 @@ tr:hover td { background: #1a1a2e; }
 .badge-red { background: #4a0000; color: #ef5350; }
 .badge-gold { background: #4a3800; color: #ffd54f; }
 .badge-gray { background: #333; color: #999; }
+
+/* Controls row */
+.controls-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.index-control { display: flex; gap: 6px; align-items: center; }
+.index-control label { font-size: 13px; color: #aaa; white-space: nowrap; }
+.index-control input { width: 80px; }
+
+/* Event cards */
+.event-card { display: flex; align-items: center; gap: 12px; background: #1a1a3a; border: 1px solid #444; border-left: 3px solid #ffd54f; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; }
+.event-card .event-icon { font-size: 24px; }
+.event-card .event-info { flex: 1; }
+.event-card .event-name { font-weight: 600; font-size: 14px; }
+.event-card .event-meta { font-size: 12px; color: #888; margin-top: 2px; }
+
+/* Boost presets */
+.boost-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.boost-btn { padding: 5px 12px; border: 1px solid #555; border-radius: 6px; background: #1e1e3a; color: #ccc; font-size: 12px; font-weight: 600; cursor: pointer; }
+.boost-btn:hover { border-color: #6ec6ff; color: #fff; }
+.boost-btn.green { border-color: #2e7d32; color: #66bb6a; }
+.boost-btn.green:hover { background: #1b5e20; }
+.boost-btn.gold { border-color: #f9a825; color: #ffd54f; }
+.boost-btn.gold:hover { background: #4a3800; }
+.boost-btn.blue { border-color: #2979ff; color: #6ec6ff; }
+.boost-btn.blue:hover { background: #1a2a4a; }
+
+/* Broadcast form */
+.broadcast-form textarea { width: 100%; background: #1e1e3a; color: #e0e0e0; border: 1px solid #333; border-radius: 6px; padding: 8px 10px; font-size: 14px; resize: vertical; }
 
 /* Responsive */
 @media (max-width: 600px) {

@@ -7,12 +7,14 @@ import Header from './components/Header.jsx';
 import BottomNav from './components/BottomNav.jsx';
 import VinniePopup from './components/VinniePopup.jsx';
 import AchievementToast from './components/AchievementToast.jsx';
+import NotificationToast from './components/NotificationToast.jsx';
 import ChatOverlay from './components/ChatOverlay.jsx';
 import PullToRefresh from './components/PullToRefresh.jsx';
 import PanelTransition from './components/PanelTransition.jsx';
 import AdBanner from './components/AdBanner.jsx';
 import PremiumModal from './components/PremiumModal.jsx';
 import { useAds } from './hooks/useAds.js';
+import { startMusic } from './api/sounds.js';
 import DashboardPanel from './components/panels/DashboardPanel.jsx';
 import SourcePanel from './components/panels/SourcePanel.jsx';
 import PricingPanel from './components/panels/PricingPanel.jsx';
@@ -53,13 +55,44 @@ const PANELS = {
   exchange: ExchangePanel,
 };
 
+function SplashScreen() {
+  return (
+    <div className="splash-screen">
+      <div className="splash-bg" />
+      <div className="splash-overlay">
+        <div className="splash-title">TIRE EMPIRE</div>
+        <div className="splash-bar-track">
+          <div className="splash-bar-fill" />
+        </div>
+        <div className="splash-text">Initializing Systems...</div>
+      </div>
+    </div>
+  );
+}
+
 function GameLayout() {
   const { state, sendChat, refreshState } = useGame();
   const [chatOpen, setChatOpen] = useState(false);
   const [toastAch, setToastAch] = useState(null);
+  const [toastNotifs, setToastNotifs] = useState(null);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
+  const [splashDone, setSplashDone] = useState(false);
   const shownRef = useRef(new Set());
+  const notifShownDayRef = useRef(0);
   const prevPanelRef = useRef(null);
+
+  // Minimum splash duration
+  useEffect(() => {
+    const timer = setTimeout(() => setSplashDone(true), 2200);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Start background music on first user interaction (autoplay policy)
+  useEffect(() => {
+    const tryStart = () => { startMusic(); document.removeEventListener('click', tryStart); };
+    document.addEventListener('click', tryStart);
+    return () => document.removeEventListener('click', tryStart);
+  }, []);
 
   // Listen for openPremiumModal event (from profile, Vinnie, etc.)
   const openPremium = useCallback(() => setShowPremiumModal(true), []);
@@ -95,7 +128,7 @@ function GameLayout() {
     return () => window.removeEventListener('gameTick', handler);
   }, [adState]);
 
-  if (state.loading) return <div className="loading">Loading Tire Empire...</div>;
+  if (state.loading || !splashDone) return <SplashScreen />;
   if (state.error) return <div className="loading">Error: {state.error}</div>;
 
   // Show welcome screen if no company name set
@@ -108,6 +141,12 @@ function GameLayout() {
       for (const a of unseen) shownRef.current.add(a.id);
       setToastAch(unseen);
     }
+  }
+
+  // Check for new notifications — deduplicated per day
+  if (g._notifications && g._notifications.length > 0 && !toastNotifs && notifShownDayRef.current !== g.day) {
+    notifShownDayRef.current = g.day;
+    setToastNotifs(g._notifications);
   }
 
   const Panel = PANELS[state.activePanel] || DashboardPanel;
@@ -146,6 +185,14 @@ function GameLayout() {
           achievements={toastAch}
           onDismiss={() => setToastAch(null)}
           hasCelebration={(g.cosmetics || []).includes('celebration')}
+        />
+      )}
+
+      {/* Notification Toast */}
+      {toastNotifs && toastNotifs.length > 0 && (
+        <NotificationToast
+          notifications={toastNotifs}
+          onDismiss={() => setToastNotifs(null)}
         />
       )}
 

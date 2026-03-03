@@ -5,6 +5,20 @@ import { authMiddleware } from '../middleware/auth.js';
 
 const router = Router();
 
+// ── Profanity filter ──
+const PROFANE_WORDS = [
+  'fuck', 'shit', 'bitch', 'dick', 'cock', 'pussy', 'cunt',
+  'nigger', 'nigga', 'fag', 'faggot', 'retard', 'slut', 'whore',
+  'bastard', 'piss', 'penis', 'vagina', 'porn',
+  'nazi', 'hitler', 'rape', 'molest', 'pedophile',
+  'kike', 'spic', 'chink', 'wetback', 'beaner', 'tranny',
+];
+
+function containsProfanity(text) {
+  const lower = text.toLowerCase();
+  return PROFANE_WORDS.some(word => new RegExp(`\\b${word}\\b`, 'i').test(lower));
+}
+
 // GET /api/state — current player game state
 router.get('/', authMiddleware, async (req, res) => {
   try {
@@ -32,6 +46,14 @@ router.post('/register', authMiddleware, async (req, res) => {
     const { playerName, companyName } = req.body;
     if (!playerName || !companyName) {
       return res.status(400).json({ error: 'playerName and companyName are required' });
+    }
+
+    if (companyName.length < 2 || companyName.length > 30) {
+      return res.status(400).json({ error: 'Company name must be 2-30 characters' });
+    }
+
+    if (containsProfanity(companyName) || containsProfanity(playerName)) {
+      return res.status(400).json({ error: 'Name contains inappropriate language' });
     }
 
     const taken = await isCompanyNameTaken(companyName, req.playerId);

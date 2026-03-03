@@ -147,6 +147,7 @@ router.get('/stock/:ticker', authMiddleware, async (req, res) => {
       },
       priceHistory: stock.priceHistory || [],
       prospectus,
+      tradeLogs: (exchangeState.stockTradeLogs?.[req.params.ticker] || []).slice(0, 30),
     });
   } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
 });

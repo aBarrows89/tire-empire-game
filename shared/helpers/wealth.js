@@ -48,15 +48,15 @@ export function getWealth(g) {
     ? (FACTORY.factoryValue[g.factory.level] || 0)
     : 0;
 
-  // Stock Exchange portfolio value (estimated from stored prices)
+  // Stock Exchange portfolio value (uses current market price when available)
   let portfolioValue = 0;
   let marginDebt = 0;
   let shortLiability = 0;
   if (g.stockExchange) {
-    // Portfolio: qty * avgCost as estimate (actual prices updated by exchange tick)
     for (const [, holding] of Object.entries(g.stockExchange.portfolio || {})) {
       if (holding && holding.qty > 0) {
-        portfolioValue += holding.qty * (holding.avgCost || 0);
+        // Use last known market price, fallback to cost basis
+        portfolioValue += holding.qty * (holding.lastPrice || holding.avgCost || 0);
       }
     }
     marginDebt = g.stockExchange.marginDebt || 0;

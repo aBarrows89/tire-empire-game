@@ -3,8 +3,8 @@ import cors from 'cors';
 import { createServer } from 'http';
 import rateLimit from 'express-rate-limit';
 import { WebSocketServer } from 'ws';
-import { PORT, CORS_ORIGIN, NODE_ENV } from './config.js';
-import { startTickLoop } from './tick/tickLoop.js';
+import { PORT, CORS_ORIGIN, NODE_ENV, FIREBASE_PROJECT_ID, FIREBASE_API_KEY } from './config.js';
+import { startTickLoop, stopTickLoop, setTickSpeed, getTickSpeed, isTickRunning } from './tick/tickLoop.js';
 import { handleConnection } from './ws/handler.js';
 import { getAllActivePlayers, addShopSaleListing, getShopSaleListings } from './db/queries.js';
 import { CITIES } from '../shared/constants/cities.js';
@@ -44,7 +44,7 @@ app.use(express.json({ limit: '100kb' }));
 // Rate limiting
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,  // 1 minute
-  max: 60,               // 60 requests per minute per IP
+  max: 200,              // 200 requests per minute per IP
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, slow down' },
@@ -77,7 +77,23 @@ app.use('/api/admin', adminRouter);
 
 // ── Admin Dashboard (static HTML) ──
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Firebase web config endpoint (public keys only — safe to expose)
+app.get('/admin/firebase-config', (req, res) => {
+  if (!FIREBASE_API_KEY || !FIREBASE_PROJECT_ID) {
+    return res.json(null);
+  }
+  res.json({
+    apiKey: FIREBASE_API_KEY,
+    authDomain: `${FIREBASE_PROJECT_ID}.firebaseapp.com`,
+    projectId: FIREBASE_PROJECT_ID,
+  });
+});
+
 app.use('/admin', express.static(path.join(__dirname, 'admin')));
+
+// ── Legal Pages (Terms of Service, Privacy Policy) ──
+app.use('/legal', express.static(path.join(__dirname, 'legal')));
 
 // ── Global Error Handler ──
 app.use((err, req, res, next) => {
@@ -90,6 +106,7 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server });
 const clients = new Set();
 app.locals.wsClients = clients;
+app.locals.tickLoop = { setTickSpeed, stopTickLoop, startTickLoop, getTickSpeed, isTickRunning };
 
 wss.on('connection', (ws) => handleConnection(ws, clients));
 

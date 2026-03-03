@@ -12,10 +12,12 @@ router.get('/:playerId', async (req, res) => {
     if (!player) return res.status(404).json({ error: 'Player not found' });
 
     const g = player.game_state;
-    const daysInBusiness = Math.max(1, g.day || 1);
-    const yearsInBusiness = Math.floor(daysInBusiness / DAYS_PER_YEAR) + 1;
-    const currentYear = Math.floor((daysInBusiness - 1) / DAYS_PER_YEAR) + 1;
-    const yearStarted = currentYear - yearsInBusiness + 1; // always 1 from player perspective
+    const playerDays = Math.max(1, g.day || 1);
+    const yearsInBusiness = Math.floor(playerDays / DAYS_PER_YEAR) + 1;
+    // Use world day (startDay is set when character was created/reset)
+    const worldDay = (g.startDay || 1) + playerDays - 1;
+    const currentYear = Math.floor((worldDay - 1) / DAYS_PER_YEAR) + 1;
+    const yearStarted = currentYear - yearsInBusiness + 1;
 
     // Build city names list for stores
     const storeCities = (g.locations || []).map(loc => {
@@ -27,7 +29,7 @@ router.get('/:playerId', async (req, res) => {
       name: g.name || 'Unknown',
       companyName: g.companyName || 'Unnamed Co.',
       yearsInBusiness,
-      daysInBusiness,
+      daysInBusiness: playerDays,
       yearStarted,
       locationCount: (g.locations || []).length,
       reputation: Math.round((g.reputation || 0) * 10) / 10,

@@ -13,6 +13,10 @@ export async function seedMemoryStore(store) {
   // Create a default player (no companyName = will see welcome screen)
   const state = init('Player', 1);
   state.id = 'dev-player';
+  // Dev testing: preload with cash and rep for factory testing
+  state.cash = 50_000_000;
+  state.reputation = 100;
+  state.tireCoins = 500;
   await store.createPlayer('dev-player', 'Player', state);
   console.log('  Created default player (dev-player)');
 

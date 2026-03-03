@@ -32,8 +32,9 @@ import { RETREADING } from '../../shared/constants/retreading.js';
 import { SUPPLIER_REL_TIERS, getSupplierRelTier } from '../../shared/constants/supplierRelations.js';
 import { ACHIEVEMENTS } from '../../shared/constants/achievements.js';
 import { FACTORY } from '../../shared/constants/factory.js';
-import { RAW_MATERIALS, VINNIE_SCHEMES, RD_PROJECTS, CERTIFICATIONS, SHIPPING_ZONES, CFO_ROLE } from '../../shared/constants/factoryBrand.js';
-import { getAllTires, getBrandTireKey, getEffectiveProductionCost, getCustomerTier } from '../../shared/helpers/factoryBrand.js';
+import { RAW_MATERIALS, VINNIE_SCHEMES, RD_PROJECTS, CERTIFICATIONS, SHIPPING_ZONES, CFO_ROLE, RUBBER_FARM, SYNTHETIC_LAB } from '../../shared/constants/factoryBrand.js';
+import { getAllTires, getBrandTireKey, getEffectiveProductionCost, getCustomerTier, computeTireAttributes, getTireAttrMultiplier } from '../../shared/helpers/factoryBrand.js';
+import { GLOBAL_EVENTS } from '../../shared/constants/globalEvents.js';
 import { MANUFACTURERS } from '../../shared/constants/manufacturers.js';
 import { getHolidayMult } from '../../shared/constants/holidays.js';
 import { getTireSeasonMult } from '../../shared/constants/tireSeasonal.js';
@@ -42,6 +43,18 @@ import { CAR_MEETS, CAR_MEET_SUMMER_START, CAR_MEET_SUMMER_END, CAR_MEET_PREMIUM
 import { getCalendar } from '../../shared/helpers/calendar.js';
 import { getShopValuation, SHOP_BID, AI_BUYER_NAMES } from '../../shared/constants/shopSale.js';
 import { uid } from '../../shared/helpers/random.js';
+import { MONET } from '../../shared/constants/monetization.js';
+
+/** Compute max TC a player can hold based on upgrades + premium status */
+function getTcCap(s) {
+  let cap = MONET.tcStorage.baseCap;
+  if (s.isPremium) cap += MONET.tcStorage.premiumBonus;
+  const lvl = s.tcStorageLevel || 0;
+  for (let i = 0; i < lvl && i < MONET.tcStorage.upgrades.length; i++) {
+    cap += MONET.tcStorage.upgrades[i].addCap;
+  }
+  return cap;
+}
 
 /**
  * Simulate one game DAY. Pure function — no side effects.
@@ -228,8 +241,8 @@ export function simDay(g, shared = {}) {
     // Effective daily capacity = level base + line workers
     s.factory.dailyCapacity = (FACTORY.levels.find(l => l.level === s.factory.level) || FACTORY.levels[0]).dailyCapacity + (fStaff.lineWorkers || 0) * 10;
 
-    // Factory overhead
-    s.cash -= (FACTORY.monthlyOverhead || 50000) / 30;
+    // Factory overhead (affected by global events)
+    s.cash -= ((FACTORY.monthlyOverhead || 50000) / 30) * globalCostMult;
 
     // Factory staff payroll (including CFO if hired)
     let factoryPayroll = Object.entries(fStaff).reduce((a, [role, count]) => {
@@ -238,6 +251,45 @@ export function simDay(g, shared = {}) {
     }, 0) / 30;
     if (s.factory.hasCFO) factoryPayroll += CFO_ROLE.salary / 30;
     s.cash -= factoryPayroll;
+
+    // ── RUBBER PRODUCTION (Farm + Synthetic Lab) ──
+    if (s.factory.rubberFarm) {
+      const farmLevel = RUBBER_FARM.levels.find(l => l.level === s.factory.rubberFarm.level) || RUBBER_FARM.levels[0];
+      let farmOutput = farmLevel.dailyOutput;
+      // Weather vulnerability: drought/flood from global events halves production
+      const activeGlobal = shared.globalEvents || [];
+      const hasWeatherEvent = activeGlobal.some(e => e.id === 'rubber_shortage' || e.id === 'winter_storm');
+      if (hasWeatherEvent) farmOutput = Math.floor(farmOutput * 0.5);
+      s.factory.rubberSupply = (s.factory.rubberSupply || 0) + farmOutput;
+      s.cash -= RUBBER_FARM.operatingCost;
+      if (farmOutput > 0 && s.day % 7 === 0) {
+        s.log.push({ msg: `\u{1F331} Rubber farm produced ${farmOutput * 7} units this week`, cat: 'sale' });
+      }
+    }
+    if (s.factory.syntheticLab) {
+      const labLevel = SYNTHETIC_LAB.levels.find(l => l.level === s.factory.syntheticLab.level) || SYNTHETIC_LAB.levels[0];
+      const labOutput = labLevel.dailyOutput; // immune to weather
+      s.factory.rubberSupply = (s.factory.rubberSupply || 0) + labOutput;
+      s.cash -= SYNTHETIC_LAB.operatingCost;
+      // Synthetic lab increases chemical index
+      s.factory.rawMaterials.chemicals = Math.min(
+        RAW_MATERIALS.chemicals.max,
+        (s.factory.rawMaterials.chemicals || 1.0) + SYNTHETIC_LAB.chemicalIndexIncrease / 30
+      );
+      if (labOutput > 0 && s.day % 7 === 0) {
+        s.log.push({ msg: `\u{1F9EA} Synthetic lab produced ${labOutput * 7} units this week`, cat: 'sale' });
+      }
+    }
+    // Apply rubber supply to effective rubber index
+    if ((s.factory.rubberSupply || 0) > 0) {
+      const farmReduction = (s.factory.rubberFarm ? (s.factory.rubberSupply || 0) * RUBBER_FARM.rubberReductionPerUnit : 0);
+      const labReduction = (s.factory.syntheticLab ? (s.factory.rubberSupply || 0) * SYNTHETIC_LAB.rubberReductionPerUnit : 0);
+      const totalReduction = Math.max(farmReduction, labReduction);
+      s.factory._effectiveRubberIndex = Math.max(
+        RUBBER_FARM.minRubberIndex,
+        (s.factory.rawMaterials.rubber || 1.0) - totalReduction
+      );
+    }
   }
 
   // ── FACTORY WHOLESALE ORDERS (AI shops buying from player) ──
@@ -246,7 +298,10 @@ export function simDay(g, shared = {}) {
     const brandRep = s.factory.brandReputation || 0;
     for (const aiShop of (shared.aiShops || [])) {
       if (Math.random() > 1/7) continue; // weekly ordering
-      const buyChance = brandRep * 0.008; // 0-80% based on brand rep
+      // Attribute-boosted buy chance
+      const wsAttrs = computeTireAttributes(s.factory);
+      const avgAttrScore = (wsAttrs.grip + wsAttrs.durability + wsAttrs.comfort + wsAttrs.treadLife + wsAttrs.efficiency) / 5;
+      const buyChance = brandRep * 0.006 + avgAttrScore * 0.003; // max ~0.78
       if (Math.random() > buyChance) continue;
 
       // Pick a tire type the shop might want that player produces
@@ -386,6 +441,31 @@ export function simDay(g, shared = {}) {
     s.log.push({ msg: `\u{1F389} ${holiday.name}! Demand ${holidayMult > 1 ? `${holidayMult}x boost` : `${holidayMult}x (reduced)`}`, cat: 'event' });
   }
 
+  // ── GLOBAL EVENT MODIFIERS ──
+  let globalDemandMult = 1;
+  let globalCostMult = 1;
+  let globalBrandedDemandMult = 1;
+  let globalUsedDemandMult = 1;
+  let globalEvDemandMult = 1;
+  let globalWinterDemandMult = 1;
+  const activeGlobalEvents = shared.globalEvents || [];
+  for (const ge of activeGlobalEvents) {
+    const def = GLOBAL_EVENTS.find(e => e.id === ge.id);
+    if (!def) continue;
+    const fx = def.effects;
+    if (fx.demandMult) globalDemandMult *= fx.demandMult;
+    if (fx.productionCostMult) globalCostMult *= fx.productionCostMult;
+    if (fx.brandedDemandMult) globalBrandedDemandMult *= fx.brandedDemandMult;
+    if (fx.usedDemandMult) globalUsedDemandMult *= fx.usedDemandMult;
+    if (fx.evDemandMult) globalEvDemandMult *= fx.evDemandMult;
+    if (fx.winterDemandMult) globalWinterDemandMult *= fx.winterDemandMult;
+    if (fx.overtimeCostMult) globalCostMult *= fx.overtimeCostMult;
+    // Log event start once
+    if (ge.startDay === s.day) {
+      s.log.push({ msg: `${def.icon} Global Event: ${def.name} — ${def.description}`, cat: 'event' });
+    }
+  }
+
   // ── RANDOM EVENTS (scaled: 1/7 chance since daily instead of weekly) ──
   const totalStaff = Object.values(s.staff).reduce((a, v) => a + v, 0);
   const usedInv = Object.entries(s.inventory)
@@ -519,7 +599,7 @@ export function simDay(g, shared = {}) {
       const aiShopsInCity = (shared.aiShops || []).filter(a => a.cityId === loc.cityId).length;
       const monopolyMult = aiShopsInCity === 0 ? 1.5 : aiShopsInCity <= 2 ? 1.2 : 1.0;
       const premiumTrafficMult = s.isPremium ? 1.08 : 1;
-      let locDemand = Math.max(1, Math.floor(city.dem * .25 * demandMult * whPenalty * earlyBoostShop * loyaltyMult * marketingMult * marketShareMult * monopolyMult * holidayMult * premiumTrafficMult));
+      let locDemand = Math.max(1, Math.floor(city.dem * .25 * demandMult * whPenalty * earlyBoostShop * loyaltyMult * marketingMult * marketShareMult * monopolyMult * holidayMult * premiumTrafficMult * globalDemandMult));
       let locNewSold = 0;
 
       const retailTires = getAllTires(s);
@@ -534,14 +614,24 @@ export function simDay(g, shared = {}) {
         const winterMult = isSeasonal ? (city.win || 1) : 1;
         const agMult = t.ag ? (city.agPct || 0) : 1;
         const tireSeasonMult = getTireSeasonMult(k, season);
-        // Branded tire demand boost from brand reputation
-        const brandBoost = t.branded ? (1 + (s.factory?.brandReputation || 0) * 0.005) : 1;
+        // Branded tire demand boost: attributes + brand reputation
+        let brandBoost = 1;
+        if (t.branded && s.factory) {
+          const tireAttrs = computeTireAttributes(s.factory);
+          const baseType = t.baseType || k.replace('brand_', '');
+          brandBoost = getTireAttrMultiplier(tireAttrs, baseType) * (1 + (s.factory.brandReputation || 0) * 0.003);
+        }
+        // Global event modifiers for branded / used / EV tires
+        const geBrandMod = t.branded ? globalBrandedDemandMult : 1;
+        const geUsedMod = t.used ? globalUsedDemandMult : 1;
+        const geEvMod = t.ev ? globalEvDemandMult : 1;
+        const geWinterMod = (t.seas && season === 'Winter') ? globalWinterDemandMult : 1;
 
         const evAdoptionMult = t.ev ? (1 + Math.min(2.0, s.day / 365 * 0.5)) : 1;
         const emergencyMult = t.emergency ? (1 + (Math.random() < 0.05 ? 3 : 0)) : 1;
         let qty = Math.min(
           locStock,
-          Math.floor(locDemand * (.25 + Math.random() * .15) * winterMult * agMult * priceMult * evAdoptionMult * emergencyMult * tireSeasonMult * brandBoost)
+          Math.floor(locDemand * (.25 + Math.random() * .15) * winterMult * agMult * priceMult * evAdoptionMult * emergencyMult * tireSeasonMult * brandBoost * geBrandMod * geUsedMod * geEvMod * geWinterMod)
         );
         qty = Math.min(qty, Math.ceil(remainingStaffCap));
         if (qty <= 0) continue;
@@ -1288,11 +1378,12 @@ export function simDay(g, shared = {}) {
   }
 
   // ── TIRE COINS — 1 every other day (reduced from 1/day to limit inflation) ──
-  if (s.day % 2 === 0) s.tireCoins = (s.tireCoins || 0) + 1;
+  const tcCap = getTcCap(s);
+  if (s.day % 2 === 0) s.tireCoins = Math.min((s.tireCoins || 0) + 1, tcCap);
 
   // Premium TC stipend — 50 TC every 30 days
   if (s.isPremium && s.day % 30 === 0) {
-    s.tireCoins = (s.tireCoins || 0) + 50;
+    s.tireCoins = Math.min((s.tireCoins || 0) + 50, tcCap);
     s.log.push({ msg: 'Monthly PRO bonus: +50 TireCoins', cat: 'event' });
   }
 
@@ -1315,11 +1406,91 @@ export function simDay(g, shared = {}) {
     try {
       if (ach.check(s)) {
         s.achievements[ach.id] = true;
-        s.tireCoins = (s.tireCoins || 0) + ach.coins;
+        s.tireCoins = Math.min((s.tireCoins || 0) + ach.coins, tcCap);
         s.log.push({ msg: `🏆 Achievement: ${ach.title} (+${ach.coins} TC)`, cat: 'event' });
         s._newAchievements.push({ id: ach.id, name: ach.title, reward: ach.coins });
       }
     } catch {}
+  }
+
+  // ── NOTIFICATIONS (based on player preferences) ──
+  const notifs = s.notifications || {};
+  s._notifications = [];
+
+  // Global events — notify on event start
+  if (notifs.globalEvents !== false) {
+    for (const ge of activeGlobalEvents) {
+      if (ge.startDay === s.day) {
+        const def = GLOBAL_EVENTS.find(e => e.id === ge.id);
+        if (def) {
+          s._notifications.push({ type: 'globalEvent', title: def.name, message: def.description, icon: def.icon, severity: 'warning' });
+        }
+      }
+      // Notify on event end (last day)
+      if (ge.endDay === s.day) {
+        const def = GLOBAL_EVENTS.find(e => e.id === ge.id);
+        if (def) {
+          s._notifications.push({ type: 'globalEvent', title: `${def.name} Ended`, message: 'Market conditions returning to normal.', icon: def.icon, severity: 'info' });
+        }
+      }
+    }
+  }
+
+  // Cash reserve warning
+  if (notifs.cashReserve !== false) {
+    const threshold = notifs.cashReserveThreshold || 5000;
+    if (s.cash < threshold && (s.prevCash || 500) >= threshold) {
+      s._notifications.push({ type: 'cashReserve', title: 'Cash Reserve Warning', message: `Cash dropped below $${threshold.toLocaleString()}. You have $${Math.round(s.cash).toLocaleString()} remaining.`, icon: '\u26A0\uFE0F', severity: 'critical' });
+    }
+  }
+
+  // TC storage cap warning
+  if (notifs.tcStorage !== false) {
+    if (s.tireCoins >= tcCap && tcCap > 0) {
+      // Only notify once per day when at cap
+      if (s.day % 7 === 0) {
+        s._notifications.push({ type: 'tcStorage', title: 'TC Storage Full', message: `You're at ${tcCap} TC capacity. Earned coins are being lost. Upgrade your storage.`, icon: '\u{1F4E6}', severity: 'warning' });
+      }
+    } else if (tcCap > 0 && s.tireCoins / tcCap >= 0.9) {
+      if (s.day % 7 === 0) {
+        s._notifications.push({ type: 'tcStorage', title: 'TC Storage Almost Full', message: `${s.tireCoins}/${tcCap} TC — upgrade storage soon.`, icon: '\u{1F4E6}', severity: 'info' });
+      }
+    }
+  }
+
+  // Inventory alerts
+  if (notifs.inventory !== false) {
+    const totalInv = getInv(s);
+    const totalCap = getCap(s);
+    if (totalCap > 20 && totalInv <= Math.ceil(totalCap * 0.1)) {
+      s._notifications.push({ type: 'inventory', title: 'Low Inventory', message: `Only ${totalInv} tires in stock (${totalCap} capacity). Restock soon!`, icon: '\u{1F4C9}', severity: 'warning' });
+    }
+    if (totalCap > 0 && totalInv >= Math.floor(totalCap * 0.95)) {
+      s._notifications.push({ type: 'inventory', title: 'Storage Nearly Full', message: `${totalInv}/${totalCap} capacity. Sell or upgrade storage.`, icon: '\u{1F4E6}', severity: 'info' });
+    }
+  }
+
+  // Loan payment reminder (weekly payments happen every 7 days)
+  if (notifs.loanPayments && (s.loans || []).length > 0 && s.day % 7 === 6) {
+    const totalPayment = s.loans.reduce((a, l) => a + (l.weeklyPayment || 0), 0);
+    if (totalPayment > 0) {
+      s._notifications.push({ type: 'loanPayment', title: 'Loan Payment Tomorrow', message: `$${totalPayment.toLocaleString()} in loan payments due tomorrow.`, icon: '\u{1F3E6}', severity: 'info' });
+    }
+  }
+
+  // Factory production alerts
+  if (notifs.factoryProduction && s.hasFactory && s.factory) {
+    // Batch completion
+    const pq = s.factory.productionQueue || [];
+    for (const batch of pq) {
+      if (batch.completesDay === s.day) {
+        s._notifications.push({ type: 'factoryProduction', title: 'Batch Complete', message: `${batch.qty} ${batch.tireType || 'tires'} finished production.`, icon: '\u{1F3ED}', severity: 'info' });
+      }
+    }
+    // Rubber surplus reminder (weekly)
+    if (s.day % 7 === 0 && (s.factory.rubberSupply || 0) > 100) {
+      s._notifications.push({ type: 'factoryProduction', title: 'Rubber Surplus', message: `${s.factory.rubberSupply} rubber units stockpiled. Consider selling surplus.`, icon: '\u{1F333}', severity: 'info' });
+    }
   }
 
   // ── SHOP MARKETPLACE: AI BID GENERATION ──

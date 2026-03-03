@@ -8,3 +8,29 @@ build/
 *.tsbuildinfo
 .DS_Store
 *.log
+
+# Android build outputs
+client/android/app/build/
+client/android/.gradle/
+client/android/build/
+*.apk
+*.aab
+
+# iOS build outputs
+client/ios/App/build/
+client/ios/DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcuserdata/
+
+# Credentials & secrets
+*.pem
+*.p12
+google-services.json
+GoogleService-Info.plist
+firebase-service-account*.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

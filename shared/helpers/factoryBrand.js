@@ -5,7 +5,8 @@
 
 import { TIRES } from '../constants/tires.js';
 import { FACTORY } from '../constants/factory.js';
-import { RAW_MATERIALS, FACTORY_DISCOUNT_TIERS_DEFAULT, EXCLUSIVE_TIRES } from '../constants/factoryBrand.js';
+import { RAW_MATERIALS, FACTORY_DISCOUNT_TIERS_DEFAULT, EXCLUSIVE_TIRES, TIRE_ATTR_WEIGHTS, RUBBER_FARM, SYNTHETIC_LAB } from '../constants/factoryBrand.js';
+import { RD_PROJECTS, CERTIFICATIONS } from '../constants/factoryBrand.js';
 
 /** Returns the branded inventory key for a base tire type */
 export function getBrandTireKey(baseType) {
@@ -105,4 +106,71 @@ export function getCustomerTier(factory, totalPurchased) {
     else break;
   }
   return tier;
+}
+
+/**
+ * Compute tire performance attributes from factory state.
+ * Returns { grip, durability, comfort, treadLife, efficiency } each 0-100.
+ */
+export function computeTireAttributes(factory) {
+  const q = factory.qualityRating || 0.80;
+  const base = q * 50; // quality 0.80 = 40, 1.0 = 50
+
+  let grip = base, durability = base, comfort = base, treadLife = base, efficiency = base;
+
+  // R&D bonuses from completed projects
+  const completedRD = new Set();
+  for (const proj of (factory.rdProjects || [])) {
+    // Only count completed projects (not in queue)
+    // We check unlockedSpecials + qualityBoost applied
+  }
+  // Check which RD ids have been completed via unlockedSpecials or quality already above base
+  const rdIds = new Set();
+  for (const proj of RD_PROJECTS) {
+    if (proj.unlocksExclusive && (factory.unlockedSpecials || []).includes(proj.unlocksExclusive)) {
+      rdIds.add(proj.id);
+    }
+    // qualityBoost projects are completed if quality is above base + boost
+    if (proj.qualityBoost && (factory.qualityRating || 0.80) > 0.80 + (proj.qualityBoost || 0) * 0.5) {
+      rdIds.add(proj.id);
+    }
+  }
+
+  if (rdIds.has('ultraGrip'))   { grip += 20; }
+  if (rdIds.has('silentRide'))  { comfort += 20; }
+  if (rdIds.has('evOptimized')) { efficiency += 15; comfort += 10; }
+
+  // Certification bonuses
+  const earnedCerts = new Set((factory.certifications || []).filter(c => c.earned).map(c => c.id));
+  if (earnedCerts.has('speed_h'))  { grip += 10; durability += 5; }
+  if (earnedCerts.has('speed_v'))  { grip += 15; durability += 10; }
+  if (earnedCerts.has('iso_9001')) { grip += 10; durability += 10; comfort += 10; treadLife += 10; efficiency += 10; }
+
+  // Raw material quality: cheap rubber (< 0.9) = better grip + treadLife
+  const rubberIdx = factory.rawMaterials?.rubber ?? 1.0;
+  if (rubberIdx < 0.9) { grip += 5; treadLife += 5; }
+
+  // Cap at 100
+  return {
+    grip: Math.min(100, Math.round(grip)),
+    durability: Math.min(100, Math.round(durability)),
+    comfort: Math.min(100, Math.round(comfort)),
+    treadLife: Math.min(100, Math.round(treadLife)),
+    efficiency: Math.min(100, Math.round(efficiency)),
+  };
+}
+
+/**
+ * Get demand multiplier based on tire attributes and tire type weights.
+ * Returns weighted score / 50, clamped to [0.7, 1.8].
+ */
+export function getTireAttrMultiplier(attrs, tireType) {
+  const baseType = (tireType || '').replace('brand_', '');
+  const weights = TIRE_ATTR_WEIGHTS[baseType] || TIRE_ATTR_WEIGHTS.default;
+  const score = attrs.grip * weights.grip
+    + attrs.durability * weights.durability
+    + attrs.comfort * weights.comfort
+    + attrs.treadLife * weights.treadLife
+    + attrs.efficiency * weights.efficiency;
+  return Math.max(0.7, Math.min(1.8, score / 50));
 }

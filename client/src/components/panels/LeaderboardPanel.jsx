@@ -38,9 +38,10 @@ export default function LeaderboardPanel() {
     dispatch({ type: 'SET_VIEWING_PROFILE', payload: playerId });
   };
 
-  const displayRows = tab === 'weekly' && tournamentData?.rankings
+  // Weekly tab: use tournament rankings, or fallback to all-time rows
+  const displayRows = tab === 'weekly' && tournamentData?.rankings?.length > 0
     ? tournamentData.rankings
-    : rows;
+    : tab === 'weekly' ? [] : rows;
 
   return (
     <div {...swipeHandlers}>
@@ -136,8 +137,17 @@ export default function LeaderboardPanel() {
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div className="font-bold text-green text-sm">${fmt(Math.floor(row.wealth || 0))}</div>
-                <div className="text-xs text-dim">wealth</div>
+                {tab === 'weekly' && row.weeklyRevenue != null ? (
+                  <>
+                    <div className="font-bold text-green text-sm">${fmt(Math.floor(row.weeklyRevenue || 0))}</div>
+                    <div className="text-xs text-dim">weekly rev</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="font-bold text-green text-sm">${fmt(Math.floor(row.wealth || 0))}</div>
+                    <div className="text-xs text-dim">wealth</div>
+                  </>
+                )}
               </div>
             </div>
           </div>

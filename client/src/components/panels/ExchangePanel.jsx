@@ -589,6 +589,31 @@ export default function ExchangePanel() {
               {/* Order Book */}
               <OrderBook orderBook={stockDetail.orderBook} />
 
+              {/* Recent Trades (Share Trade Log) */}
+              {stockDetail.tradeLogs && stockDetail.tradeLogs.length > 0 && (
+                <div className="card" style={{ padding: 12, marginTop: 8 }}>
+                  <h4 style={{ margin: '0 0 8px' }}>Recent Trades</h4>
+                  <div style={{ fontSize: 10, color: 'var(--text-dim)', display: 'flex', gap: 4, marginBottom: 4, padding: '0 4px' }}>
+                    <span style={{ flex: '0 0 36px' }}>Day</span>
+                    <span style={{ flex: 1 }}>Buyer</span>
+                    <span style={{ flex: 1 }}>Seller</span>
+                    <span style={{ flex: '0 0 40px', textAlign: 'right' }}>Qty</span>
+                    <span style={{ flex: '0 0 56px', textAlign: 'right' }}>Price</span>
+                  </div>
+                  <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                    {stockDetail.tradeLogs.map((t, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 4, fontSize: 11, padding: '3px 4px', borderTop: '1px solid var(--border)' }}>
+                        <span style={{ flex: '0 0 36px', color: 'var(--text-dim)' }}>{t.day}</span>
+                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--green)' }}>{t.buyerName}</span>
+                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--red)' }}>{t.sellerName}</span>
+                        <span style={{ flex: '0 0 40px', textAlign: 'right' }}>{t.qty}</span>
+                        <span style={{ flex: '0 0 56px', textAlign: 'right', fontWeight: 600 }}>${t.price?.toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Order Form */}
               <div className="card" style={{ padding: 12, marginTop: 8 }}>
                 <h4 style={{ margin: '0 0 8px' }}>Place Order</h4>

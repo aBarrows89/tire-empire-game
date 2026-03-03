@@ -81,6 +81,7 @@ export function init(playerName = "Player", globalDay = 1) {
     log: [],
     achievements: {},
     tireCoins: 0,
+    tcStorageLevel: 0,  // Upgrade level for TC storage cap
     tutorialStep: 0,
     tutorialDone: false,
     vinnieSeen: [],
@@ -140,6 +141,16 @@ export function init(playerName = "Player", globalDay = 1) {
     // Auto-restock IAP (resets on game restart)
     hasAutoRestock: false,
     _events: [],
+    // Notification preferences
+    notifications: {
+      globalEvents: true,
+      cashReserve: true,
+      cashReserveThreshold: 5000,
+      tcStorage: true,
+      inventory: true,
+      loanPayments: false,
+      factoryProduction: false,
+    },
     // Moderation
     blockedPlayers: [],
     isBanned: false,

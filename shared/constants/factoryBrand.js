@@ -63,3 +63,44 @@ export const CFO_ROLE = {
   max: 1,
   vinnieBlockChance: 0.50,
 };
+
+/** Tire Performance Attribute weights by tire type (must sum to 1.0) */
+export const TIRE_ATTR_WEIGHTS = {
+  winter:       { grip: 0.40, durability: 0.15, comfort: 0.10, treadLife: 0.20, efficiency: 0.15 },
+  performance:  { grip: 0.35, durability: 0.15, comfort: 0.15, treadLife: 0.10, efficiency: 0.25 },
+  commercial:   { grip: 0.10, durability: 0.40, comfort: 0.05, treadLife: 0.35, efficiency: 0.10 },
+  lightTruck:   { grip: 0.15, durability: 0.35, comfort: 0.10, treadLife: 0.30, efficiency: 0.10 },
+  allSeason:    { grip: 0.20, durability: 0.20, comfort: 0.25, treadLife: 0.20, efficiency: 0.15 },
+  evTire:       { grip: 0.15, durability: 0.15, comfort: 0.20, treadLife: 0.15, efficiency: 0.35 },
+  luxuryTouring:{ grip: 0.10, durability: 0.15, comfort: 0.40, treadLife: 0.20, efficiency: 0.15 },
+  runFlat:      { grip: 0.20, durability: 0.30, comfort: 0.10, treadLife: 0.25, efficiency: 0.15 },
+  default:      { grip: 0.20, durability: 0.25, comfort: 0.20, treadLife: 0.20, efficiency: 0.15 },
+};
+
+/** Rubber Farm — natural rubber vertical integration (TC costs fluctuate via economy.tcValue) */
+export const RUBBER_FARM = {
+  tcCost: 2000,
+  levels: [
+    { level: 1, dailyOutput: 5,  upgradeTcCost: 0,   upgradeCashCost: 0 },
+    { level: 2, dailyOutput: 15, upgradeTcCost: 500,  upgradeCashCost: 200000 },
+    { level: 3, dailyOutput: 30, upgradeTcCost: 1000, upgradeCashCost: 500000 },
+  ],
+  rubberReductionPerUnit: 0.01,
+  minRubberIndex: 0.50,
+  operatingCost: 500, // daily
+};
+
+/** Synthetic Rubber Lab — immune to weather, higher chemical cost */
+export const SYNTHETIC_LAB = {
+  tcCost: 1500,
+  cashCost: 200000,
+  levels: [
+    { level: 1, dailyOutput: 8,  upgradeTcCost: 0,    upgradeCashCost: 0 },
+    { level: 2, dailyOutput: 20, upgradeTcCost: 750,  upgradeCashCost: 400000 },
+    { level: 3, dailyOutput: 40, upgradeTcCost: 1500, upgradeCashCost: 800000 },
+  ],
+  rubberReductionPerUnit: 0.015,
+  minRubberIndex: 0.50,
+  chemicalIndexIncrease: 0.05,
+  operatingCost: 800, // daily
+};

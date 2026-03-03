@@ -1,5 +1,7 @@
 let audioCtx = null;
 const MUTE_KEY = 'te_soundMuted';
+const MUSIC_KEY = 'te_musicMuted';
+let bgMusic = null;
 
 function getCtx() {
   if (!audioCtx) {
@@ -23,6 +25,7 @@ const SOUNDS = {
   achievement: { freq: 523, type: 'sine', dur: 0.3, freq2: 784, dur2: 0.3 },
   error: { freq: 220, type: 'square', dur: 0.15 },
   cash: { freq: 1200, type: 'sine', dur: 0.08, freq2: 1500 },
+  notification: { freq: 660, type: 'sine', dur: 0.1, freq2: 880 },
 };
 
 export function playSound(name) {
@@ -66,3 +69,57 @@ export function playSound(name) {
     }
   } catch {}
 }
+
+// ── Background Music ──
+
+export function isMusicMuted() {
+  try { return localStorage.getItem(MUSIC_KEY) === '1'; } catch { return false; }
+}
+
+export function toggleMusic() {
+  const muted = !isMusicMuted();
+  try { localStorage.setItem(MUSIC_KEY, muted ? '1' : '0'); } catch {}
+  if (muted) {
+    stopMusic();
+  } else {
+    startMusic();
+  }
+  return muted;
+}
+
+export function startMusic() {
+  if (isMusicMuted()) return;
+  if (bgMusic && !bgMusic.paused) return;
+  try {
+    if (!bgMusic) {
+      bgMusic = new Audio('/Rainy_Day_Rhodes.mp3');
+      bgMusic.loop = true;
+      bgMusic.volume = 0.15;
+    }
+    bgMusic.play().catch(() => {});
+  } catch {}
+}
+
+export function stopMusic() {
+  try {
+    if (bgMusic) {
+      bgMusic.pause();
+      bgMusic.currentTime = 0;
+    }
+  } catch {}
+}
+
+export function setMusicVolume(vol) {
+  if (bgMusic) bgMusic.volume = Math.max(0, Math.min(1, vol));
+}
+
+// ── Pause music when app is backgrounded or closed ──
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopMusic();
+  } else {
+    startMusic();
+  }
+});
+document.addEventListener('pause', () => stopMusic());   // Capacitor/Cordova
+window.addEventListener('beforeunload', () => stopMusic());

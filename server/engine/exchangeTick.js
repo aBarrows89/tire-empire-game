@@ -57,7 +57,10 @@ function generateMarketReport(exchangeState, day) {
     return { ticker: s.ticker, companyName: s.companyName, direction, confidence };
   });
 
-  return { basicSummary, topMovers, sentiment, crashActive, sectorAnalysis, predictions, day };
+  // Recent bankruptcies (last 30 days)
+  const recentBankruptcies = (exchangeState.bankruptcies || []).filter(b => day - b.day <= 30);
+
+  return { basicSummary, topMovers, sentiment, crashActive, sectorAnalysis, predictions, recentBankruptcies, day };
 }
 
 /**
@@ -182,6 +185,19 @@ export function runExchangeTick(exchangeState, players, day) {
         }
         if (!modifiedPlayers.includes(seller)) modifiedPlayers.push(seller);
       }
+
+      // Persist trade to stock trade log
+      if (!exchangeState.stockTradeLogs) exchangeState.stockTradeLogs = {};
+      if (!exchangeState.stockTradeLogs[ticker]) exchangeState.stockTradeLogs[ticker] = [];
+      const buyerName = players.find(p => p.id === fill.buyerId)?.game_state?.companyName || 'Unknown';
+      const sellerName = players.find(p => p.id === fill.sellerId)?.game_state?.companyName || 'Unknown';
+      exchangeState.stockTradeLogs[ticker].unshift({
+        day, buyerId: fill.buyerId, buyerName, sellerId: fill.sellerId, sellerName,
+        qty: fill.qty, price: fill.price,
+      });
+      if (exchangeState.stockTradeLogs[ticker].length > 50) {
+        exchangeState.stockTradeLogs[ticker] = exchangeState.stockTradeLogs[ticker].slice(0, 50);
+      }
     }
   }
 
@@ -215,8 +231,8 @@ export function runExchangeTick(exchangeState, players, day) {
   // 6. Update commodity indices
   updateCommodityIndices(exchangeState.commodities);
 
-  // 7. Update sentiment, detect/apply crashes
-  updateSentiment(exchangeState.sentiment, exchangeState.stocks, day);
+  // 7. Update sentiment, detect/apply crashes (bankruptcies factor into stability)
+  updateSentiment(exchangeState.sentiment, exchangeState.stocks, day, exchangeState.bankruptcies);
 
   // 8. Weekly: distribute dividends
   if (day % DIVIDEND_FREQUENCY === 0 && day !== exchangeState.lastDividendDay) {

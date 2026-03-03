@@ -12,6 +12,8 @@ import { SOURCES } from '../../shared/constants/sources.js';
 import { SUPPLIERS } from '../../shared/constants/suppliers.js';
 import { getSupplierRelTier } from '../../shared/constants/supplierRelations.js';
 import { P2P_FEES } from '../../shared/constants/marketplace.js';
+import { GLOBAL_EVENTS, GLOBAL_EVENT_CHANCE, GLOBAL_EVENT_MAX_CONCURRENT } from '../../shared/constants/globalEvents.js';
+import { MONET } from '../../shared/constants/monetization.js';
 import { broadcast } from './broadcast.js';
 import { updateAIPrices } from '../engine/aiPriceWar.js';
 import { saveTournament } from '../db/queries.js';
@@ -130,7 +132,8 @@ function applyAutoSource(g) {
     if (cal.dayOfWeek !== 0 && cal.dayOfWeek !== 5 && cal.dayOfWeek !== 6) return;
   }
 
-  const maxSpend = Math.floor(g.cash * 0.5);
+  // Cap auto-source spending: min of 10% cash or $25k per day
+  const maxSpend = Math.min(Math.floor(g.cash * 0.10), 25000);
   let spent = 0;
   let totalAdded = 0;
 
@@ -177,7 +180,8 @@ function applyAutoSource(g) {
 function applyAutoSupplier(g) {
   if (!g.autoSuppliers || g.autoSuppliers.length === 0) return;
 
-  const maxSpend = Math.floor(g.cash * 0.5);
+  // Cap auto-supplier spending: min of 15% cash or $50k per day
+  const maxSpend = Math.min(Math.floor(g.cash * 0.15), 50000);
   let spent = 0;
 
   for (const config of g.autoSuppliers) {
@@ -427,6 +431,153 @@ export async function runTick(clients) {
         cityId: (p.game_state.locations || [])[0]?.cityId || null,
       }));
 
+    // ── GLOBAL EVENT TRIGGERING ──
+    if (!game.economy) game.economy = {};
+    if (!game.economy.activeGlobalEvents) game.economy.activeGlobalEvents = [];
+
+    // Expire ended events
+    game.economy.activeGlobalEvents = game.economy.activeGlobalEvents.filter(e => day <= e.endDay);
+
+    // Roll for new events (max 2 concurrent)
+    if (game.economy.activeGlobalEvents.length < GLOBAL_EVENT_MAX_CONCURRENT) {
+      const activeIds = new Set(game.economy.activeGlobalEvents.map(e => e.id));
+      for (const evt of GLOBAL_EVENTS) {
+        if (activeIds.has(evt.id)) continue;
+        if (game.economy.activeGlobalEvents.length >= GLOBAL_EVENT_MAX_CONCURRENT) break;
+        if (Math.random() < GLOBAL_EVENT_CHANCE) {
+          const duration = evt.durationMin + Math.floor(Math.random() * (evt.durationMax - evt.durationMin + 1));
+          game.economy.activeGlobalEvents.push({
+            id: evt.id,
+            startDay: day,
+            endDay: day + duration,
+          });
+          activeIds.add(evt.id);
+        }
+      }
+    }
+
+    // ── TC VALUE FLUCTUATION — multi-factor economic model ──
+    if (!game.economy.tcValue) game.economy.tcValue = 50000;
+    if (!game.economy.tcMetrics) game.economy.tcMetrics = {};
+    if (!game.economy.tcHistory) game.economy.tcHistory = [];
+
+    // Collect economic data from all players
+    const realPlayers = players.filter(p => !p.game_state.isAI);
+    const totalCash = players.reduce((sum, p) =>
+      sum + (p.game_state.cash || 0) + (p.game_state.bankBalance || 0), 0
+    );
+    let totalRubberOutput = 0;
+    let totalTireProduction = 0;
+    let recentFarmLabPurchases = 0;
+    let topPlayerId = null;
+    let topPlayerWealth = 0;
+
+    for (const p of players) {
+      const gs = p.game_state;
+      // Rubber production capacity (daily)
+      if (gs.factory?.rubberFarm) {
+        const fl = gs.factory.rubberFarm.level || 1;
+        totalRubberOutput += [0, 5, 15, 30][fl] || 5;
+      }
+      if (gs.factory?.syntheticLab) {
+        const sl = gs.factory.syntheticLab.level || 1;
+        totalRubberOutput += [0, 8, 20, 40][sl] || 8;
+      }
+      // Tire manufacturing (queue items)
+      totalTireProduction += (gs.factory?.productionQueue || []).reduce((a, q) => a + (q.qty || 0), 0);
+      // Recent high-value TC purchases (farm/lab bought in last 7 days)
+      if (gs.factory?.rubberFarm?.purchasedDay && day - gs.factory.rubberFarm.purchasedDay <= 7) recentFarmLabPurchases++;
+      if (gs.factory?.syntheticLab?.purchasedDay && day - gs.factory.syntheticLab.purchasedDay <= 7) recentFarmLabPurchases++;
+      // Track #1 player by wealth
+      const w = getWealth(gs);
+      if (w > topPlayerWealth) { topPlayerWealth = w; topPlayerId = p.id; }
+    }
+
+    if (day % 7 === 0) {
+      const prevTcValue = game.economy.tcValue;
+
+      // ── Factor 1: TC Supply (existing) ──
+      // More TC in circulation = each TC worth less
+      const tcSupplyFactor = totalTC > 0 ? Math.max(0.6, Math.min(1.8, 25000 / totalTC)) : 1.0;
+
+      // ── Factor 2: Velocity of Money (Cash Inflation) ──
+      // Total cash across all players. More cash = inflation = TC buys less cash
+      // Baseline: $500K total is "normal" for ~10 players
+      const expectedCash = Math.max(1, players.length) * 50000;
+      const cashRatio = totalCash / Math.max(1, expectedCash);
+      // cashRatio > 1 = lots of cash = inflation = TC value drops
+      // cashRatio < 1 = cash scarce = deflation = TC value rises
+      const velocityFactor = Math.max(0.7, Math.min(1.5, 1.0 / Math.sqrt(Math.max(0.1, cashRatio))));
+
+      // ── Factor 3: Resource Scarcity (Rubber) ──
+      // High rubber output + low manufacturing = oversupply = TC cheaper
+      // Low rubber output + high manufacturing = shortage = TC more valuable
+      const rubberDemandRatio = totalRubberOutput > 0
+        ? Math.max(0.1, totalTireProduction / (totalRubberOutput * 7)) // weekly production vs daily output*7
+        : 1.0;
+      const rubberFactor = Math.max(0.8, Math.min(1.3, 0.85 + rubberDemandRatio * 0.15));
+
+      // ── Factor 4: Player Sentiment (Demand) ──
+      // Each recent farm/lab purchase signals TC demand → pushes value up
+      const sentimentBoost = 1 + recentFarmLabPurchases * 0.02; // +2% per purchase, up to ~10%
+      const sentimentFactor = Math.min(1.15, sentimentBoost);
+
+      // ── Factor 5: Market Maker ──
+      // #1 player's TC holdings influence the rate more heavily
+      let marketMakerFactor = 1.0;
+      if (topPlayerId) {
+        const topPlayer = players.find(p => p.id === topPlayerId);
+        if (topPlayer) {
+          const topTC = topPlayer.game_state.tireCoins || 0;
+          // If #1 player is hoarding TC, value rises; if spending, it dips
+          const topTcShare = totalTC > 0 ? topTC / totalTC : 0;
+          // Share > 0.3 = heavy hoarder = +5% value; < 0.1 = selling = -3% value
+          marketMakerFactor = 1 + (topTcShare - 0.2) * 0.15;
+          marketMakerFactor = Math.max(0.92, Math.min(1.10, marketMakerFactor));
+        }
+      }
+
+      // ── Factor 6: Global Event Chaos ──
+      let chaosFactor = 1.0;
+      for (const ge of (game.economy.activeGlobalEvents || [])) {
+        if (ge.id === 'rubber_shortage') chaosFactor *= 1.08;    // scarcity → TC up
+        if (ge.id === 'economic_boom') chaosFactor *= 0.95;      // cash flows → TC down
+        if (ge.id === 'steel_surplus') chaosFactor *= 0.97;      // cheap materials → TC down
+        if (ge.id === 'safety_recall') chaosFactor *= 1.05;      // uncertainty → TC up
+      }
+      chaosFactor = Math.max(0.85, Math.min(1.20, chaosFactor));
+
+      // ── Random noise ±5% ──
+      const tcNoise = 1 + (Math.random() - 0.5) * 0.10;
+
+      // ── Combine all factors ──
+      const combinedMult = tcSupplyFactor * velocityFactor * rubberFactor * sentimentFactor * marketMakerFactor * chaosFactor * tcNoise;
+      game.economy.tcValue = Math.round(
+        Math.max(25000, Math.min(100000, game.economy.tcValue * combinedMult))
+      );
+
+      // Store metrics for dashboard
+      game.economy.tcMetrics = {
+        day,
+        tcSupplyFactor: +tcSupplyFactor.toFixed(3),
+        velocityFactor: +velocityFactor.toFixed(3),
+        rubberFactor: +rubberFactor.toFixed(3),
+        sentimentFactor: +sentimentFactor.toFixed(3),
+        marketMakerFactor: +marketMakerFactor.toFixed(3),
+        chaosFactor: +chaosFactor.toFixed(3),
+        totalCash: Math.round(totalCash),
+        totalRubberOutput,
+        totalTireProduction,
+        recentFarmLabPurchases,
+        topPlayerId,
+        prevTcValue,
+      };
+
+      // History for charting (keep last 52 weeks)
+      game.economy.tcHistory.push({ day, value: game.economy.tcValue });
+      if (game.economy.tcHistory.length > 52) game.economy.tcHistory.shift();
+    }
+
     const shared = {
       cities: CITIES,
       aiShops: game.ai_shops || [],
@@ -436,6 +587,9 @@ export async function runTick(clients) {
       totalTC,
       factorySuppliers,
       wholesaleSuppliers,
+      globalEvents: game.economy.activeGlobalEvents || [],
+      tcValue: game.economy.tcValue || 50000,
+      tcMetrics: game.economy.tcMetrics || {},
     };
 
     const cal = getCalendar(day);
@@ -500,21 +654,34 @@ export async function runTick(clients) {
     if (day % 7 === 0 && players.length > 0) {
       try {
         const ranked = players
-          .map(p => ({
-            id: p.id,
-            name: p.game_state.companyName || p.game_state.name || 'Unknown',
-            revGrowth: (p.game_state.dayRev || 0) - (p.game_state.prevDayRev || 0),
-            totalRev: p.game_state.totalRev || 0,
-          }))
-          .sort((a, b) => b.revGrowth - a.revGrowth);
+          .map(p => {
+            const gs = p.game_state;
+            const snapTotalRev = gs.weeklySnapshot?.totalRev ?? gs.totalRev ?? 0;
+            const weeklyRevenue = Math.max(0, (gs.totalRev || 0) - snapTotalRev);
+            return {
+              player_id: p.id,
+              name: gs.companyName || gs.name || 'Unknown',
+              weeklyRevenue,
+              totalRev: gs.totalRev || 0,
+              wealth: getWealth(gs),
+              locations: (gs.locations || []).length,
+              reputation: gs.reputation || 0,
+            };
+          })
+          .sort((a, b) => b.weeklyRevenue - a.weeklyRevenue);
 
         const prizes = [20, 10, 5];
         for (let i = 0; i < Math.min(ranked.length, prizes.length); i++) {
           const winner = players.find(p => p.id === ranked[i].id);
           if (winner) {
-            winner.game_state.tireCoins = (winner.game_state.tireCoins || 0) + prizes[i];
-            winner.game_state.log = winner.game_state.log || [];
-            winner.game_state.log.push({ msg: `🏆 Weekly tournament: #${i + 1} place (+${prizes[i]} TC)`, cat: 'event' });
+            const ws = winner.game_state;
+            let wCap = MONET.tcStorage.baseCap;
+            if (ws.isPremium) wCap += MONET.tcStorage.premiumBonus;
+            const wLvl = ws.tcStorageLevel || 0;
+            for (let j = 0; j < wLvl && j < MONET.tcStorage.upgrades.length; j++) wCap += MONET.tcStorage.upgrades[j].addCap;
+            ws.tireCoins = Math.min((ws.tireCoins || 0) + prizes[i], wCap);
+            ws.log = ws.log || [];
+            ws.log.push({ msg: `🏆 Weekly tournament: #${i + 1} place (+${prizes[i]} TC)`, cat: 'event' });
             await savePlayerState(winner.id, winner.game_state);
           }
         }
@@ -531,8 +698,14 @@ export async function runTick(clients) {
 
     // ── Stock Exchange Tick ──
     try {
+      // Ensure exchange state is initialized
+      if (!game.economy) game.economy = {};
+      if (!game.economy.exchange) {
+        const { initExchange } = await import('../engine/exchange.js');
+        game.economy.exchange = initExchange();
+      }
       const exchangeResult = runExchangeTick(
-        game.economy?.exchange || null,
+        game.economy.exchange,
         players,
         day
       );
@@ -558,6 +731,12 @@ export async function runTick(clients) {
 
     // Broadcast tick to all clients
     const exchangeState = game.economy?.exchange;
+    // Build global events info for broadcast
+    const globalEventsInfo = (game.economy.activeGlobalEvents || []).map(e => {
+      const def = GLOBAL_EVENTS.find(d => d.id === e.id);
+      return def ? { id: e.id, name: def.name, icon: def.icon, daysLeft: e.endDay - day, description: def.description } : null;
+    }).filter(Boolean);
+
     broadcast(clients, {
       type: 'tick',
       day,
@@ -571,6 +750,10 @@ export async function runTick(clients) {
         dayVolume: exchangeState.dayVolume,
         crashActive: exchangeState.sentiment?.crashActive,
       } : null,
+      globalEvents: globalEventsInfo,
+      tcValue: game.economy.tcValue || 50000,
+      tcMetrics: game.economy.tcMetrics || {},
+      tcHistory: game.economy.tcHistory || [],
     });
 
     if (day % 30 === 0) {
@@ -581,14 +764,16 @@ export async function runTick(clients) {
   }
 }
 
+let currentTickMs = TICK_MS;
+
 /**
  * Start the tick loop.
  * @param {Set} clients - WebSocket client set
  */
 export function startTickLoop(clients) {
   if (tickInterval) return;
-  console.log(`Starting tick loop (${TICK_MS}ms interval = 1 game day)`);
-  tickInterval = setInterval(() => runTick(clients), TICK_MS);
+  console.log(`Starting tick loop (${currentTickMs}ms interval = 1 game day)`);
+  tickInterval = setInterval(() => runTick(clients), currentTickMs);
 }
 
 /**
@@ -601,3 +786,16 @@ export function stopTickLoop() {
     console.log('Tick loop stopped');
   }
 }
+
+/** Change tick speed at runtime. */
+export function setTickSpeed(ms, clients) {
+  currentTickMs = ms;
+  if (tickInterval) {
+    clearInterval(tickInterval);
+    tickInterval = setInterval(() => runTick(clients), currentTickMs);
+    console.log(`Tick speed changed to ${currentTickMs}ms`);
+  }
+}
+
+export function getTickSpeed() { return currentTickMs; }
+export function isTickRunning() { return tickInterval !== null; }

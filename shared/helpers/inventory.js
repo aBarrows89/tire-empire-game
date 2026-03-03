@@ -3,7 +3,11 @@ import { STORAGE } from '../constants/storage.js';
 const LOC_BASE_CAP = 50; // base tire capacity per shop location
 
 export function getCap(g) {
-  return g.storage.reduce((a, s) => a + STORAGE[s.type].cap, 0) +
+  const hasPremiumVan = (g.cosmetics || []).includes('premium_van');
+  return g.storage.reduce((a, s) => {
+    if (s.type === 'van' && hasPremiumVan) return a + 80;
+    return a + STORAGE[s.type].cap;
+  }, 0) +
     g.locations.reduce((a, l) => a + LOC_BASE_CAP + (l.locStorage || 0), 0) +
     (g.bonusStorage || 0);
 }

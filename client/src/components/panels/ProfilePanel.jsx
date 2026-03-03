@@ -3,7 +3,7 @@ import { useGame } from '../../context/GameContext.jsx';
 import { API_BASE, getHeaders, postAction } from '../../api/client.js';
 import { getCalendar, DAYS_PER_YEAR } from '@shared/helpers/calendar.js';
 import { SkeletonProfileCard } from '../SkeletonLoader.jsx';
-import { isMuted, toggleMute } from '../../api/sounds.js';
+import { isMuted, toggleMute, isMusicMuted, toggleMusic } from '../../api/sounds.js';
 import RewardedAdButton from '../RewardedAdButton.jsx';
 
 export default function ProfilePanel() {
@@ -17,6 +17,7 @@ export default function ProfilePanel() {
   const [resetting, setResetting] = useState(false);
   const [showPremium, setShowPremium] = useState(false);
   const [muted, setMuted] = useState(isMuted);
+  const [musicOff, setMusicOff] = useState(isMusicMuted);
 
   const targetId = isOther ? viewingId : g?.id;
 
@@ -169,7 +170,8 @@ export default function ProfilePanel() {
       {/* Sound settings (own profile only) */}
       {!isOther && (
         <div className="card">
-          <div className="row-between">
+          <div className="card-title">Audio</div>
+          <div className="row-between mb-4">
             <span className="text-sm">Sound Effects</span>
             <button
               className={`btn btn-sm ${muted ? 'btn-outline' : 'btn-green'}`}
@@ -178,6 +180,82 @@ export default function ProfilePanel() {
               {muted ? '\u{1F507} Muted' : '\u{1F50A} On'}
             </button>
           </div>
+          <div className="row-between">
+            <span className="text-sm">Background Music</span>
+            <button
+              className={`btn btn-sm ${musicOff ? 'btn-outline' : 'btn-green'}`}
+              onClick={() => setMusicOff(toggleMusic())}
+            >
+              {musicOff ? '\u{1F507} Off' : '\u{1F3B5} On'}
+            </button>
+          </div>
+          <div className="text-xs text-dim" style={{ marginTop: 6 }}>Rainy Day Rhodes</div>
+        </div>
+      )}
+
+      {/* Notification Preferences (own profile only) */}
+      {!isOther && (
+        <div className="card">
+          <div className="card-title">Notifications</div>
+          <div className="text-xs text-dim mb-4">Choose which alerts you receive each day.</div>
+          {[
+            { key: 'globalEvents', label: 'Global Market Events', desc: 'Rubber shortages, port strikes, economic booms' },
+            { key: 'cashReserve', label: 'Cash Reserve Warning', desc: 'Alert when cash drops below your threshold' },
+            { key: 'tcStorage', label: 'TC Storage Alerts', desc: 'Warning when TireCoin storage is near capacity' },
+            { key: 'inventory', label: 'Inventory Alerts', desc: 'Low stock and storage full warnings' },
+            { key: 'loanPayments', label: 'Loan Payment Reminders', desc: 'Reminder before weekly loan payments' },
+            { key: 'factoryProduction', label: 'Factory Production', desc: 'Batch completion and rubber surplus alerts' },
+          ].map(item => {
+            const prefs = g.notifications || {};
+            const isOn = prefs[item.key] !== false;
+            return (
+              <div key={item.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ flex: 1 }}>
+                  <div className="text-sm font-bold">{item.label}</div>
+                  <div className="text-xs text-dim">{item.desc}</div>
+                </div>
+                <button
+                  className={`btn btn-sm ${isOn ? 'btn-green' : 'btn-outline'}`}
+                  style={{ minWidth: 50, marginLeft: 8 }}
+                  onClick={async () => {
+                    await postAction('updateNotifications', { [item.key]: !isOn });
+                    refreshState();
+                  }}
+                >
+                  {isOn ? 'ON' : 'OFF'}
+                </button>
+              </div>
+            );
+          })}
+          {/* Cash reserve threshold */}
+          {(g.notifications || {}).cashReserve !== false && (
+            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="text-sm text-dim">Warn below $</span>
+              <input
+                type="number"
+                defaultValue={(g.notifications || {}).cashReserveThreshold || 5000}
+                min={0}
+                step={1000}
+                style={{
+                  width: 100,
+                  padding: '4px 8px',
+                  borderRadius: 6,
+                  border: '1px solid var(--border)',
+                  background: 'var(--card-bg)',
+                  color: 'var(--text)',
+                  fontSize: 14,
+                }}
+                onBlur={async (e) => {
+                  const val = parseInt(e.target.value, 10);
+                  if (!isNaN(val) && val !== ((g.notifications || {}).cashReserveThreshold || 5000)) {
+                    await postAction('updateNotifications', { cashReserveThreshold: val });
+                    refreshState();
+                  }
+                }}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+              />
+            </div>
+          )}
         </div>
       )}
 

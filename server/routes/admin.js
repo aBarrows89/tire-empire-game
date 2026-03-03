@@ -1,15 +1,40 @@
 import { Router } from 'express';
 import { adminAuthMiddleware } from '../middleware/adminAuth.js';
 import {
-  getPlayer, savePlayerState, getAllActivePlayers, getGame,
+  getPlayer, savePlayerState, getAllActivePlayers, getGame, saveGame,
   getChatMessages, deleteChatMessage, getChatMutes, setChatMute, removeChatMute,
 } from '../db/queries.js';
-import { TICK_MS, NODE_ENV, STORAGE_TYPE } from '../config.js';
+import { NODE_ENV, STORAGE_TYPE } from '../config.js';
 import { getWealth } from '../../shared/helpers/wealth.js';
 import { init } from '../engine/init.js';
+import { GLOBAL_EVENTS } from '../../shared/constants/globalEvents.js';
 
 const router = Router();
 router.use(adminAuthMiddleware);
+
+// ── Helper: push to audit log ──
+async function auditLog(req, action, targetId, details) {
+  try {
+    const game = await getGame('default');
+    if (!game) return;
+    if (!game.economy) game.economy = {};
+    if (!game.economy.adminLog) game.economy.adminLog = [];
+    game.economy.adminLog.push({
+      timestamp: Date.now(),
+      adminId: req.adminId,
+      action,
+      targetId: targetId || null,
+      details: details || {},
+    });
+    // Keep last 500 entries
+    if (game.economy.adminLog.length > 500) {
+      game.economy.adminLog = game.economy.adminLog.slice(-500);
+    }
+    await saveGame('default', game.day, game.economy, game.ai_shops, game.liquidation || []);
+  } catch (e) {
+    console.error('Audit log error:', e);
+  }
+}
 
 // ═══════════════════════════════════════
 // PLAYER MANAGEMENT
@@ -46,7 +71,6 @@ router.get('/players', async (req, res) => {
       );
     }
 
-    // Sort by wealth descending
     filtered.sort((a, b) => b.wealth - a.wealth);
 
     const total = filtered.length;
@@ -74,16 +98,69 @@ router.post('/players/:id/edit', async (req, res) => {
     const player = await getPlayer(req.params.id);
     if (!player) return res.status(404).json({ error: 'Player not found' });
     const g = player.game_state;
+    const changes = {};
 
-    const { cash, tireCoins, reputation } = req.body;
-    if (cash !== undefined) g.cash = Number(cash);
-    if (tireCoins !== undefined) g.tireCoins = Number(tireCoins);
-    if (reputation !== undefined) g.reputation = Number(reputation);
+    const { cash, tireCoins, reputation, day, hasFactory, factoryLevel, tcStorageLevel, cosmetics, inventory, companyName, name } = req.body;
+    if (companyName !== undefined) { g.companyName = String(companyName); changes.companyName = g.companyName; }
+    if (name !== undefined) { g.name = String(name); changes.name = g.name; }
+    if (cash !== undefined) { g.cash = Number(cash); changes.cash = g.cash; }
+    if (tireCoins !== undefined) { g.tireCoins = Number(tireCoins); changes.tireCoins = g.tireCoins; }
+    if (reputation !== undefined) { g.reputation = Number(reputation); changes.reputation = g.reputation; }
+    if (day !== undefined) { g.day = Number(day); changes.day = g.day; }
+    if (tcStorageLevel !== undefined) { g.tcStorageLevel = Number(tcStorageLevel); changes.tcStorageLevel = g.tcStorageLevel; }
+
+    // Factory grant/revoke
+    if (hasFactory !== undefined) {
+      if (hasFactory && !g.factory) {
+        g.factory = {
+          level: 1, brandName: g.companyName || 'Brand', qualityRating: 0.82,
+          brandReputation: 0, totalProduced: 0, dailyCapacity: 50, overhead: 50000,
+          completedResearch: [], earnedCerts: [], factoryStaff: {},
+          rubberFarm: null, syntheticLab: null, rubberSupply: 0,
+        };
+        g.hasFactory = true;
+        changes.hasFactory = true;
+      } else if (!hasFactory) {
+        g.factory = null;
+        g.hasFactory = false;
+        changes.hasFactory = false;
+      }
+    }
+
+    // Factory level
+    if (factoryLevel !== undefined && g.factory) {
+      const lvl = Math.max(1, Math.min(3, Number(factoryLevel)));
+      g.factory.level = lvl;
+      const caps = { 1: 50, 2: 150, 3: 500 };
+      const quals = { 1: 0.85, 2: 0.92, 3: 1.0 };
+      g.factory.dailyCapacity = caps[lvl] || 50;
+      if (g.factory.qualityRating > quals[lvl]) g.factory.qualityRating = quals[lvl];
+      changes.factoryLevel = lvl;
+    }
+
+    // Cosmetics
+    if (cosmetics && Array.isArray(cosmetics)) {
+      if (!g.cosmetics) g.cosmetics = [];
+      for (const c of cosmetics) {
+        if (!g.cosmetics.includes(c)) g.cosmetics.push(c);
+      }
+      changes.cosmetics = cosmetics;
+    }
+
+    // Inventory
+    if (inventory && typeof inventory === 'object') {
+      if (!g.inventory) g.inventory = {};
+      for (const [type, qty] of Object.entries(inventory)) {
+        g.inventory[type] = (g.inventory[type] || 0) + Number(qty);
+      }
+      changes.inventory = inventory;
+    }
 
     g.log = g.log || [];
     g.log.push(`[ADMIN] State edited by admin ${req.adminId}`);
 
     await savePlayerState(req.params.id, g);
+    await auditLog(req, 'editPlayer', req.params.id, changes);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -102,8 +179,8 @@ router.post('/players/:id/ban', async (req, res) => {
     g.log.push(`[ADMIN] ${banned ? 'Banned' : 'Unbanned'} by admin ${req.adminId}`);
 
     await savePlayerState(req.params.id, g);
+    await auditLog(req, banned ? 'ban' : 'unban', req.params.id, {});
 
-    // Disconnect their WebSocket if banning
     if (banned) {
       const clients = req.app.locals.wsClients || new Set();
       for (const client of clients) {
@@ -130,6 +207,7 @@ router.post('/players/:id/reset', async (req, res) => {
     freshState.log = [`[ADMIN] Progress reset by admin ${req.adminId}`];
 
     await savePlayerState(req.params.id, freshState);
+    await auditLog(req, 'resetPlayer', req.params.id, {});
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -153,6 +231,7 @@ router.post('/players/:id/set-premium', async (req, res) => {
     g.log.push(`[ADMIN] Premium ${isPremium ? 'granted' : 'revoked'} by admin ${req.adminId}`);
 
     await savePlayerState(req.params.id, g);
+    await auditLog(req, 'setPremium', req.params.id, { isPremium });
     res.json({ ok: true, isPremium });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -178,7 +257,6 @@ router.delete('/chat/messages/:id', async (req, res) => {
     const deleted = await deleteChatMessage(req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Message not found' });
 
-    // Broadcast deletion to all connected clients
     const clients = req.app.locals.wsClients || new Set();
     const payload = JSON.stringify({ type: 'chatDelete', messageId: req.params.id });
     for (const client of clients) {
@@ -212,7 +290,7 @@ router.post('/chat/mute', async (req, res) => {
       expiresAt,
       reason: reason || '',
     });
-
+    await auditLog(req, 'mute', playerId, { duration, reason });
     res.json({ ok: true, expiresAt });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -224,6 +302,7 @@ router.post('/chat/unmute', async (req, res) => {
     const { playerId } = req.body;
     if (!playerId) return res.status(400).json({ error: 'Missing playerId' });
     await removeChatMute(playerId);
+    await auditLog(req, 'unmute', playerId, {});
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -231,12 +310,77 @@ router.post('/chat/unmute', async (req, res) => {
 });
 
 // ═══════════════════════════════════════
-// ECONOMY DASHBOARD
+// GLOBAL EVENTS MANAGEMENT
+// ═══════════════════════════════════════
+
+router.get('/events', async (req, res) => {
+  try {
+    const game = await getGame('default');
+    const active = (game?.economy?.activeGlobalEvents || []).map(e => {
+      const def = GLOBAL_EVENTS.find(d => d.id === e.id);
+      return { ...e, name: def?.name, icon: def?.icon, daysLeft: e.endDay - (game?.day || 0) };
+    });
+    const available = GLOBAL_EVENTS.map(e => ({ id: e.id, name: e.name, icon: e.icon, durationMin: e.durationMin, durationMax: e.durationMax }));
+    res.json({ active, available, day: game?.day || 0 });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/events/trigger', async (req, res) => {
+  try {
+    const { eventId, duration } = req.body;
+    const def = GLOBAL_EVENTS.find(e => e.id === eventId);
+    if (!def) return res.status(400).json({ error: 'Unknown event ID' });
+
+    const game = await getGame('default');
+    if (!game) return res.status(500).json({ error: 'Game not found' });
+    if (!game.economy) game.economy = {};
+    if (!game.economy.activeGlobalEvents) game.economy.activeGlobalEvents = [];
+
+    if (game.economy.activeGlobalEvents.some(e => e.id === eventId)) {
+      return res.status(400).json({ error: 'Event already active' });
+    }
+
+    const dur = duration ? Number(duration) : def.durationMin + Math.floor(Math.random() * (def.durationMax - def.durationMin + 1));
+    game.economy.activeGlobalEvents.push({ id: eventId, startDay: game.day, endDay: game.day + dur });
+
+    await saveGame('default', game.day, game.economy, game.ai_shops, game.liquidation || []);
+    await auditLog(req, 'triggerEvent', null, { eventId, duration: dur });
+    res.json({ ok: true, event: eventId, duration: dur });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/events/cancel', async (req, res) => {
+  try {
+    const { eventId } = req.body;
+    const game = await getGame('default');
+    if (!game) return res.status(500).json({ error: 'Game not found' });
+
+    const before = (game.economy?.activeGlobalEvents || []).length;
+    game.economy.activeGlobalEvents = (game.economy.activeGlobalEvents || []).filter(e => e.id !== eventId);
+    if (game.economy.activeGlobalEvents.length === before) {
+      return res.status(400).json({ error: 'Event not active' });
+    }
+
+    await saveGame('default', game.day, game.economy, game.ai_shops, game.liquidation || []);
+    await auditLog(req, 'cancelEvent', null, { eventId });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════
+// ECONOMY CONTROLS
 // ═══════════════════════════════════════
 
 router.get('/economy', async (req, res) => {
   try {
     const all = await getAllActivePlayers();
+    const game = await getGame('default');
     const real = all.filter(p => !p.game_state?.isAI && p.game_state?.companyName);
 
     let totalCash = 0, totalTC = 0, totalRep = 0;
@@ -266,30 +410,157 @@ router.get('/economy', async (req, res) => {
       playerCount: all.length,
       activePlayerCount: real.length,
       top10: withWealth.slice(0, 10),
+      commodities: game?.economy?.commodities || {},
+      tcValue: game?.economy?.tcValue || 50000,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
+router.post('/economy/indices', async (req, res) => {
+  try {
+    const game = await getGame('default');
+    if (!game) return res.status(500).json({ error: 'Game not found' });
+    if (!game.economy?.commodities) return res.status(400).json({ error: 'No commodities data' });
+
+    const changes = {};
+    for (const sym of ['RUBR', 'STEL', 'CHEM']) {
+      if (req.body[sym] !== undefined) {
+        const price = Math.max(10, Number(req.body[sym]));
+        game.economy.commodities[sym].price = price;
+        changes[sym] = price;
+      }
+    }
+
+    await saveGame('default', game.day, game.economy, game.ai_shops, game.liquidation || []);
+    await auditLog(req, 'setIndices', null, changes);
+    res.json({ ok: true, commodities: game.economy.commodities });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/economy/tc-value', async (req, res) => {
+  try {
+    const { value } = req.body;
+    if (!value || Number(value) <= 0) return res.status(400).json({ error: 'Invalid TC value' });
+
+    const game = await getGame('default');
+    if (!game) return res.status(500).json({ error: 'Game not found' });
+    if (!game.economy) game.economy = {};
+
+    game.economy.tcValue = Number(value);
+    await saveGame('default', game.day, game.economy, game.ai_shops, game.liquidation || []);
+    await auditLog(req, 'setTcValue', null, { value: game.economy.tcValue });
+    res.json({ ok: true, tcValue: game.economy.tcValue });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ═══════════════════════════════════════
-// SERVER STATS
+// BROADCAST ANNOUNCEMENTS
+// ═══════════════════════════════════════
+
+router.post('/broadcast', async (req, res) => {
+  try {
+    const { message, severity } = req.body;
+    if (!message) return res.status(400).json({ error: 'Missing message' });
+
+    const clients = req.app.locals.wsClients || new Set();
+    const payload = JSON.stringify({
+      type: 'announcement',
+      message,
+      severity: severity || 'info',
+      timestamp: Date.now(),
+    });
+    let sent = 0;
+    for (const client of clients) {
+      if (client.readyState === 1) { client.send(payload); sent++; }
+    }
+
+    await auditLog(req, 'broadcast', null, { message, severity, sentTo: sent });
+    res.json({ ok: true, sentTo: sent });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════
+// TICK / SERVER CONTROLS
 // ═══════════════════════════════════════
 
 router.get('/server-stats', async (req, res) => {
   try {
     const game = await getGame('default');
     const clients = req.app.locals.wsClients || new Set();
+    const tl = req.app.locals.tickLoop || {};
 
     res.json({
       uptime: Math.round(process.uptime()),
       currentDay: game?.day || 0,
-      tickMs: TICK_MS,
+      tickMs: tl.getTickSpeed ? tl.getTickSpeed() : 20000,
+      tickRunning: tl.isTickRunning ? tl.isTickRunning() : true,
       wsConnections: clients.size,
       storageType: STORAGE_TYPE,
       nodeEnv: NODE_ENV,
       memoryMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
     });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/tick-speed', async (req, res) => {
+  try {
+    const { tickMs } = req.body;
+    const ms = Number(tickMs);
+    if (!ms || ms < 1000 || ms > 120000) return res.status(400).json({ error: 'tickMs must be 1000-120000' });
+
+    const tl = req.app.locals.tickLoop;
+    const clients = req.app.locals.wsClients;
+    if (tl?.setTickSpeed) tl.setTickSpeed(ms, clients);
+
+    await auditLog(req, 'setTickSpeed', null, { tickMs: ms });
+    res.json({ ok: true, tickMs: ms });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/tick/pause', async (req, res) => {
+  try {
+    const tl = req.app.locals.tickLoop;
+    if (tl?.stopTickLoop) tl.stopTickLoop();
+    await auditLog(req, 'pauseTick', null, {});
+    res.json({ ok: true, running: false });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/tick/resume', async (req, res) => {
+  try {
+    const tl = req.app.locals.tickLoop;
+    const clients = req.app.locals.wsClients;
+    if (tl?.startTickLoop) tl.startTickLoop(clients);
+    await auditLog(req, 'resumeTick', null, {});
+    res.json({ ok: true, running: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════
+// AUDIT LOG
+// ═══════════════════════════════════════
+
+router.get('/audit-log', async (req, res) => {
+  try {
+    const game = await getGame('default');
+    const log = (game?.economy?.adminLog || []).slice(-200).reverse();
+    res.json({ log });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
