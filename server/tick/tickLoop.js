@@ -1,7 +1,7 @@
 import { TICK_MS } from '../config.js';
 import { getAllActivePlayers, savePlayerState, getGame, saveGame, upsertLeaderboard, getPlayerListings, updatePlayerListing, getPlayer, removePlayer } from '../db/queries.js';
 import { simDay } from '../engine/simDay.js';
-import { simAIPlayerDay, createAIPlayers, isBotPlayer } from '../engine/aiPlayers.js';
+import { simAIPlayerDay, isBotPlayer } from '../engine/aiPlayers.js';
 import { initAIShops } from '../engine/aiShops.js';
 import { getWealth } from '../../shared/helpers/wealth.js';
 import { getStorageCap, getLocInv, getLocCap, rebuildGlobalInv, getCap, getInv } from '../../shared/helpers/inventory.js';
@@ -29,7 +29,7 @@ const AI_SHOPS_PER_REAL_PLAYER = 3;   // Each real player displaces ~3 AI shops
 const AI_PLAYERS_PER_REAL_PLAYER = 2; // Each real player displaces ~2 AI players
 const MAX_AI_REMOVALS_PER_DAY = 5;    // Don't remove too many at once (gradual)
 const MIN_AI_SHOPS = 20;              // Keep a few AI shops so new players have some competition
-const MIN_AI_PLAYERS = 2;             // Keep a couple AI players for leaderboard variety
+const MIN_AI_PLAYERS = 0;             // Phase out all legacy AI — stealth bots are admin-managed
 
 /**
  * Gradually phase out AI shops and AI players as real players join.
@@ -390,16 +390,7 @@ export async function runTick(clients) {
       console.log(`[AI Init] Seeded ${game.ai_shops.length} AI shops`);
     }
 
-    // Seed AI players on first tick if none exist
-    const hasAI = players.some(p => p.game_state.isAI);
-    if (!hasAI) {
-      console.log('[AI Init] No AI players found — seeding 12 AI players');
-      const aiPlayers = createAIPlayers(day, 12);
-      for (const ai of aiPlayers) {
-        await savePlayerState(ai.id, ai.game_state);
-      }
-      players = await getAllActivePlayers();
-    }
+    // Legacy AI auto-seeding disabled — use admin panel to create stealth bots instead
 
     const playerPriceAvg = aggregatePlayerPrices(players);
     const aiPriceAvg = aggregateAIPrices(game.ai_shops || []);
