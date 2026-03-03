@@ -62,16 +62,38 @@ export default function StoragePanel() {
         <div className="progress-bar mb-4">
           <div className="progress-fill" style={{ width: `${cap > 0 ? (inv / cap) * 100 : 0}%` }} />
         </div>
+        {(() => {
+          const totalMonthlyRent = g.storage.reduce((a, s) => a + (STORAGE[s.type]?.mo || 0), 0);
+          if (totalMonthlyRent <= 0) return null;
+          const discounted = g.isPremium ? totalMonthlyRent * 0.5 : totalMonthlyRent;
+          return (
+            <div className="row-between text-sm mb-4">
+              <span className="text-dim">Monthly Rent</span>
+              <span>
+                {g.isPremium ? (
+                  <>
+                    <span style={{ textDecoration: 'line-through', color: 'var(--text-dim)', marginRight: 6 }}>${fmt(totalMonthlyRent)}</span>
+                    <span className="font-bold text-green">${fmt(discounted)}</span>
+                    <span className="text-xs text-green" style={{ marginLeft: 4 }}>PRO 50% off</span>
+                  </>
+                ) : (
+                  <span className="font-bold">${fmt(totalMonthlyRent)}/mo</span>
+                )}
+              </span>
+            </div>
+          );
+        })()}
         <div className="text-sm text-dim">Storage units:</div>
         {g.storage.map((s, i) => {
           const st = STORAGE[s.type];
           const sellValue = Math.round((st?.c || 0) * 0.5);
           const canSell = s.type !== 'van' && st;
+          const displayCap = s.type === 'van' && (g.cosmetics || []).includes('premium_van') ? 80 : st?.cap;
           return (
             <div key={i} className="row-between text-sm mt-8">
               <span>{st?.ic} {st?.n}{s.type === 'van' && (g.cosmetics || []).includes('premium_van') && <span className="premium-van-badge">PREMIUM</span>}</span>
               <div className="row gap-8">
-                <span className="text-accent">{st?.cap} cap</span>
+                <span className="text-accent">{displayCap} cap</span>
                 {canSell && (
                   <button
                     className="btn btn-sm btn-outline"
@@ -287,6 +309,29 @@ export default function StoragePanel() {
               </div>
             );
           })}
+          {(() => {
+            const pendingCount = (g.retreadQueue || []).filter(r => (g.day || 1) < r.completionDay).length;
+            if (pendingCount === 0) return null;
+            const tcCost = pendingCount * 30;
+            const canAfford = (g.tireCoins || 0) >= tcCost;
+            return (
+              <button
+                className="btn btn-full btn-sm"
+                style={{ marginTop: 8, background: canAfford ? 'linear-gradient(135deg, #f0c040, #d4a020)' : undefined, color: canAfford ? '#000' : undefined }}
+                disabled={!canAfford || busy === 'instantRetread'}
+                onClick={async () => {
+                  if (!window.confirm(`Instantly complete ${pendingCount} retread${pendingCount !== 1 ? 's' : ''} for ${tcCost} TC?`)) return;
+                  setBusy('instantRetread');
+                  const result = await postAction('instantRetread', {});
+                  await refreshState();
+                  setBusy(null);
+                  if (result?.error) alert(result.error);
+                }}
+              >
+                {busy === 'instantRetread' ? 'Completing...' : `Instant Complete (${tcCost} TC)`}
+              </button>
+            );
+          })()}
         </div>
       )}
 
@@ -302,7 +347,11 @@ export default function StoragePanel() {
                 <span className="text-accent">{st.cap} cap</span>
               </div>
               <div className="text-xs text-dim mb-4">
-                ${fmt(st.c)} upfront · ${fmt(st.mo)}/mo rent
+                ${fmt(st.c)} upfront · {g.isPremium ? (
+                  <><span style={{ textDecoration: 'line-through' }}>${fmt(st.mo)}</span> <span className="text-green">${fmt(Math.round(st.mo * 0.5))}/mo rent</span></>
+                ) : (
+                  <>${fmt(st.mo)}/mo rent</>
+                )}
                 {st.staff > 0 ? ` · ${st.staff} staff required` : ''}
               </div>
               <button

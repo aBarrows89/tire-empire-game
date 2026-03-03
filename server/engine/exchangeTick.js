@@ -12,6 +12,55 @@ import {
 import { uid } from '../../shared/helpers/random.js';
 
 /**
+ * Generate daily market report with basic summary (all players) and premium-only analysis.
+ */
+function generateMarketReport(exchangeState, day) {
+  const stocks = Object.values(exchangeState.stocks);
+  if (stocks.length === 0) return null;
+
+  // Basic summary: ticker, price, change for all stocks
+  const basicSummary = stocks.map(s => ({
+    ticker: s.ticker, companyName: s.companyName, price: s.price, change: s.change,
+  }));
+
+  // Top movers by |change|
+  const topMovers = [...basicSummary].sort((a, b) => Math.abs(b.change) - Math.abs(a.change)).slice(0, 5);
+
+  const sentiment = exchangeState.sentiment?.value || 1;
+  const crashActive = exchangeState.sentiment?.crashActive || false;
+
+  // Premium: sector analysis — avg change and EPS per sector
+  const sectorMap = {};
+  for (const s of stocks) {
+    const sec = s.sector || 'Unknown';
+    if (!sectorMap[sec]) sectorMap[sec] = { changes: [], eps: [] };
+    sectorMap[sec].changes.push(s.change || 0);
+    sectorMap[sec].eps.push(s.eps || 0);
+  }
+  const sectorAnalysis = Object.entries(sectorMap).map(([sector, data]) => ({
+    sector,
+    avgChange: +(data.changes.reduce((a, b) => a + b, 0) / data.changes.length).toFixed(2),
+    avgEPS: +(data.eps.reduce((a, b) => a + b, 0) / data.eps.length).toFixed(2),
+    count: data.changes.length,
+  }));
+
+  // Premium: price predictions based on momentum + fundamental pull + noise
+  const predictions = stocks.map(s => {
+    const momentum = (s.change || 0) * 0.4; // trend continuation
+    const fundamentalPull = s.eps > 0 && s.price > 0
+      ? ((s.eps * 7 - s.price) / s.price) * 10
+      : 0;
+    const noise = (Math.random() - 0.5) * 3;
+    const raw = momentum + fundamentalPull + noise;
+    const direction = raw > 0.5 ? 'up' : raw < -0.5 ? 'down' : 'neutral';
+    const confidence = Math.min(90, Math.max(20, Math.round(50 + Math.abs(raw) * 5)));
+    return { ticker: s.ticker, companyName: s.companyName, direction, confidence };
+  });
+
+  return { basicSummary, topMovers, sentiment, crashActive, sectorAnalysis, predictions, day };
+}
+
+/**
  * Run one exchange tick — called from tickLoop after all simDay calls.
  * @param {object|null} exchangeState — current exchange state or null for first run
  * @param {Array} players — all active players [{id, game_state}]
@@ -142,6 +191,22 @@ export function runExchangeTick(exchangeState, players, day) {
     updateDailyPrice(stock, orderBook, exchangeState.sentiment.value);
   }
 
+  // 4b. Update lastPrice on all player holdings so getWealth uses market price
+  for (const p of players) {
+    const port = p.game_state.stockExchange?.portfolio;
+    if (!port) continue;
+    let touched = false;
+    for (const [ticker, holding] of Object.entries(port)) {
+      if (!holding || holding.qty <= 0) continue;
+      const stock = exchangeState.stocks[ticker];
+      if (stock) {
+        holding.lastPrice = stock.price;
+        touched = true;
+      }
+    }
+    if (touched && !modifiedPlayers.includes(p)) modifiedPlayers.push(p);
+  }
+
   // 5. Recalculate ETFs
   for (const [ticker, etf] of Object.entries(exchangeState.etfs)) {
     recalculateETF(etf, exchangeState.stocks);
@@ -195,6 +260,9 @@ export function runExchangeTick(exchangeState, players, day) {
   for (const ob of Object.values(exchangeState.orderBooks)) {
     ob.dayVolume = 0;
   }
+
+  // 15. Generate daily market report
+  exchangeState.marketReport = generateMarketReport(exchangeState, day);
 
   return { exchangeState, modifiedPlayers };
 }

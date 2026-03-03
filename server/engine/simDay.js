@@ -432,13 +432,19 @@ export function simDay(g, shared = {}) {
     for (const loc of s.locations) {
       if (moved >= driverCap) break;
       if (!loc.inventory) loc.inventory = {};
-      // Move tires from warehouse to this location
-      for (const [k, whQty] of Object.entries(s.warehouseInventory || {})) {
+      // Move tires from warehouse to this location (shuffle to avoid always prioritizing same types)
+      const whEntries = Object.entries(s.warehouseInventory || {}).filter(([, q]) => q > 0);
+      for (let i = whEntries.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [whEntries[i], whEntries[j]] = [whEntries[j], whEntries[i]];
+      }
+      for (const [k, whQty] of whEntries) {
         if (moved >= driverCap) break;
-        if (whQty <= 0) continue;
+        const currentWhQty = s.warehouseInventory[k] || 0;
+        if (currentWhQty <= 0) continue;
         const locFree = getLocCap(loc) - getLocInv(loc);
         if (locFree <= 0) break;
-        const take = Math.min(whQty, locFree, driverCap - moved);
+        const take = Math.min(currentWhQty, locFree, driverCap - moved);
         if (take <= 0) continue;
         s.warehouseInventory[k] -= take;
         loc.inventory[k] = (loc.inventory[k] || 0) + take;
@@ -1065,8 +1071,9 @@ export function simDay(g, shared = {}) {
     s.ecomTotalSpent = (s.ecomTotalSpent || 0) + (ecomPayroll + ecomUpgradeCost) / 30;
   }
 
-  // Storage rent
-  const storageRent = s.storage.reduce((a, st) => a + (STORAGE[st.type]?.mo || 0), 0) / 30;
+  // Storage rent (premium players get 50% off)
+  const rawStorageRent = s.storage.reduce((a, st) => a + (STORAGE[st.type]?.mo || 0), 0) / 30;
+  const storageRent = s.isPremium ? rawStorageRent * 0.5 : rawStorageRent;
   s.cash -= storageRent;
 
   // Shop rent (variable by city cost)
@@ -1282,6 +1289,12 @@ export function simDay(g, shared = {}) {
 
   // ── TIRE COINS — 1 every other day (reduced from 1/day to limit inflation) ──
   if (s.day % 2 === 0) s.tireCoins = (s.tireCoins || 0) + 1;
+
+  // Premium TC stipend — 50 TC every 30 days
+  if (s.isPremium && s.day % 30 === 0) {
+    s.tireCoins = (s.tireCoins || 0) + 50;
+    s.log.push({ msg: 'Monthly PRO bonus: +50 TireCoins', cat: 'event' });
+  }
 
   // Clean up temp event flags
   delete s._tB;

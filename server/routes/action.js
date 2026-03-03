@@ -1412,6 +1412,34 @@ router.post('/', authMiddleware, async (req, res) => {
         break;
       }
 
+      case 'instantRetread': {
+        const { MONET: monetConsts } = await import('../../shared/constants/monetization.js');
+        const pending = (g.retreadQueue || []).filter(r => g.day < r.completionDay);
+        if (pending.length === 0) return res.status(400).json({ error: 'No pending retreads' });
+        const tcCost = pending.length * (monetConsts.instantRetreadCost || 30);
+        if ((g.tireCoins || 0) < tcCost) return res.status(400).json({ error: `Need ${tcCost} TC (you have ${g.tireCoins || 0})` });
+        for (const r of pending) r.completionDay = g.day;
+        g.tireCoins -= tcCost;
+        g.log = g.log || [];
+        g.log.push({ msg: `Instant retread: ${pending.length} tire${pending.length !== 1 ? 's' : ''} completed (${tcCost} TC)`, cat: 'event' });
+        break;
+      }
+
+      case 'buyMarketIntel': {
+        const { MONET: monetConsts2 } = await import('../../shared/constants/monetization.js');
+        const intelCost = monetConsts2.marketIntelCost || 100;
+        const intelDuration = monetConsts2.marketIntelDuration || 7;
+        if ((g.tireCoins || 0) < intelCost) return res.status(400).json({ error: `Need ${intelCost} TC (you have ${g.tireCoins || 0})` });
+        if (g.marketIntel && g.day < g.marketIntel.expiresDay) {
+          return res.status(400).json({ error: `Intel still active (${g.marketIntel.expiresDay - g.day} days remaining)` });
+        }
+        g.marketIntel = { purchasedDay: g.day, expiresDay: g.day + intelDuration };
+        g.tireCoins -= intelCost;
+        g.log = g.log || [];
+        g.log.push({ msg: `Market Intel purchased: ${intelDuration}-day city demand analysis (${intelCost} TC)`, cat: 'event' });
+        break;
+      }
+
       case 'devSetState': {
         if (NODE_ENV === 'production' && (!process.env.ADMIN_KEY || params.adminKey !== process.env.ADMIN_KEY)) {
           return res.status(403).json({ error: 'Not available' });

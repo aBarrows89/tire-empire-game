@@ -33,6 +33,13 @@ export const MONET = {
   interstitialCooldownMs: 300_000,
   interstitialMinPanelSwitches: 3,
 
+  // Instant retread: skip 3-day wait
+  instantRetreadCost: 30, // TC per tire
+
+  // Market Intel heat map
+  marketIntelCost: 100,
+  marketIntelDuration: 7, // days
+
   cosmetics: [
     { id: "gold_name", n: "Gold Company Name", cost: 500, desc: "Your company name glows gold in the header — always visible" },
     { id: "neon_sign", n: "Neon Shop Glow", cost: 300, desc: "Your shop cards pulse with a neon border effect" },

@@ -132,6 +132,8 @@ export function init(playerName = "Player", globalDay = 1) {
     shopInstallments: [],
     // Bonus warehouse capacity purchased with TC
     bonusStorage: 0,
+    // Market Intel (TC purchase — shows city demand heat map)
+    marketIntel: null, // { purchasedDay, expiresDay }
     // Premium membership
     isPremium: false,
     premiumSince: null,

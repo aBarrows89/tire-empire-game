@@ -301,6 +301,64 @@ export default function ExchangePanel() {
             </>
           )}
 
+          {/* Daily Market Report */}
+          {overview?.marketReport && (
+            <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+              <h4 style={{ margin: '0 0 8px' }}>Daily Market Report</h4>
+              {/* Top Movers — all players */}
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4 }}>Top Movers</div>
+                {(overview.marketReport.topMovers || []).map(m => (
+                  <div key={m.ticker} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 3 }}>
+                    <span><strong>${m.ticker}</strong> <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>{m.companyName}</span></span>
+                    <span style={{ color: m.change >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 700 }}>
+                      {m.change >= 0 ? '+' : ''}{m.change?.toFixed(2)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {/* Premium: Predictions */}
+              {g.isPremium ? (
+                <>
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4 }}>Price Predictions</div>
+                    {(overview.marketReport.predictions || []).map(p => (
+                      <div key={p.ticker} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 3 }}>
+                        <span><strong>${p.ticker}</strong></span>
+                        <span>
+                          <span style={{ color: p.direction === 'up' ? 'var(--green)' : p.direction === 'down' ? 'var(--red)' : 'var(--text-dim)', marginRight: 6 }}>
+                            {p.direction === 'up' ? '\u2191' : p.direction === 'down' ? '\u2193' : '\u2192'}
+                          </span>
+                          <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{p.confidence}% conf</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Premium: Sector Analysis */}
+                  {(overview.marketReport.sectorAnalysis || []).length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4 }}>Sector Performance</div>
+                      {overview.marketReport.sectorAnalysis.map(s => (
+                        <div key={s.sector} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 3 }}>
+                          <span>{s.sector} <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>({s.count})</span></span>
+                          <span style={{ color: s.avgChange >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                            {s.avgChange >= 0 ? '+' : ''}{s.avgChange}% avg
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={{ padding: '8px 0', textAlign: 'center', borderTop: '1px solid var(--border)', marginTop: 8 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>
+                    Upgrade to <strong style={{ color: '#f0c040' }}>PRO</strong> for price predictions & sector analysis
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ETFs */}
           {overview?.etfs && Object.keys(overview.etfs).length > 0 && (
             <div style={{ marginBottom: 12 }}>

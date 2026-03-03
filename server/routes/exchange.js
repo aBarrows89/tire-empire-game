@@ -87,6 +87,7 @@ router.get('/overview', authMiddleware, async (req, res) => {
       commodities: exchangeState.commodities, sentiment: exchangeState.sentiment.value,
       crashActive: exchangeState.sentiment.crashActive, indices: exchangeState.indices,
       dayVolume: exchangeState.dayVolume, portfolio,
+      marketReport: exchangeState.marketReport || null,
     });
   } catch (err) { console.error('Exchange overview error:', err); res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -176,8 +177,12 @@ router.post('/order', authMiddleware, async (req, res) => {
     if (!stock) return res.status(400).json({ error: 'Stock not found' });
     const orderBook = exchangeState.orderBooks[ticker];
     if (!orderBook) return res.status(400).json({ error: 'Order book not found' });
-    const maxQty = Math.floor(stock.floatShares * MAX_ORDER_PCT_FLOAT);
-    if (qty > maxQty) return res.status(400).json({ error: 'Max order size is ' + maxQty + ' shares (10% of float)' });
+    // Founders can sell up to their full holding; others limited to 10% of float
+    const isFounder = g.stockExchange?.ticker === ticker;
+    const maxQty = isFounder
+      ? (g.stockExchange.portfolio?.[ticker]?.qty || Math.floor(stock.floatShares * MAX_ORDER_PCT_FLOAT))
+      : Math.floor(stock.floatShares * MAX_ORDER_PCT_FLOAT);
+    if (qty > maxQty) return res.status(400).json({ error: 'Max order size is ' + maxQty + ' shares' });
     if ((g.stockExchange.openOrders || []).length >= MAX_OPEN_ORDERS) return res.status(400).json({ error: 'Max ' + MAX_OPEN_ORDERS + ' open orders' });
     const game = await getGame();
     const day = game?.day || 1;

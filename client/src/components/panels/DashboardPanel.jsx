@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { fmt } from '@shared/helpers/format.js';
 import { TIRES } from '@shared/constants/tires.js';
@@ -9,11 +9,15 @@ import { PAY } from '@shared/constants/staff.js';
 import { MARKETING } from '@shared/constants/marketing.js';
 import { INSURANCE } from '@shared/constants/insurance.js';
 import { FACTORY } from '@shared/constants/factory.js';
+import { PROGRESSION_MILESTONES } from '@shared/constants/progression.js';
+import { getCalendar } from '@shared/helpers/calendar.js';
+import { getTireSeasonMult } from '@shared/constants/tireSeasonal.js';
 import VinnieTip from '../VinnieTip.jsx';
 import Sparkline from '../Sparkline.jsx';
 import TrendArrow from '../TrendArrow.jsx';
 import LowStockBanner from '../LowStockBanner.jsx';
 import { hapticsLight } from '../../api/haptics.js';
+import { postAction, getExchangeOverview } from '../../api/client.js';
 
 const QUICK_ACTIONS = [
   { id: 'source', icon: '\u{1F527}', label: 'Source' },
@@ -37,9 +41,20 @@ const CHANNEL_LABELS = {
 };
 
 export default function DashboardPanel() {
-  const { state, dispatch } = useGame();
+  const { state, dispatch, refreshState } = useGame();
   const g = state.game;
   const [summaryOpen, setSummaryOpen] = useState(true);
+  const [intelBusy, setIntelBusy] = useState(false);
+  const [marketReportData, setMarketReportData] = useState(null);
+
+  // Fetch exchange overview for market report summary (if player has brokerage)
+  useEffect(() => {
+    if (g.stockExchange?.hasBrokerage) {
+      getExchangeOverview().then(ov => {
+        if (ov?.marketReport) setMarketReportData(ov.marketReport);
+      }).catch(() => {});
+    }
+  }, [g.stockExchange?.hasBrokerage, g.day]);
 
   const inv = getInv(g);
   const cap = getCap(g);
@@ -82,8 +97,8 @@ export default function DashboardPanel() {
   const sales = g.staff?.sales || 0;
   const managers = g.staff?.managers || 0;
   const drivers = g.staff?.drivers || 0;
-  const techCap = techs * 8 * (1 + managers * 0.15);
-  const salesCap = sales * 5 * (1 + managers * 0.15);
+  const techCap = techs * 12 * (1 + managers * 0.15);
+  const salesCap = sales * 8 * (1 + managers * 0.15);
   const effectiveCap = Math.min(techCap, salesCap);
 
   // Channel data
@@ -243,6 +258,7 @@ export default function DashboardPanel() {
             const stats = loc.dailyStats || { rev: 0, sold: 0, profit: 0 };
             const loyalty = Math.round(loc.loyalty || 0);
             const isProfitable = stats.profit >= 0;
+            const storeAge = loc.openedDay ? Math.max(0, (g.day || 1) - loc.openedDay) : null;
             return (
               <div key={loc.id || i} style={{ marginBottom: i < g.locations.length - 1 ? 10 : 0, paddingBottom: i < g.locations.length - 1 ? 10 : 0, borderBottom: i < g.locations.length - 1 ? '1px solid var(--border)' : 'none' }}>
                 <div className="row-between mb-4">
@@ -255,6 +271,7 @@ export default function DashboardPanel() {
                   <span className="text-dim">Sold: {stats.sold}</span>
                   <span className="text-dim">Loyalty: {loyalty}</span>
                   <span className="text-dim">Stock: {fillPct}%</span>
+                  {storeAge != null && <span className="text-dim">{storeAge}d old</span>}
                 </div>
                 <div className="progress-bar" style={{ height: 3 }}>
                   <div className="progress-fill" style={{ width: `${fillPct}%`, background: fillPct < 20 ? 'var(--red)' : fillPct < 50 ? 'var(--accent)' : 'var(--green)' }} />
@@ -410,6 +427,98 @@ export default function DashboardPanel() {
         </div>
       )}
 
+      {/* Market Report Summary (for brokerage holders) */}
+      {g.stockExchange?.hasBrokerage && marketReportData && (
+        <div className="card">
+          <div className="card-title">Market Report</div>
+          {(marketReportData.topMovers || []).slice(0, 3).map(m => (
+            <div key={m.ticker} className="row-between text-sm mb-4">
+              <span className="font-bold">${m.ticker}</span>
+              <span style={{ color: m.change >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                {m.change >= 0 ? '+' : ''}{m.change?.toFixed(2)}%
+              </span>
+            </div>
+          ))}
+          <button
+            className="btn btn-full btn-sm"
+            style={{ marginTop: 4 }}
+            onClick={() => { hapticsLight(); dispatch({ type: 'SET_PANEL', payload: 'exchange' }); }}
+          >
+            View Full Report
+          </button>
+        </div>
+      )}
+
+      {/* Market Intel — active */}
+      {g.marketIntel && (g.day || 0) < g.marketIntel.expiresDay && (
+        <div className="card" style={{ borderLeft: '3px solid #f0c040' }}>
+          <div className="card-title">
+            Market Intel <span className="text-xs text-dim" style={{ marginLeft: 8 }}>
+              {g.marketIntel.expiresDay - (g.day || 0)} days left
+            </span>
+          </div>
+          <div className="text-xs text-dim mb-4">Top 20 cities by seasonal demand</div>
+          {(() => {
+            const cal = getCalendar(g.day || 1);
+            const season = cal.season;
+            const mainTireKeys = Object.keys(TIRES).filter(k => !TIRES[k].used);
+            const ranked = CITIES.map(city => {
+              const baseDem = city.dem || 10;
+              const seasonBoost = mainTireKeys.reduce((sum, tk) => sum + getTireSeasonMult(tk, season), 0) / mainTireKeys.length;
+              const winterBoost = season === 'Winter' || season === 'Fall' ? (city.win || 1.0) : 1.0;
+              const score = Math.round(baseDem * seasonBoost * winterBoost);
+              const topTypes = mainTireKeys
+                .map(tk => ({ key: tk, mult: getTireSeasonMult(tk, season) }))
+                .sort((a, b) => b.mult - a.mult)
+                .slice(0, 3)
+                .map(t => TIRES[t.key]?.n || t.key);
+              const hasShop = (g.locations || []).some(l => l.cityId === city.id);
+              return { city, score, topTypes, hasShop };
+            }).sort((a, b) => b.score - a.score).slice(0, 20);
+            return ranked.map((r, i) => (
+              <div key={r.city.id} className="row-between text-sm mb-4">
+                <span>
+                  <span className="text-dim" style={{ width: 20, display: 'inline-block' }}>{i + 1}.</span>
+                  <span className="font-bold">{r.city.name}, {r.city.state}</span>
+                  {r.hasShop && <span className="text-xs text-green" style={{ marginLeft: 4 }}>(you)</span>}
+                </span>
+                <span className="text-xs text-dim">
+                  {r.score} dem · {r.topTypes.join(', ')}
+                </span>
+              </div>
+            ));
+          })()}
+        </div>
+      )}
+
+      {/* Market Intel — purchase card */}
+      {(!g.marketIntel || (g.day || 0) >= g.marketIntel.expiresDay) && (
+        <div className="card">
+          <div className="card-title">Market Intel</div>
+          <div className="text-xs text-dim mb-4">
+            Buy a 7-day city demand analysis. See which cities have the highest seasonal demand and best tire types to stock.
+          </div>
+          <button
+            className="btn btn-full btn-sm"
+            style={{ background: (g.tireCoins || 0) >= 100 ? 'linear-gradient(135deg, #f0c040, #d4a020)' : undefined, color: (g.tireCoins || 0) >= 100 ? '#000' : undefined }}
+            disabled={(g.tireCoins || 0) < 100 || intelBusy}
+            onClick={async () => {
+              if (!window.confirm('Buy Market Intel for 100 TC?\n\nYou\'ll see a 7-day city demand heat map on your dashboard.')) return;
+              setIntelBusy(true);
+              const result = await postAction('buyMarketIntel', {});
+              await refreshState();
+              setIntelBusy(false);
+              if (result?.error) alert(result.error);
+            }}
+          >
+            {intelBusy ? 'Buying...' : `Buy Intel (100 TC)`}
+          </button>
+          {(g.tireCoins || 0) < 100 && (
+            <div className="text-xs text-dim" style={{ marginTop: 4 }}>Need 100 TC (you have {g.tireCoins || 0})</div>
+          )}
+        </div>
+      )}
+
       {(g.history || []).length >= 2 && (
         <div className="card">
           <div className="card-title">30-Day Trends</div>
@@ -459,6 +568,41 @@ export default function DashboardPanel() {
           </span>
         </div>
       </div>
+
+      {/* Progression Roadmap */}
+      {(() => {
+        const rep = g.reputation || 0;
+        const upcoming = PROGRESSION_MILESTONES.filter(m => rep < m.rep).slice(0, 3);
+        const lastUnlocked = [...PROGRESSION_MILESTONES].reverse().find(m => rep >= m.rep);
+        if (upcoming.length === 0) return null;
+        return (
+          <div className="card">
+            <div className="card-title">Your Roadmap</div>
+            <div className="text-xs text-dim mb-4">Features unlock as your reputation grows.</div>
+            {lastUnlocked && (
+              <div className="roadmap-item" style={{ opacity: 0.7 }}>
+                <span className="roadmap-icon">{lastUnlocked.icon}</span>
+                <div style={{ flex: 1 }}>
+                  <div className="text-sm font-bold">{lastUnlocked.label} <span className="roadmap-check">{'\u2713'}</span></div>
+                  <div className="text-xs text-dim">Unlocked!</div>
+                </div>
+              </div>
+            )}
+            {upcoming.map(m => (
+              <div className="roadmap-item" key={m.panel} onClick={() => { hapticsLight(); dispatch({ type: 'SET_PANEL', payload: m.panel }); }} style={{ cursor: 'pointer' }}>
+                <span className="roadmap-icon" style={{ opacity: 0.4 }}>{m.icon}</span>
+                <div style={{ flex: 1 }}>
+                  <div className="text-sm font-bold">{m.label}</div>
+                  <div className="text-xs text-dim">{m.desc} &mdash; Rep {m.rep}</div>
+                  <div className="roadmap-bar">
+                    <div className="roadmap-fill" style={{ width: `${Math.min(100, (rep / m.rep) * 100)}%` }} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       <div className="card">
         <div className="card-title">Inventory ({inv}/{cap})</div>
