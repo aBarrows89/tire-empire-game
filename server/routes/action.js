@@ -396,6 +396,14 @@ router.post('/', authMiddleware, async (req, res) => {
             low: crashPrice, close: crashPrice, volume: 0,
           });
 
+          // Founder forfeits all shares — no free ride after bankruptcy reset.
+          // Investors keep their shares; stock stays as zombie at crashed price.
+          const founderQty = g.stockExchange?.founderSharesLocked || 0;
+          stock.totalShares = Math.max(stock.floatShares || 0, (stock.totalShares || 100000) - founderQty);
+          stock.founderShares = 0;
+          stock.bankrupted = true;
+          stock.bankruptDay = globalDay;
+
           // Track bankruptcy in exchange state for sentiment impact
           const exchange = game.economy.exchange;
           if (exchange) {
@@ -406,9 +414,7 @@ router.post('/', authMiddleware, async (req, res) => {
               day: globalDay,
               preCrashPrice: stock.price / 0.05, // approximate pre-crash
             });
-            // Keep last 50
             if (exchange.bankruptcies.length > 50) exchange.bankruptcies = exchange.bankruptcies.slice(-50);
-            // Immediate sentiment hit
             if (exchange.sentiment) {
               exchange.sentiment.value = Math.max(0.5, (exchange.sentiment.value || 1) - 0.15);
             }
@@ -425,34 +431,7 @@ router.post('/', authMiddleware, async (req, res) => {
         const fresh = initFn(savedName, globalDay);
         fresh.id = savedId;
         fresh.companyName = savedCompanyName;
-
-        // Keep brokerage + ticker (stock still exists, just crashed)
-        if (oldTicker) {
-          fresh.stockExchange = {
-            hasBrokerage: true,
-            brokerageOpenedDay: g.stockExchange.brokerageOpenedDay,
-            portfolio: {},
-            openOrders: [],
-            tradeHistory: [],
-            isPublic: true,
-            ipoDay: g.stockExchange.ipoDay,
-            ticker: oldTicker,
-            dividendPayoutRatio: 0.25,
-            founderSharesLocked: g.stockExchange.founderSharesLocked || 0,
-            shortPositions: {},
-            marginEnabled: false, marginDebt: 0, marginCallDay: null,
-            darkPoolAccess: false, advancedCharting: false,
-            shortSellingEnabled: false, ipoPriority: false, realTimeAlerts: false,
-            priceAlerts: [], dividendIncome: 0, capitalGains: 0, taxesPaid: 0,
-            brokerageFeePaid: 0, wealthTaxPaid: 0,
-          };
-          // Founder still holds shares (locked)
-          fresh.stockExchange.portfolio[oldTicker] = {
-            qty: g.stockExchange.founderSharesLocked || 0,
-            avgCost: 0.01,
-            acquiredDay: globalDay,
-          };
-        }
+        // Fresh state has NO brokerage — must re-earn everything from scratch
 
         g = fresh;
         break;

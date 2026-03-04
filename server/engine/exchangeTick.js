@@ -87,6 +87,17 @@ export function runExchangeTick(exchangeState, players, day) {
       delete exchangeState.orderBooks[ticker];
       continue;
     }
+    // Bankrupted stocks: freeze fundamentals at zero, auto-delist after 30 days
+    if (stock.bankrupted) {
+      if (day - (stock.bankruptDay || 0) > 30) {
+        delete exchangeState.stocks[ticker];
+        delete exchangeState.orderBooks[ticker];
+        continue;
+      }
+      // Don't update fundamentals from fresh character — stock is dead
+      stock._currentDay = day;
+      continue;
+    }
     updateFundamentals(stock, owner.game_state);
     stock._currentDay = day;
   }
