@@ -26,11 +26,7 @@ export async function withPlayerLock(playerId, fn) {
   }
 }
 
-// ── In-memory stores for features without dedicated tables ──
-const playerListings = [];
-const directTrades = [];
-const tournaments = new Map();
-const shopSaleListings = [];
+// All stores are now Postgres-backed (no in-memory arrays)
 
 // ── Ensure schema exists on first load ──
 async function ensureSchema() {
@@ -41,7 +37,8 @@ async function ensureSchema() {
         name          TEXT NOT NULL,
         created_at    TIMESTAMPTZ DEFAULT NOW(),
         updated_at    TIMESTAMPTZ DEFAULT NOW(),
-        game_state    JSONB NOT NULL DEFAULT '{}'
+        game_state    JSONB NOT NULL DEFAULT '{}',
+        version       INTEGER NOT NULL DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS games (
         id            TEXT PRIMARY KEY DEFAULT 'default',
@@ -127,6 +124,39 @@ async function ensureSchema() {
         total_sold    INTEGER NOT NULL DEFAULT 0,
         updated_at    TIMESTAMPTZ DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS player_listings (
+        id            TEXT PRIMARY KEY,
+        seller_id     TEXT NOT NULL,
+        status        TEXT NOT NULL DEFAULT 'active',
+        data          JSONB NOT NULL DEFAULT '{}',
+        created_at    TIMESTAMPTZ DEFAULT NOW(),
+        updated_at    TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS direct_trades (
+        id            TEXT PRIMARY KEY,
+        sender_id     TEXT NOT NULL,
+        receiver_id   TEXT NOT NULL,
+        status        TEXT NOT NULL DEFAULT 'pending',
+        data          JSONB NOT NULL DEFAULT '{}',
+        created_at    TIMESTAMPTZ DEFAULT NOW(),
+        updated_at    TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS shop_sale_listings (
+        id            TEXT PRIMARY KEY,
+        seller_id     TEXT NOT NULL,
+        city_id       TEXT NOT NULL DEFAULT '',
+        status        TEXT NOT NULL DEFAULT 'active',
+        asking_price  BIGINT NOT NULL DEFAULT 0,
+        data          JSONB NOT NULL DEFAULT '{}',
+        created_at    TIMESTAMPTZ DEFAULT NOW(),
+        updated_at    TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS tournaments (
+        id            TEXT PRIMARY KEY,
+        data          JSONB NOT NULL DEFAULT '{}',
+        created_at    TIMESTAMPTZ DEFAULT NOW(),
+        updated_at    TIMESTAMPTZ DEFAULT NOW()
+      );
       CREATE INDEX IF NOT EXISTS idx_analytics_type_date ON analytics_events(event_type, created_at);
       CREATE INDEX IF NOT EXISTS idx_analytics_player_date ON analytics_events(player_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_chat_channel_date ON chat_messages(channel, created_at DESC);
@@ -135,8 +165,16 @@ async function ensureSchema() {
       CREATE INDEX IF NOT EXISTS idx_chat_reports_status ON chat_reports(status, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_leaderboard_wealth ON leaderboard(wealth DESC);
       CREATE INDEX IF NOT EXISTS idx_players_updated ON players(updated_at);
+      CREATE INDEX IF NOT EXISTS idx_listings_status ON player_listings(status);
+      CREATE INDEX IF NOT EXISTS idx_listings_seller ON player_listings(seller_id);
+      CREATE INDEX IF NOT EXISTS idx_trades_status ON direct_trades(status);
+      CREATE INDEX IF NOT EXISTS idx_trades_players ON direct_trades(sender_id, receiver_id);
+      CREATE INDEX IF NOT EXISTS idx_shop_sales_status ON shop_sale_listings(status);
+      CREATE INDEX IF NOT EXISTS idx_shop_sales_seller ON shop_sale_listings(seller_id);
       INSERT INTO games (id) VALUES ('default') ON CONFLICT DO NOTHING;
     `);
+    // Migration: add version column if missing (existing DBs)
+    await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 0`);
     console.log('[pgStore] Schema ensured');
   } catch (err) {
     console.error('[pgStore] Schema creation error:', err.message);
@@ -162,9 +200,18 @@ export async function getPlayer(id) {
   const row = rows[0] || null;
   if (row) {
     row.game_state = parseJson(row.game_state);
+    row.version = row.version || 0;
     setCachedPlayer(id, row);
   }
   return row;
+}
+
+/** Version mismatch error for optimistic locking */
+export class VersionConflictError extends Error {
+  constructor(id, expected, actual) {
+    super(`Version conflict for player ${id}: expected ${expected}, got ${actual}`);
+    this.name = 'VersionConflictError';
+  }
 }
 
 export async function createPlayer(id, name, gameState) {
@@ -178,12 +225,25 @@ export async function createPlayer(id, name, gameState) {
   return rows[0];
 }
 
-export async function savePlayerState(id, gameState) {
-  // UPDATE only — never re-create a deleted player
-  await pool.query(
-    `UPDATE players SET game_state = $2::jsonb, updated_at = NOW() WHERE id = $1`,
-    [id, JSON.stringify(gameState)]
-  );
+export async function savePlayerState(id, gameState, expectedVersion = null) {
+  if (expectedVersion !== null) {
+    // Optimistic locking: only update if version matches
+    const { rowCount } = await pool.query(
+      `UPDATE players SET game_state = $2::jsonb, updated_at = NOW(), version = version + 1
+       WHERE id = $1 AND version = $3`,
+      [id, JSON.stringify(gameState), expectedVersion]
+    );
+    if (rowCount === 0) {
+      invalidatePlayer(id);
+      throw new VersionConflictError(id, expectedVersion, '?');
+    }
+  } else {
+    // Non-versioned save (tick loop, migrations, etc.)
+    await pool.query(
+      `UPDATE players SET game_state = $2::jsonb, updated_at = NOW(), version = version + 1 WHERE id = $1`,
+      [id, JSON.stringify(gameState)]
+    );
+  }
   // Dual-write hot fields to dedicated tables (non-blocking, fire-and-forget)
   _syncHotTables(id, gameState).catch(() => {});
   // Write-through: update cache immediately
@@ -313,60 +373,114 @@ export async function upsertLeaderboard(playerId, name, wealth, reputation, loca
   invalidateLeaderboard();
 }
 
-// ── Player Marketplace Listings (in-memory) ──
+// ── Player Marketplace Listings (Postgres-backed) ──
+
+function _rowToListing(r) {
+  const data = parseJson(r.data);
+  return { id: r.id, sellerId: r.seller_id, status: r.status, ...data };
+}
 
 export async function getPlayerListings(filter = {}) {
-  let results = [...playerListings];
-  if (filter.status) results = results.filter(l => l.status === filter.status);
-  if (filter.sellerId) results = results.filter(l => l.sellerId === filter.sellerId);
-  return results;
+  let query = 'SELECT * FROM player_listings WHERE 1=1';
+  const params = [];
+  if (filter.status) { params.push(filter.status); query += ` AND status = $${params.length}`; }
+  if (filter.sellerId) { params.push(filter.sellerId); query += ` AND seller_id = $${params.length}`; }
+  query += ' ORDER BY created_at DESC';
+  const { rows } = await pool.query(query, params);
+  return rows.map(_rowToListing);
 }
 
 export async function addPlayerListing(listing) {
-  playerListings.push(listing);
+  const { id, sellerId, status, ...rest } = listing;
+  await pool.query(
+    `INSERT INTO player_listings (id, seller_id, status, data) VALUES ($1, $2, $3, $4::jsonb)
+     ON CONFLICT (id) DO NOTHING`,
+    [id, sellerId, status || 'active', JSON.stringify(rest)]
+  );
   return listing;
 }
 
 export async function updatePlayerListing(id, updates) {
-  const idx = playerListings.findIndex(l => l.id === id);
-  if (idx === -1) return null;
-  Object.assign(playerListings[idx], updates);
-  return playerListings[idx];
+  const existing = await getPlayerListingById(id);
+  if (!existing) return null;
+  const merged = { ...existing, ...updates };
+  const { sellerId, status, ...rest } = merged;
+  // Remove 'id' from data blob
+  delete rest.id;
+  await pool.query(
+    `UPDATE player_listings SET seller_id = $2, status = $3, data = $4::jsonb, updated_at = NOW() WHERE id = $1`,
+    [id, sellerId, status || 'active', JSON.stringify(rest)]
+  );
+  return merged;
 }
 
 export async function getPlayerListingById(id) {
-  return playerListings.find(l => l.id === id) || null;
+  const { rows } = await pool.query('SELECT * FROM player_listings WHERE id = $1', [id]);
+  return rows[0] ? _rowToListing(rows[0]) : null;
 }
 
-// ── Direct P2P Trades (in-memory) ──
+// ── Direct P2P Trades (Postgres-backed) ──
+
+function _rowToTrade(r) {
+  const data = parseJson(r.data);
+  return { id: r.id, senderId: r.sender_id, receiverId: r.receiver_id, status: r.status, ...data };
+}
 
 export async function getDirectTrades(filter = {}) {
-  let results = [...directTrades];
-  if (filter.status) results = results.filter(t => t.status === filter.status);
-  if (filter.playerId) results = results.filter(t => t.senderId === filter.playerId || t.receiverId === filter.playerId);
-  return results;
+  let query = 'SELECT * FROM direct_trades WHERE 1=1';
+  const params = [];
+  if (filter.status) { params.push(filter.status); query += ` AND status = $${params.length}`; }
+  if (filter.playerId) {
+    params.push(filter.playerId);
+    query += ` AND (sender_id = $${params.length} OR receiver_id = $${params.length})`;
+  }
+  query += ' ORDER BY created_at DESC';
+  const { rows } = await pool.query(query, params);
+  return rows.map(_rowToTrade);
 }
 
 export async function addDirectTrade(trade) {
-  directTrades.push(trade);
+  const { id, senderId, receiverId, status, ...rest } = trade;
+  await pool.query(
+    `INSERT INTO direct_trades (id, sender_id, receiver_id, status, data) VALUES ($1, $2, $3, $4, $5::jsonb)
+     ON CONFLICT (id) DO NOTHING`,
+    [id, senderId, receiverId, status || 'pending', JSON.stringify(rest)]
+  );
   return trade;
 }
 
 export async function getDirectTradeById(id) {
-  return directTrades.find(t => t.id === id) || null;
+  const { rows } = await pool.query('SELECT * FROM direct_trades WHERE id = $1', [id]);
+  return rows[0] ? _rowToTrade(rows[0]) : null;
 }
 
 export async function updateDirectTrade(id, updates) {
-  const idx = directTrades.findIndex(t => t.id === id);
-  if (idx === -1) return null;
-  Object.assign(directTrades[idx], updates);
-  return directTrades[idx];
+  const existing = await getDirectTradeById(id);
+  if (!existing) return null;
+  const merged = { ...existing, ...updates };
+  const { senderId, receiverId, status, ...rest } = merged;
+  delete rest.id;
+  await pool.query(
+    `UPDATE direct_trades SET sender_id = $2, receiver_id = $3, status = $4, data = $5::jsonb, updated_at = NOW() WHERE id = $1`,
+    [id, senderId, receiverId, status || 'pending', JSON.stringify(rest)]
+  );
+  return merged;
 }
 
-// ── Tournaments (in-memory) ──
+// ── Tournaments (Postgres-backed) ──
 
-export async function getTournament(id) { return tournaments.get(id) || null; }
-export async function saveTournament(id, data) { tournaments.set(id, data); }
+export async function getTournament(id) {
+  const { rows } = await pool.query('SELECT * FROM tournaments WHERE id = $1', [id]);
+  return rows[0] ? parseJson(rows[0].data) : null;
+}
+
+export async function saveTournament(id, data) {
+  await pool.query(
+    `INSERT INTO tournaments (id, data) VALUES ($1, $2::jsonb)
+     ON CONFLICT (id) DO UPDATE SET data = $2::jsonb, updated_at = NOW()`,
+    [id, JSON.stringify(data)]
+  );
+}
 
 // ── Chat Messages (DB-backed) ──
 
@@ -513,36 +627,58 @@ export async function removeChatMute(playerId) {
   await pool.query('DELETE FROM chat_mutes_db WHERE player_id = $1', [playerId]);
 }
 
-// ── Shop Sale Listings (in-memory) ──
+// ── Shop Sale Listings (Postgres-backed) ──
+
+function _rowToShopListing(r) {
+  const data = parseJson(r.data);
+  return {
+    id: r.id, sellerId: r.seller_id, cityId: r.city_id,
+    status: r.status, askingPrice: Number(r.asking_price),
+    ...data,
+  };
+}
 
 export async function getShopSaleListings(filter = {}) {
-  let results = [...shopSaleListings];
-  if (filter.status) results = results.filter(l => l.status === filter.status);
-  if (filter.sellerId) results = results.filter(l => l.sellerId === filter.sellerId);
-  return results;
+  let query = 'SELECT * FROM shop_sale_listings WHERE 1=1';
+  const params = [];
+  if (filter.status) { params.push(filter.status); query += ` AND status = $${params.length}`; }
+  if (filter.sellerId) { params.push(filter.sellerId); query += ` AND seller_id = $${params.length}`; }
+  query += ' ORDER BY created_at DESC';
+  const { rows } = await pool.query(query, params);
+  return rows.map(_rowToShopListing);
 }
 
 export async function addShopSaleListing(listing) {
-  shopSaleListings.push(listing);
+  const { id, sellerId, cityId, status, askingPrice, ...rest } = listing;
+  await pool.query(
+    `INSERT INTO shop_sale_listings (id, seller_id, city_id, status, asking_price, data)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb) ON CONFLICT (id) DO NOTHING`,
+    [id, sellerId, cityId || '', status || 'active', askingPrice || 0, JSON.stringify(rest)]
+  );
   return listing;
 }
 
 export async function getShopSaleListingById(id) {
-  return shopSaleListings.find(l => l.id === id) || null;
+  const { rows } = await pool.query('SELECT * FROM shop_sale_listings WHERE id = $1', [id]);
+  return rows[0] ? _rowToShopListing(rows[0]) : null;
 }
 
 export async function updateShopSaleListing(id, updates) {
-  const idx = shopSaleListings.findIndex(l => l.id === id);
-  if (idx === -1) return null;
-  Object.assign(shopSaleListings[idx], updates);
-  return shopSaleListings[idx];
+  const existing = await getShopSaleListingById(id);
+  if (!existing) return null;
+  const merged = { ...existing, ...updates };
+  const { sellerId, cityId, status, askingPrice, ...rest } = merged;
+  delete rest.id;
+  await pool.query(
+    `UPDATE shop_sale_listings SET seller_id = $2, city_id = $3, status = $4, asking_price = $5, data = $6::jsonb, updated_at = NOW() WHERE id = $1`,
+    [id, sellerId, cityId || '', status || 'active', askingPrice || 0, JSON.stringify(rest)]
+  );
+  return merged;
 }
 
 export async function removeShopSaleListing(id) {
-  const idx = shopSaleListings.findIndex(l => l.id === id);
-  if (idx === -1) return false;
-  shopSaleListings.splice(idx, 1);
-  return true;
+  const { rowCount } = await pool.query('DELETE FROM shop_sale_listings WHERE id = $1', [id]);
+  return rowCount > 0;
 }
 
 // ── File Storage ──

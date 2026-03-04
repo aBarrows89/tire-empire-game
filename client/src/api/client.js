@@ -12,14 +12,17 @@ const SERVER_URL = import.meta.env.VITE_SERVER_URL || '';
 // If SERVER_URL is set (native builds), use full URL; otherwise relative /api (browser dev)
 const API_BASE = SERVER_URL ? `${SERVER_URL}/api` : '/api';
 
+const isDev = import.meta.env.DEV;
+
 /**
  * Build auth headers dynamically using Firebase ID token.
- * Falls back to X-Player-Id in dev mode if no Firebase is configured.
+ * Falls back to X-Player-Id only in dev mode if no Firebase is configured.
+ * In production, missing auth throws to prevent unauthenticated requests.
  */
 async function getHeaders() {
   const base = { 'Content-Type': 'application/json' };
   if (!hasFirebaseConfig) {
-    // No Firebase configured — use dev player ID
+    if (!isDev) throw new Error('Firebase not configured in production');
     base['X-Player-Id'] = 'dev-player';
     return base;
   }
@@ -27,11 +30,17 @@ async function getHeaders() {
     const token = await getIdToken();
     if (token) {
       base['Authorization'] = `Bearer ${token}`;
-    } else {
+    } else if (isDev) {
       base['X-Player-Id'] = 'dev-player';
+    } else {
+      throw new Error('No auth token available');
     }
-  } catch {
-    base['X-Player-Id'] = 'dev-player';
+  } catch (err) {
+    if (isDev) {
+      base['X-Player-Id'] = 'dev-player';
+    } else {
+      throw err;
+    }
   }
   return base;
 }
@@ -219,10 +228,10 @@ export function useWebSocket(onTick, onChat, onChatDelete, onAnnouncement, onCon
             ws.send(JSON.stringify({ type: 'subscribe', token }));
           } else {
             const uid = getUid();
-            ws.send(JSON.stringify({ type: 'subscribe', playerId: uid || 'dev-player' }));
+            ws.send(JSON.stringify({ type: 'subscribe', playerId: uid || (isDev ? 'dev-player' : '') }));
           }
         } catch {
-          ws.send(JSON.stringify({ type: 'subscribe', playerId: getUid() || 'dev-player' }));
+          ws.send(JSON.stringify({ type: 'subscribe', playerId: getUid() || (isDev ? 'dev-player' : '') }));
         }
         // Flush pending messages queued while disconnected
         while (_pendingWsMessages.length > 0) {

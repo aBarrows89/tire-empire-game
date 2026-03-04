@@ -60,3 +60,6 @@ export const savePlayerStats = (...args) => impl.savePlayerStats ? impl.savePlay
 
 // Cache management (only available with postgres backend)
 export { getCacheStats, invalidateAllPlayers, invalidateGame, invalidateLeaderboard } from './playerCache.js';
+
+// Re-export error class for catch handling
+export { VersionConflictError } from './pgStore.js';

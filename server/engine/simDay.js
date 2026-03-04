@@ -603,13 +603,13 @@ export function simDay(g, shared = {}) {
     // Staff capacity: techs = output (installs), sales = demand (customers)
     // Per-location daily cap based on staff headcount
     const techCap = s.staff.techs * 12;
-    const salesCap = s.staff.sales * 8;
+    const salesCap = s.staff.sales * 10;
     const staffCapTotal = Math.min(techCap, salesCap) * (1 + s.staff.managers * .15);
     const demandMult = sDem * (1 + s.reputation * .01) * (s._tB || 1);
     const whPenalty = 1 - getWhShortage(s) * .08;
 
-    // Early game boost: 2x demand at day 1, tapering to 1x at day 180
-    const earlyBoostShop = s.day <= 180 ? 1 + (180 - s.day) / 180 : 1;
+    // Early game boost: smooth exponential decay (~2x at day 1, asymptotically → 1x)
+    const earlyBoostShop = 1 + Math.exp(-s.day / 120);
 
     // Global staff capacity pool shared across all locations
     let remainingStaffCapGlobal = staffCapTotal;
@@ -827,12 +827,13 @@ export function simDay(g, shared = {}) {
 
   // ── VAN SALES — daily (scales down when stores exist) ──
   {
-    const vanScale = s.locations.length === 0 ? 1 : 0.4;
+    // Graded van-to-shop transition: van sales taper as more shops open
+    const vanScale = Math.max(0.15, 1 - s.locations.length * 0.2);
     const wh = s.warehouseInventory || {};
     const whTotal = Object.values(wh).reduce((a, b) => a + b, 0);
     if (whTotal > 0) {
-      // Early boost: 2x at day 1, tapering to 1x at day 180
-      const earlyBoost = s.day <= 180 ? 1 + (180 - s.day) / 180 : 1;
+      // Early boost: smooth exponential decay (~2x at day 1, asymptotically → 1x)
+      const earlyBoost = 1 + Math.exp(-s.day / 120);
       // Base demand scales with rep (8 base → grows)
       const baseDemand = 8 + s.reputation * 0.4;
       const vanDemand = Math.max(2, Math.floor(baseDemand * sDem * (s._tB || 1) * earlyBoost * holidayMult * vanScale));
