@@ -159,7 +159,7 @@ export default function DashboardPanel() {
             onClick={() => setSummaryOpen(!summaryOpen)}
           >
             <div className="card-title" style={{ marginBottom: 0 }}>
-              Day {g.day} Summary
+              Day {(g.startDay || 1) + (g.day || 1) - 1} Summary
             </div>
             <span className="text-dim">{summaryOpen ? '\u25B2' : '\u25BC'}</span>
           </div>
