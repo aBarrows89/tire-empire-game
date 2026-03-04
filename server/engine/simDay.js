@@ -198,11 +198,28 @@ export function simDay(g, shared = {}) {
       // Store with brand_ prefix
       const storeKey = q.tire.startsWith('brand_') ? q.tire : getBrandTireKey(q.tire);
       const factorySpace = Math.max(0, getCap(s) - getInv(s));
-      const storeQty = Math.min(goodQty, factorySpace);
+      let storeQty = Math.min(goodQty, factorySpace);
       if (storeQty > 0) s.warehouseInventory[storeKey] = (s.warehouseInventory[storeKey] || 0) + storeQty;
+      // Overflow: if warehouse full, push remaining tires to store locations
+      let overflow = goodQty - storeQty;
+      if (overflow > 0 && s.locations.length > 0) {
+        for (const loc of s.locations) {
+          if (overflow <= 0) break;
+          if (!loc.inventory) loc.inventory = {};
+          const locSpace = Math.max(0, getLocCap(loc) - getLocInv(loc));
+          const pushQty = Math.min(overflow, locSpace);
+          if (pushQty > 0) {
+            loc.inventory[storeKey] = (loc.inventory[storeKey] || 0) + pushQty;
+            overflow -= pushQty;
+            storeQty += pushQty;
+          }
+        }
+      }
       producedTotal += storeQty;
       const tireName = allTiresMap[storeKey]?.n || allTiresMap[q.tire]?.n || q.tire;
-      if (goodQty < q.qty) {
+      if (overflow > 0) {
+        s.log.push({ msg: `\u{1F3ED} Factory produced ${storeQty}/${goodQty} ${tireName} (${overflow} lost — all storage full!)`, cat: 'sale' });
+      } else if (goodQty < q.qty) {
         s.log.push({ msg: `\u{1F3ED} Factory produced ${goodQty}/${q.qty} ${tireName} (${q.qty - goodQty} defective)`, cat: 'sale' });
       } else {
         s.log.push({ msg: `\u{1F3ED} Factory produced ${goodQty} ${tireName}`, cat: 'sale' });
@@ -593,14 +610,13 @@ export function simDay(g, shared = {}) {
     // Early game boost: 2x demand at day 1, tapering to 1x at day 180
     const earlyBoostShop = s.day <= 180 ? 1 + (180 - s.day) / 180 : 1;
 
-    // Split staff capacity across locations (minimum 1 staff equivalent per location)
-    const locCount = s.locations.length || 1;
-    const staffCapPerLoc = Math.max(staffCapTotal / locCount, 8);
+    // Global staff capacity pool shared across all locations
+    let remainingStaffCapGlobal = staffCapTotal;
 
     for (const loc of s.locations) {
       if (!loc.inventory) loc.inventory = {};
       loc.dailyStats = { rev: 0, sold: 0, profit: 0 };
-      let remainingStaffCap = staffCapPerLoc;
+      let remainingStaffCap = remainingStaffCapGlobal;
       const city = (shared.cities || []).find(c => c.id === loc.cityId) || { dem: 50, cost: 1, win: 0 };
       // ── LOYALTY UPDATE ──
       const locLoyalty = loc.loyalty || 0;
@@ -697,6 +713,8 @@ export function simDay(g, shared = {}) {
         locDemand -= qty;
         remainingStaffCap -= qty;
       }
+      // Sync staff capacity back to global pool
+      remainingStaffCapGlobal = remainingStaffCap;
       locTakeOffSources[loc.id] = locNewSold;
     }
   }

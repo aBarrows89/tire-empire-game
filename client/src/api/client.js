@@ -132,14 +132,16 @@ export async function tradeAction(action, tradeId) {
   return res.json();
 }
 
-export function useWebSocket(onTick, onChat, onChatDelete) {
+export function useWebSocket(onTick, onChat, onChatDelete, onAnnouncement) {
   const tickRef = useRef(onTick);
   const chatRef = useRef(onChat);
   const chatDeleteRef = useRef(onChatDelete);
+  const announcementRef = useRef(onAnnouncement);
   const wsRef = useRef(null);
   tickRef.current = onTick;
   chatRef.current = onChat;
   chatDeleteRef.current = onChatDelete;
+  announcementRef.current = onAnnouncement;
 
   useEffect(() => {
     let destroyed = false;
@@ -178,6 +180,7 @@ export function useWebSocket(onTick, onChat, onChatDelete) {
           if (msg.type === 'tick') tickRef.current(msg);
           if (msg.type === 'chat' && chatRef.current) chatRef.current(msg.message);
           if (msg.type === 'chatDelete' && chatDeleteRef.current) chatDeleteRef.current(msg.messageId);
+          if (msg.type === 'announcement' && announcementRef.current) announcementRef.current(msg);
         } catch {}
       };
 

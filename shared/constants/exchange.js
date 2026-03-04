@@ -17,7 +17,7 @@ export const IPO_DAILY_SELL_LIMIT = 0.05; // 5% of holdings/day after lockup
 export const TRADE_COMMISSION = 0.015;     // 1.5% per side
 export const TRADE_COMMISSION_PREMIUM = 0.005; // 0.5% for TC premium
 export const TRADE_MIN_FREE = 100;         // Orders under $100 = no commission
-export const MAX_ORDER_PCT_FLOAT = 0.10;   // Max 10% of float per order
+export const MAX_ORDER_PCT_FLOAT = 0.25;   // Max 25% of float per order
 export const LIMIT_ORDER_TTL = 7;          // days before expiry
 export const MAX_OPEN_ORDERS = 10;
 

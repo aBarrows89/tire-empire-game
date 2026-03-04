@@ -41,6 +41,8 @@ function gameReducer(state, action) {
       return { ...state, error: action.payload };
     case 'SET_OFFLINE':
       return { ...state, offline: action.payload };
+    case 'SET_ANNOUNCEMENT':
+      return { ...state, announcement: action.payload };
     case 'SET_TICK_DATA':
       return {
         ...state,
@@ -126,7 +128,11 @@ export function GameProvider({ children }) {
     dispatch({ type: 'DELETE_CHAT', payload: messageId });
   }, []);
 
-  const wsRef = useWebSocket(onTick, onChat, onChatDelete);
+  const onAnnouncement = useCallback((msg) => {
+    dispatch({ type: 'SET_ANNOUNCEMENT', payload: msg });
+  }, []);
+
+  const wsRef = useWebSocket(onTick, onChat, onChatDelete, onAnnouncement);
 
   const sendChat = useCallback((text, channel = 'global') => {
     sendWsMessage(wsRef, { type: 'chat', text, channel });
