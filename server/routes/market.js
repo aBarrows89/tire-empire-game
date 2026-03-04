@@ -398,4 +398,41 @@ router.get('/factory-listings', authMiddleware, async (req, res) => {
   }
 });
 
+// ── 3PL STORAGE LISTINGS (browse available rentals) ──
+
+router.get('/3pl-listings', authMiddleware, async (req, res) => {
+  try {
+    const players = await getAllActivePlayers();
+    const listings = [];
+
+    for (const p of players) {
+      if (p.id === req.playerId) continue;
+      const g = p.game_state;
+      if (!g || !g.storageListings || g.storageListings.length === 0) continue;
+
+      for (const listing of g.storageListings) {
+        if (listing.available <= 0) continue;
+        listings.push({
+          listingId: listing.id,
+          ownerId: p.id,
+          ownerName: g.companyName || g.name || 'Unknown',
+          ownerRep: g.reputation || 0,
+          capacity: listing.capacity,
+          available: listing.available,
+          pricePerTire: listing.pricePerTire,
+          minLease: listing.minLease,
+          maxTenants: listing.maxTenants,
+          tenantCount: listing.tenants.length,
+          autoRenew: listing.autoRenew,
+        });
+      }
+    }
+
+    res.json(listings);
+  } catch (err) {
+    console.error('GET /api/market/3pl-listings error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

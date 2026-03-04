@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { STORAGE } from '@shared/constants/storage.js';
 import { TIRES } from '@shared/constants/tires.js';
 import { CITIES } from '@shared/constants/cities.js';
+import { TPL } from '@shared/constants/thirdPartyLogistics.js';
 import { fmt } from '@shared/helpers/format.js';
 import { getCap, getInv, getLocInv, getLocCap, getStorageCap } from '@shared/helpers/inventory.js';
-import { postAction } from '../../api/client.js';
+import { postAction, get3plListings } from '../../api/client.js';
 import { hapticsMedium } from '../../api/haptics.js';
 
 export default function StoragePanel() {
@@ -18,6 +19,18 @@ export default function StoragePanel() {
   const [txQty, setTxQty] = useState(1);
   const [retreadGrade, setRetreadGrade] = useState('junk');
   const [retreadQty, setRetreadQty] = useState(5);
+
+  // 3PL state
+  const [tplTab, setTplTab] = useState('leases'); // leases | listings | browse
+  const [tplListings, setTplListings] = useState([]);
+  const [tplLoading, setTplLoading] = useState(false);
+  const [listCap, setListCap] = useState(100);
+  const [listPrice, setListPrice] = useState(TPL.defaultPrice);
+  const [rentSlots, setRentSlots] = useState(50);
+  const [tplTxLease, setTplTxLease] = useState('');
+  const [tplTxTire, setTplTxTire] = useState('');
+  const [tplTxQty, setTplTxQty] = useState(1);
+  const [tplTxDir, setTplTxDir] = useState('toTpl');
 
   const buy = async (type) => {
     setBusy(type);
@@ -35,12 +48,22 @@ export default function StoragePanel() {
     setBusy(null);
   };
 
+  const loadBrowse = async () => {
+    setTplLoading(true);
+    try {
+      const data = await get3plListings();
+      setTplListings(Array.isArray(data) ? data : []);
+    } catch { setTplListings([]); }
+    setTplLoading(false);
+  };
+
+  useEffect(() => { if (tplTab === 'browse') loadBrowse(); }, [tplTab]);
+
   const inv = getInv(g);
   const cap = getCap(g);
   const whInv = Object.values(g.warehouseInventory || {}).reduce((a, b) => a + b, 0);
   const whCap = getStorageCap(g);
 
-  // Build transfer location options
   const transferNodes = [
     { id: 'warehouse', label: `Central Storage (${whInv}/${whCap})` },
     ...g.locations.map(loc => {
@@ -49,11 +72,14 @@ export default function StoragePanel() {
     }),
   ];
 
-  // Available tires at source
   const srcInv = txFrom === 'warehouse'
     ? (g.warehouseInventory || {})
     : (g.locations.find(l => l.id === txFrom)?.inventory || {});
   const availTires = Object.entries(srcInv).filter(([, v]) => v > 0);
+
+  const myListings = g.storageListings || [];
+  const myLeases = g.storageLeases || [];
+  const tplInventory = g.tplInventory || {};
 
   return (
     <>
@@ -223,6 +249,308 @@ export default function StoragePanel() {
         </div>
       )}
 
+      {/* ═══ 3PL STORAGE LEASING ═══ */}
+      <div className="card">
+        <div className="card-title">3PL Storage</div>
+        <div className="text-xs text-dim mb-4">
+          Lease warehouse space to other players or rent storage from them.
+        </div>
+
+        <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
+          {[
+            { id: 'leases', label: `My Leases (${myLeases.length})` },
+            { id: 'listings', label: `My Listings (${myListings.length})` },
+            { id: 'browse', label: 'Browse' },
+          ].map(t => (
+            <button
+              key={t.id}
+              className={`btn btn-sm ${tplTab === t.id ? 'btn-blue' : 'btn-outline'}`}
+              onClick={() => setTplTab(t.id)}
+              style={{ flex: 1 }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── My Leases (tenant) ── */}
+        {tplTab === 'leases' && (
+          <div>
+            {myLeases.length === 0 && (
+              <div className="text-sm text-dim">No active leases. Browse available storage to rent space from other players.</div>
+            )}
+            {myLeases.map(lease => {
+              const leaseInv = tplInventory[lease.id] || {};
+              const used = Object.values(leaseInv).reduce((a, b) => a + b, 0);
+              return (
+                <div key={lease.id} style={{ background: 'var(--surface)', borderRadius: 8, padding: 12, marginBottom: 8 }}>
+                  <div className="row-between mb-4">
+                    <span className="font-bold text-sm">{lease.ownerName}</span>
+                    <span className="text-xs text-dim">{used}/{lease.slots} used</span>
+                  </div>
+                  <div className="progress-bar mb-4">
+                    <div className="progress-fill" style={{ width: `${lease.slots > 0 ? (used / lease.slots) * 100 : 0}%` }} />
+                  </div>
+                  <div className="text-xs text-dim mb-4">
+                    ${lease.pricePerTire}/tire/mo &middot; ${fmt(lease.monthlyRent)}/mo total
+                  </div>
+
+                  {/* 3PL inventory */}
+                  {Object.entries(leaseInv).map(([k, qty]) => qty > 0 && (
+                    <div key={k} className="row-between text-xs mb-4" style={{ paddingLeft: 8 }}>
+                      <span className="text-dim">{TIRES[k]?.n || k}</span>
+                      <span>{qty}</span>
+                    </div>
+                  ))}
+
+                  {/* Transfer to/from 3PL */}
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 4 }}>
+                    <div className="text-xs text-dim mb-4">Move tires</div>
+                    <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                      <select
+                        className="autoprice-select"
+                        style={{ flex: 1 }}
+                        value={tplTxLease === lease.id ? tplTxDir : 'toTpl'}
+                        onChange={e => { setTplTxLease(lease.id); setTplTxDir(e.target.value); }}
+                      >
+                        <option value="toTpl">Warehouse &rarr; 3PL</option>
+                        <option value="fromTpl">3PL &rarr; Warehouse</option>
+                      </select>
+                      <select
+                        className="autoprice-select"
+                        style={{ flex: 1 }}
+                        value={tplTxLease === lease.id ? tplTxTire : ''}
+                        onChange={e => { setTplTxLease(lease.id); setTplTxTire(e.target.value); }}
+                      >
+                        <option value="">Tire...</option>
+                        {((tplTxLease === lease.id && tplTxDir === 'fromTpl')
+                          ? Object.entries(leaseInv).filter(([, v]) => v > 0)
+                          : Object.entries(g.warehouseInventory || {}).filter(([, v]) => v > 0)
+                        ).map(([k, qty]) => (
+                          <option key={k} value={k}>{TIRES[k]?.n || k} ({qty})</option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        className="autoprice-offset"
+                        style={{ width: 50 }}
+                        min={1}
+                        value={tplTxLease === lease.id ? tplTxQty : 1}
+                        onChange={e => { setTplTxLease(lease.id); setTplTxQty(Math.max(1, Number(e.target.value))); }}
+                        onFocus={e => e.target.select()}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button
+                        className="btn btn-sm btn-green"
+                        style={{ flex: 1 }}
+                        disabled={!tplTxTire || tplTxLease !== lease.id || busy === `tpl-${lease.id}`}
+                        onClick={async () => {
+                          setBusy(`tpl-${lease.id}`);
+                          const result = await postAction('tplTransfer', { leaseId: lease.id, tire: tplTxTire, qty: tplTxQty, direction: tplTxDir });
+                          await refreshState();
+                          setBusy(null);
+                          if (result?.error) alert(result.error);
+                        }}
+                      >
+                        {busy === `tpl-${lease.id}` ? '...' : 'Move'}
+                      </button>
+                      <button
+                        className="btn btn-sm btn-outline"
+                        style={{ color: 'var(--red)' }}
+                        disabled={busy === `cancel-${lease.id}`}
+                        onClick={async () => {
+                          if (!window.confirm(`Cancel lease with ${lease.ownerName}?\n\nTires that don't fit in your warehouse will be liquidated at 50% market value.`)) return;
+                          setBusy(`cancel-${lease.id}`);
+                          const result = await postAction('cancelLease', { leaseId: lease.id });
+                          await refreshState();
+                          setBusy(null);
+                          if (result?.error) alert(result.error);
+                        }}
+                      >
+                        Cancel Lease
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── My Listings (landlord) ── */}
+        {tplTab === 'listings' && (
+          <div>
+            {!g.hasWarehouse && (
+              <div className="text-sm text-dim">You need a warehouse to list storage for lease.</div>
+            )}
+
+            {g.hasWarehouse && g.reputation >= TPL.minRepToList && (
+              <div style={{ background: 'var(--surface)', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                <div className="text-xs text-dim mb-4">Create New Listing</div>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 80 }}>
+                    <div className="text-xs text-dim">Capacity</div>
+                    <input type="number" className="autoprice-offset" style={{ width: '100%' }} min={TPL.minSlots} value={listCap}
+                      onChange={e => setListCap(Math.max(TPL.minSlots, Number(e.target.value)))} onFocus={e => e.target.select()} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 80 }}>
+                    <div className="text-xs text-dim">$/tire/mo</div>
+                    <input type="number" className="autoprice-offset" style={{ width: '100%' }} min={TPL.minPrice} max={TPL.maxPrice} step={0.25} value={listPrice}
+                      onChange={e => setListPrice(Number(e.target.value))} onFocus={e => e.target.select()} />
+                  </div>
+                </div>
+                <div className="text-xs text-dim mb-4">
+                  Revenue: ~${fmt(listCap * listPrice)}/mo if fully leased
+                </div>
+                <button
+                  className="btn btn-full btn-sm btn-green"
+                  disabled={busy === 'listStorage'}
+                  onClick={async () => {
+                    setBusy('listStorage');
+                    const result = await postAction('listStorage', { capacity: listCap, pricePerTire: listPrice });
+                    await refreshState();
+                    setBusy(null);
+                    if (result?.error) alert(result.error);
+                  }}
+                >
+                  {busy === 'listStorage' ? 'Creating...' : 'Create Listing'}
+                </button>
+              </div>
+            )}
+
+            {g.hasWarehouse && g.reputation < TPL.minRepToList && (
+              <div className="text-sm text-dim mb-4">Need reputation {TPL.minRepToList}+ to list storage.</div>
+            )}
+
+            {myListings.length === 0 && g.hasWarehouse && (
+              <div className="text-sm text-dim">No active listings.</div>
+            )}
+
+            {myListings.map(listing => (
+              <div key={listing.id} style={{ background: 'var(--surface)', borderRadius: 8, padding: 12, marginBottom: 8 }}>
+                <div className="row-between mb-4">
+                  <span className="font-bold text-sm">{listing.capacity} slots</span>
+                  <span className="text-xs text-accent">${listing.pricePerTire}/tire/mo</span>
+                </div>
+                <div className="text-xs text-dim mb-4">
+                  {listing.available}/{listing.capacity} available &middot; {listing.tenants.length}/{listing.maxTenants} tenants
+                </div>
+                <div className="progress-bar mb-4">
+                  <div className="progress-fill" style={{ width: `${listing.capacity > 0 ? ((listing.capacity - listing.available) / listing.capacity) * 100 : 0}%` }} />
+                </div>
+
+                {listing.tenants.length > 0 && (
+                  <div style={{ marginBottom: 4 }}>
+                    <div className="text-xs text-dim">Tenants:</div>
+                    {listing.tenants.map(t => (
+                      <div key={t.leaseId} className="row-between text-xs" style={{ paddingLeft: 8, marginTop: 2 }}>
+                        <span>{t.playerId.substring(0, 8)}... ({t.slots} slots)</span>
+                        <button
+                          className="btn btn-sm btn-outline"
+                          style={{ color: 'var(--red)', fontSize: 10, padding: '2px 6px' }}
+                          disabled={t.evictionDay || busy === `evict-${t.leaseId}`}
+                          onClick={async () => {
+                            if (!window.confirm(`Send eviction notice? Tenant has ${TPL.evictionNoticeDays} days to vacate.`)) return;
+                            setBusy(`evict-${t.leaseId}`);
+                            await postAction('evictTenant', { listingId: listing.id, tenantId: t.playerId });
+                            await refreshState();
+                            setBusy(null);
+                          }}
+                        >
+                          {t.evictionDay ? `Evicting (day ${t.evictionDay})` : 'Evict'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {listing.tenants.length === 0 && (
+                  <button
+                    className="btn btn-full btn-sm btn-outline"
+                    style={{ color: 'var(--red)' }}
+                    disabled={busy === `delist-${listing.id}`}
+                    onClick={async () => {
+                      if (!window.confirm('Remove this storage listing?')) return;
+                      setBusy(`delist-${listing.id}`);
+                      await postAction('delistStorage', { listingId: listing.id });
+                      await refreshState();
+                      setBusy(null);
+                    }}
+                  >
+                    {busy === `delist-${listing.id}` ? '...' : 'Remove Listing'}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── Browse Available Listings ── */}
+        {tplTab === 'browse' && (
+          <div>
+            {tplLoading && <div className="text-sm text-dim">Loading listings...</div>}
+            {!tplLoading && tplListings.length === 0 && (
+              <div className="text-sm text-dim">No storage available for rent right now.</div>
+            )}
+            {!tplLoading && tplListings.map(l => {
+              const monthlyEst = Math.round(rentSlots * l.pricePerTire * 100) / 100;
+              return (
+                <div key={`${l.ownerId}-${l.listingId}`} style={{ background: 'var(--surface)', borderRadius: 8, padding: 12, marginBottom: 8 }}>
+                  <div className="row-between mb-4">
+                    <span className="font-bold text-sm">{l.ownerName}</span>
+                    <span className="text-xs text-dim">Rep {Math.round(l.ownerRep)}</span>
+                  </div>
+                  <div className="text-xs mb-4">
+                    <span className="text-accent">{l.available}</span> slots available &middot;
+                    <span className="text-accent"> ${l.pricePerTire}</span>/tire/mo &middot;
+                    Min {l.minLease} slots
+                  </div>
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                    <input
+                      type="number"
+                      className="autoprice-offset"
+                      style={{ width: 70 }}
+                      min={l.minLease}
+                      max={l.available}
+                      value={rentSlots}
+                      onChange={e => setRentSlots(Math.max(l.minLease, Number(e.target.value)))}
+                      onFocus={e => e.target.select()}
+                    />
+                    <span className="text-xs text-dim">slots</span>
+                    <button
+                      className="btn btn-sm btn-green"
+                      style={{ marginLeft: 'auto' }}
+                      disabled={g.reputation < TPL.minRepToRent || busy === `rent-${l.listingId}`}
+                      onClick={async () => {
+                        const cost = Math.round(rentSlots * l.pricePerTire * 100) / 100;
+                        if (!window.confirm(`Rent ${rentSlots} storage slots from ${l.ownerName}?\n\nFirst month: $${fmt(cost)}\nMonthly: $${fmt(cost)}/mo`)) return;
+                        setBusy(`rent-${l.listingId}`);
+                        const result = await postAction('rentStorage', { listingId: l.listingId, ownerId: l.ownerId, slots: rentSlots });
+                        await refreshState();
+                        loadBrowse();
+                        setBusy(null);
+                        if (result?.error) alert(result.error);
+                      }}
+                    >
+                      {busy === `rent-${l.listingId}` ? '...' : `Rent ($${fmt(monthlyEst)}/mo)`}
+                    </button>
+                  </div>
+                  {g.reputation < TPL.minRepToRent && (
+                    <div className="text-xs text-red" style={{ marginTop: 4 }}>Need rep {TPL.minRepToRent}+ to rent</div>
+                  )}
+                </div>
+              );
+            })}
+            {!tplLoading && (
+              <button className="btn btn-full btn-sm btn-outline" style={{ marginTop: 4 }} onClick={loadBrowse}>
+                Refresh
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Tire Retreading */}
       <div className="card">
         <div className="card-title">Tire Retreading</div>
@@ -265,7 +593,7 @@ export default function StoragePanel() {
             const available = g.warehouseInventory?.[tireKey] || 0;
             const costEach = retreadGrade === 'junk' ? 5 : 10;
             const totalCost = retreadQty * costEach;
-            const gradeLabel = retreadGrade === 'junk' ? 'Junk → Poor' : 'Poor → Good';
+            const gradeLabel = retreadGrade === 'junk' ? 'Junk \u2192 Poor' : 'Poor \u2192 Good';
             if (!window.confirm(
               `Retread ${retreadQty} ${gradeLabel} tires?\n\nCost: $${totalCost}\nAvailable: ${available}\nTime: 3 days\n\nTires will be removed from inventory during retreading.`
             )) return;

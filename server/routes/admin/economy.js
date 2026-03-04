@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { adminAuthMiddleware } from '../../middleware/adminAuth.js';
 import {
   getAllActivePlayers, getPlayer, savePlayerState, getGame, saveGame, createPlayer, removePlayer,
+  upsertLeaderboard,
 } from '../../db/queries.js';
 import { getWealth } from '../../../shared/helpers/wealth.js';
 import { isBotPlayer } from '../../engine/aiPlayers.js';
@@ -83,6 +84,15 @@ router.post('/bots/spawn', async (req, res) => {
           adminId: req.adminId,
         });
         await createPlayer(player.id, player.game_state.name || 'Bot', player.game_state);
+        await upsertLeaderboard(
+          player.id,
+          player.game_state.companyName || player.game_state.name || 'Bot',
+          getWealth(player.game_state),
+          player.game_state.reputation || 0,
+          (player.game_state.locations || []).length,
+          player.game_state.day || 1,
+          false
+        );
         created.push({ id: player.id, name: player.game_state.companyName });
       } catch (e) {
         console.error('Bot spawn error:', e.message);
