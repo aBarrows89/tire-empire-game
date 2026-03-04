@@ -22,7 +22,7 @@ import {
 import { MARKETPLACE, MARKETPLACE_WEEKLY_DEMAND } from '../../shared/constants/marketplace.js';
 import { TPO_BRANDS } from '../../shared/constants/tpoBrands.js';
 import { WS_DELIVERY_COST, WS_STORAGE_COST } from '../../shared/constants/wholesale.js';
-import { DIST_MONTHLY } from '../../shared/constants/distribution.js';
+import { DIST_MONTHLY, DC_MONTHLY } from '../../shared/constants/distribution.js';
 import { INSTALLER_NET } from '../../shared/constants/installerNet.js';
 import { EVENT_HANDLERS } from './events.js';
 import { LOYALTY } from '../../shared/constants/loyalty.js';
@@ -605,7 +605,9 @@ export function simDay(g, shared = {}) {
     const techCap = s.staff.techs * 12;
     const salesCap = s.staff.sales * 10;
     const staffCapTotal = Math.min(techCap, salesCap) * (1 + s.staff.managers * .15);
-    const demandMult = sDem * (1 + s.reputation * .01) * (s._tB || 1);
+    const repBoostActive = s.repBoost && s.day < s.repBoost.expiresDay;
+    const effectiveRep = s.reputation + (repBoostActive ? (s.repBoost.amount || 5) : 0);
+    const demandMult = sDem * (1 + effectiveRep * .01) * (s._tB || 1);
     const whPenalty = 1 - getWhShortage(s) * .08;
 
     // Early game boost: smooth exponential decay (~2x at day 1, asymptotically → 1x)
@@ -658,7 +660,8 @@ export function simDay(g, shared = {}) {
       const aiShopsInCity = (shared.aiShops || []).filter(a => a.cityId === loc.cityId).length;
       const monopolyMult = aiShopsInCity === 0 ? 1.5 : aiShopsInCity <= 2 ? 1.2 : 1.0;
       const premiumTrafficMult = s.isPremium ? 1.08 : 1;
-      let locDemand = Math.max(1, Math.floor(city.dem * .25 * demandMult * whPenalty * earlyBoostShop * loyaltyMult * marketingMult * marketShareMult * monopolyMult * holidayMult * premiumTrafficMult * globalDemandMult));
+      const blitzMult = (s.marketingBlitz && s.day < s.marketingBlitz.expiresDay) ? 1.5 : 1;
+      let locDemand = Math.max(1, Math.floor(city.dem * .25 * demandMult * whPenalty * earlyBoostShop * loyaltyMult * marketingMult * marketShareMult * monopolyMult * holidayMult * premiumTrafficMult * globalDemandMult * blitzMult));
       let locNewSold = 0;
 
       const retailTires = getAllTires(s);
@@ -972,13 +975,17 @@ export function simDay(g, shared = {}) {
     }
   }
 
+  // Distribution center coverage count (used by wholesale + ecom for delivery bonuses)
+  const dcCoverage = (s.distCenters || []).length;
+
   // ── WHOLESALE ──
   if (s.hasWholesale) {
     if (!s.wsClients) s.wsClients = [];
 
     // Auto-generate new clients based on reputation + capacity (weekly chance)
     if (s.day % 7 === 0) {
-      const maxClients = Math.floor(s.reputation / 10);  // 1 client per 10 rep, up to ~10
+      // Client cap scales with reputation + locations (rewards both engagement and expansion)
+      const maxClients = Math.floor(s.reputation / 10) + Math.floor((s.locations || []).length / 3);
       if (s.wsClients.length < maxClients && Math.random() < 0.4) {
         const WS_CLIENT_NAMES = [
           'Metro Fleet Services', 'County Transit Authority', 'Regional Auto Group',
@@ -1046,7 +1053,9 @@ export function simDay(g, shared = {}) {
       const margin = getWsMargin(s, client);
       const price = Math.round(t.def * (1 - margin));
       const rev = pulled * price;
-      const deliveryCost = pulled * Rf(WS_DELIVERY_COST.min, WS_DELIVERY_COST.max);
+      // DC coverage reduces wholesale delivery costs (closer fulfillment centers)
+      const wsShipDisc = dcCoverage > 0 ? Math.min(0.40, dcCoverage * 0.08) : 0;
+      const deliveryCost = pulled * Rf(WS_DELIVERY_COST.min, WS_DELIVERY_COST.max) * (1 - wsShipDisc);
       s.cash += rev - deliveryCost;
       s.dayRev += rev;
       s.dayProfit += rev - deliveryCost;
@@ -1077,6 +1086,12 @@ export function simDay(g, shared = {}) {
       if (up?.trafficBoost) trafficMult += up.trafficBoost;
     }
 
+    // Distribution center coverage bonus: more DCs = faster delivery = higher conversion
+    // Each DC covers 1 region; 5 regions = national coverage = +12.5% conversion
+    if (dcCoverage > 0) {
+      conv += dcCoverage * 0.025; // +2.5% conversion per DC region
+    }
+
     const traffic = Math.floor(ECOM_NATIONAL_MARKET * tier.marketShare * trafficMult * sDem / 7);
     const orders = Math.floor(traffic * conv);
     let ecomRev = 0, ecomSold = 0;
@@ -1092,7 +1107,9 @@ export function simDay(g, shared = {}) {
       const k = tireKeys[R(0, tireKeys.length - 1)];
       const t = TIRES[k];
       const price = s.prices[k] || t.def;
-      const ship = Rf(ECOM_SHIP_COST_RANGE[0], ECOM_SHIP_COST_RANGE[1]);
+      // DC coverage reduces average shipping cost (closer fulfillment)
+      const dcShipDisc = dcCoverage > 0 ? Math.min(0.40, dcCoverage * 0.08) : 0;
+      const ship = Rf(ECOM_SHIP_COST_RANGE[0], ECOM_SHIP_COST_RANGE[1]) * (1 - dcShipDisc);
       const fee = price * ECOM_PAYMENT_FEE;
 
       pullFromStock(s, k, 1);
@@ -1242,8 +1259,14 @@ export function simDay(g, shared = {}) {
   }, 0) / 30;
   s.cash -= totalShopRent;
 
-  // Distribution monthly
-  if (s.hasDist) s.cash -= DIST_MONTHLY / 30;
+  // Distribution monthly: base network fee + per-DC operating cost
+  if (s.hasDist) {
+    s.cash -= DIST_MONTHLY / 30; // base network fee
+    const dcCount = (s.distCenters || []).length;
+    if (dcCount > 0) {
+      s.cash -= (dcCount * DC_MONTHLY) / 30;
+    }
+  }
 
   // Installer listing fees
   if (s.installers && s.installers.length > 0) {
@@ -1329,34 +1352,11 @@ export function simDay(g, shared = {}) {
     s.bankInterestEarned = 0;
     s.bankDepositBonus = 0;
   }
-  // ── Dynamic interest rate system (AI-controlled, weekly adjustment) ──
-  // Total deposits drive rates: more deposits → higher savings rate, lower loan rate
-  // This mimics real banking: abundant capital rewards savers and encourages borrowing
-  if (s.day % 7 === 0) {
-    const rateSeasonMult = { Spring: 0.92, Summer: 0.88, Fall: 1.08, Winter: 1.12 }[season] || 1;
-    const rateNoise = 1 + (Math.random() - 0.5) * 0.10;
-    const baseSavingsRate = 0.042 * rateSeasonMult * rateNoise;
-
-    // TC scarcity bonus: less TC in circulation = higher rates (max +2% bonus)
-    const tcScarcityBonus = shared.totalTC != null
-      ? Math.min(0.02, Math.max(0, (1 - shared.totalTC / 50000) * 0.02))
-      : 0;
-
-    // Deposit abundance factor: more total deposits → higher savings rate, lower loan rate
-    // At $0 total deposits: factor = 0, at $5M: factor ~0.5, at $20M+: factor ~1.0
-    const totalDep = shared.totalBankDeposits || 0;
-    const depositFactor = Math.min(1.0, totalDep / 20000000);
-
-    // Savings rate: base + TC bonus + deposit abundance bonus (up to +2%)
-    const depositAbundanceBonus = depositFactor * 0.02;
-    s.bankRate = Math.round((baseSavingsRate + tcScarcityBonus + depositAbundanceBonus) * 10000) / 10000;
-    s.bankRate = Math.max(0.015, Math.min(0.085, s.bankRate));
-    s.tcScarcityBonus = Math.round(tcScarcityBonus * 10000) / 10000;
-
-    // Loan rate multiplier: when deposits are high, loan rates drop (bank has capital to lend)
-    // Range: 1.0 (no deposits, full rate) to 0.7 (massive deposits, 30% discount on loan rates)
-    s.loanRateMult = Math.round((1.0 - depositFactor * 0.30) * 1000) / 1000;
-  }
+  // ── Sync rates from global economy (centralized in tick loop) ──
+  // Bank rate and loan rate are now calculated globally for all players.
+  // Per-player tiered deposit bonus is still applied above in the interest section.
+  if (shared.bankRate != null) s.bankRate = shared.bankRate;
+  if (shared.loanRateMult != null) s.loanRateMult = shared.loanRateMult;
 
   // ── SUPPLIER FREE SAMPLES ──
   for (const [supIdx, rel] of Object.entries(s.supplierRelationships || {})) {
@@ -1473,9 +1473,23 @@ export function simDay(g, shared = {}) {
     s.marketPrices = mktPrices;
   }
 
-  // ── TIRE COINS — 1 every 36 days (~10 TC per game year) ──
+  // ── TIRE COINS — weekly drip + reputation bonus ──
   const tcCap = getTcCap(s);
-  if (s.day % 36 === 0) s.tireCoins = Math.min((s.tireCoins || 0) + 1, tcCap);
+  if (s.day % 7 === 0) {
+    // Base weekly drip: 1 TC for all players (~52 TC/year)
+    let weeklyTC = 1;
+
+    // Reputation bonus: higher-rep players earn more TC (rewards engagement)
+    if (s.reputation >= 75) weeklyTC += 3;
+    else if (s.reputation >= 50) weeklyTC += 2;
+    else if (s.reputation >= 25) weeklyTC += 1;
+
+    const prev = s.tireCoins || 0;
+    s.tireCoins = Math.min(prev + weeklyTC, tcCap);
+    if (s.tireCoins > prev && weeklyTC > 1) {
+      s.log.push({ msg: `Weekly TC drip: +${weeklyTC} TireCoins (rep bonus)`, cat: 'event' });
+    }
+  }
 
   // Premium TC stipend — 50 TC every 30 days
   if (s.isPremium && s.day % 30 === 0) {

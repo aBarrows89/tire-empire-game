@@ -197,6 +197,7 @@ function createAIPlayer(name, company, stage, playerDay, globalDay) {
       marketplaceChannels: [],
       hasDist: stage > 0.7,
       distClients: [],
+      distCenters: [],
       tpoContracts: [],
       returnDeals: [],
       govContracts: [],
@@ -418,7 +419,7 @@ export function createStealthPlayer(name, company, cityId, intensity, adminId) {
       hasEcom: i > 6, ecomStaff: {}, ecomUpgrades: [], ecomTotalSpent: 0,
       ecomDailyOrders: 0, ecomDailyRev: 0,
       marketplaceSpecialist: i > 3, marketplaceChannels: [],
-      hasDist: i > 8, distClients: [],
+      hasDist: i > 8, distClients: [], distCenters: [],
       tpoContracts: [], returnDeals: [], govContracts: [],
       fleetOffers: [], installers: [], isInstaller: false,
       liquidationListings: [],
@@ -740,6 +741,7 @@ export function simAIPlayerDay(g) {
     g.hasDist = true;
     g.cash -= 500000;
     g.distClients = g.distClients || [];
+    g.distCenters = g.distCenters || [];
   }
 
   // ── INSURANCE — moderate+ bots get insurance ──

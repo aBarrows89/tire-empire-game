@@ -1,4 +1,5 @@
 import { getCap } from '../../../shared/helpers/inventory.js';
+import { uid } from '../../../shared/helpers/random.js';
 
 export async function handleWholesale(action, params, g, ctx) {
   switch (action) {
@@ -23,8 +24,59 @@ export async function handleWholesale(action, params, g, ctx) {
       if (g.cash < DIST_UNLOCK_COST) return ctx.fail(`Need $${DIST_UNLOCK_COST.toLocaleString()}`);
       g.cash -= DIST_UNLOCK_COST;
       g.hasDist = true;
-      g.distClients = g.distClients || [];
+      // Migrate: initialize distCenters array (replaces legacy distClients)
+      if (!g.distCenters) g.distCenters = [];
+      g.distClients = g.distClients || []; // keep for backward compat
       g.log.push(`Distribution network unlocked! (-$${DIST_UNLOCK_COST.toLocaleString()})`);
+      break;
+    }
+
+    case 'openDistCenter': {
+      if (!g.hasDist) return ctx.fail('Need distribution network first');
+      const { DC_OPEN_COST, DC_MAX, REGIONS, getRegionForState } = await import('../../../shared/constants/distribution.js');
+      if (!g.distCenters) g.distCenters = [];
+      if (g.distCenters.length >= DC_MAX) return ctx.fail(`Max ${DC_MAX} distribution centers`);
+
+      const { regionId, cityId } = params;
+      if (!REGIONS[regionId]) return ctx.fail('Invalid region');
+
+      // Verify they don't already have a DC in this region
+      if (g.distCenters.some(dc => dc.regionId === regionId)) {
+        return ctx.fail(`Already have a DC in ${REGIONS[regionId].n}`);
+      }
+
+      // Verify the city is in the specified region
+      const { CITIES } = await import('../../../shared/constants/cities.js');
+      const city = CITIES.find(c => c.id === cityId);
+      if (!city) return ctx.fail('Invalid city');
+      if (getRegionForState(city.state) !== regionId) {
+        return ctx.fail(`${city.name} is not in the ${REGIONS[regionId].n} region`);
+      }
+
+      if (g.cash < DC_OPEN_COST) return ctx.fail(`Need $${DC_OPEN_COST.toLocaleString()}`);
+      g.cash -= DC_OPEN_COST;
+
+      g.distCenters.push({
+        id: uid(),
+        regionId,
+        cityId,
+        cityName: city.name,
+        state: city.state,
+        openedDay: g.day,
+      });
+
+      g.log.push(`Opened distribution center in ${city.name}, ${city.state} (${REGIONS[regionId].n}) (-$${DC_OPEN_COST.toLocaleString()})`);
+      break;
+    }
+
+    case 'closeDistCenter': {
+      if (!g.distCenters || g.distCenters.length === 0) return ctx.fail('No distribution centers');
+      const { dcId } = params;
+      const idx = g.distCenters.findIndex(dc => dc.id === dcId);
+      if (idx === -1) return ctx.fail('Distribution center not found');
+      const dc = g.distCenters[idx];
+      g.distCenters.splice(idx, 1);
+      g.log.push(`Closed distribution center in ${dc.cityName}, ${dc.state}`);
       break;
     }
 

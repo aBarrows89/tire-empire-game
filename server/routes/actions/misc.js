@@ -158,8 +158,11 @@ export async function handleMisc(action, params, g, ctx) {
       const template = (g.franchiseTemplates || []).find(t2 => t2.id === templateId);
       if (!template) return ctx.fail('Invalid template');
       const shopCostBase = 137500 * (city.cost || 1);
-      const totalCost = shopCostBase + FRANCHISE.franchiseFee;
-      if (g.cash < totalCost) return ctx.fail('Not enough cash');
+      // Scaling franchise fee: each additional franchise costs more
+      const existingFranchises = (g.locations || []).filter(l => l.isFranchise).length;
+      const scaledFee = Math.round(FRANCHISE.franchiseFee * Math.pow(FRANCHISE.franchiseFeeScale || 1.5, existingFranchises));
+      const totalCost = shopCostBase + scaledFee;
+      if (g.cash < totalCost) return ctx.fail(`Not enough cash ($${totalCost.toLocaleString()} needed)`);
       g.cash -= totalCost;
       g.locations.push({
         cityId, id: uid(), locStorage: 0, inventory: {},
@@ -398,6 +401,34 @@ export async function handleMisc(action, params, g, ctx) {
         + tcStore.upgrades.filter(u => u.level <= nextUpgrade.level).reduce((a, u) => a + u.addCap, 0);
       g.log = g.log || [];
       g.log.push({ msg: `Upgraded TC Storage to Level ${nextUpgrade.level} (+${nextUpgrade.addCap} capacity, new cap: ${newCap} TC)`, cat: 'event' });
+      break;
+    }
+
+    case 'buyMarketingBlitz': {
+      // TC sink: 7-day marketing boost across all locations (+50% customer traffic)
+      const blitzCost = 75;
+      if ((g.tireCoins || 0) < blitzCost) return ctx.fail(`Need ${blitzCost} TC (you have ${g.tireCoins || 0})`);
+      if (g.marketingBlitz && g.day < g.marketingBlitz.expiresDay) {
+        return ctx.fail(`Blitz still active (${g.marketingBlitz.expiresDay - g.day} days remaining)`);
+      }
+      g.tireCoins -= blitzCost;
+      g.marketingBlitz = { purchasedDay: g.day, expiresDay: g.day + 7 };
+      g.log = g.log || [];
+      g.log.push({ msg: `Marketing Blitz activated! +50% customer traffic for 7 days (${blitzCost} TC)`, cat: 'event' });
+      break;
+    }
+
+    case 'buyRepBoost': {
+      // TC sink: temporary +5 reputation for 14 days (useful for unlocking thresholds)
+      const boostCost = 150;
+      if ((g.tireCoins || 0) < boostCost) return ctx.fail(`Need ${boostCost} TC (you have ${g.tireCoins || 0})`);
+      if (g.repBoost && g.day < g.repBoost.expiresDay) {
+        return ctx.fail(`Rep boost still active (${g.repBoost.expiresDay - g.day} days remaining)`);
+      }
+      g.tireCoins -= boostCost;
+      g.repBoost = { purchasedDay: g.day, expiresDay: g.day + 14, amount: 5 };
+      g.log = g.log || [];
+      g.log.push({ msg: `Reputation Boost activated! +5 rep for 14 days (${boostCost} TC)`, cat: 'event' });
       break;
     }
 

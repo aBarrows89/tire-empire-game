@@ -59,6 +59,8 @@ export const ACTION_SCHEMAS = {
   // ── Wholesale ──
   unlockWholesale:           empty,
   unlockDist:                empty,
+  openDistCenter:            z.object({ regionId: str, cityId: str }),
+  closeDistCenter:           z.object({ dcId: str }),
   enableFactoryDistribution: empty,
 
   // ── E-Commerce ──
@@ -125,6 +127,8 @@ export const ACTION_SCHEMAS = {
   instantRetread:             empty,
   buyMarketIntel:             empty,
   upgradeTcStorage:           empty,
+  buyMarketingBlitz:          empty,
+  buyRepBoost:                empty,
   devSetState:                z.object({ cash: optNum, reputation: optNum, day: optNum, tireCoins: optNum, adminKey: optStr }).passthrough(),
 };
 

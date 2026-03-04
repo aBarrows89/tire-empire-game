@@ -27,19 +27,21 @@ export const FACTORY = {
   // Factory staffing
   staff: {
     lineWorkers: { salary: 3200, capacityBoost: 10, label: 'Line Worker' },
-    inspectors: { salary: 4500, defectReduce: 0.02, label: 'Quality Inspector' },
+    inspectors: { salary: 4500, defectReduce: 0.025, label: 'Quality Inspector' },
     engineers: { salary: 6500, qualityBoost: 0.005, label: 'R&D Engineer' },
     manager: { salary: 7000, efficiencyBoost: 0.20, max: 1, label: 'Factory Manager' },
   },
 
-  // R&D system
-  baseDefectRate: 0.15,
+  // R&D system — lower base defect, better inspector effectiveness
+  baseDefectRate: 0.12,
   minDefectRate: 0.01,
 
-  // Volume discounts on production cost
+  // Volume discounts on production cost (more granular tiers)
   volumeDiscounts: [
+    { minQty: 50, discount: 0.05 },
     { minQty: 100, discount: 0.10 },
-    { minQty: 200, discount: 0.20 },
-    { minQty: 300, discount: 0.30 },
+    { minQty: 200, discount: 0.18 },
+    { minQty: 300, discount: 0.25 },
+    { minQty: 500, discount: 0.30 },
   ],
 };

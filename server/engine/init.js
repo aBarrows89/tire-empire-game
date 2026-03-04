@@ -71,6 +71,7 @@ export function init(playerName = "Player", globalDay = 1) {
     marketplaceChannels: [],
     hasDist: false,
     distClients: [],
+    distCenters: [],
     tpoContracts: [],
     returnDeals: [],
     govContracts: [],

@@ -40,6 +40,14 @@ router.get('/', authMiddleware, async (req, res) => {
     if (game?.economy?.supplierPricing) {
       player.game_state._supplierPricing = game.economy.supplierPricing;
     }
+    if (game?.economy?.commodities) {
+      player.game_state._commodities = game.economy.commodities;
+    }
+    if (game?.economy?.bankRate != null) {
+      player.game_state._bankRate = game.economy.bankRate;
+      player.game_state._loanRateMult = game.economy.loanRateMult;
+      player.game_state._rateHistory = game.economy.rateHistory;
+    }
     res.json(player.game_state);
   } catch (err) {
     console.error('GET /api/state error:', err);

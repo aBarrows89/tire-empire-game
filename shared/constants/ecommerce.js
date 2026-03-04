@@ -25,18 +25,20 @@ export const ECOM_UPGRADES = {
 
 export const ECOM_TIERS = [
   { min: 0, label: "Invisible", marketShare: .0005, desc: "Page 10+ \u2014 nobody finds you" },
-  { min: 20000, label: "Startup", marketShare: .002, desc: "Page 5-8 for niche terms" },
-  { min: 60000, label: "Emerging", marketShare: .005, desc: "Page 2-3 for some searches" },
-  { min: 180000, label: "Growing", marketShare: .012, desc: "First page for long-tail keywords" },
-  { min: 450000, label: "Established", marketShare: .025, desc: "First page for major terms" },
-  { min: 1000000, label: "Competitive", marketShare: .045, desc: "Top 5 for most tire searches" },
-  { min: 2500000, label: "Major Player", marketShare: .075, desc: "Top 3 \u2014 competing with the big sites" },
+  { min: 10000, label: "Crawling", marketShare: .001, desc: "Page 8-10 \u2014 barely indexed" },
+  { min: 25000, label: "Startup", marketShare: .003, desc: "Page 5-8 for niche terms" },
+  { min: 60000, label: "Emerging", marketShare: .006, desc: "Page 2-3 for some searches" },
+  { min: 120000, label: "Rising", marketShare: .010, desc: "Page 1-2 for long-tail keywords" },
+  { min: 250000, label: "Growing", marketShare: .018, desc: "First page for long-tail keywords" },
+  { min: 500000, label: "Established", marketShare: .030, desc: "First page for major terms" },
+  { min: 1000000, label: "Competitive", marketShare: .050, desc: "Top 5 for most tire searches" },
+  { min: 2500000, label: "Major Player", marketShare: .080, desc: "Top 3 \u2014 competing with the big sites" },
   { min: 6000000, label: "Dominant", marketShare: .12, desc: "Household name in online tires" },
 ];
 
 export const ECOM_PAYMENT_FEE = .028;
 export const ECOM_BASE_RETURN_RATE = .08;
-export const ECOM_BASE_CONVERSION = .022;
+export const ECOM_BASE_CONVERSION = .025;
 export const ECOM_SHIP_COST_RANGE = [14, 28];
 export const ECOM_NATIONAL_MARKET = 5000;
 export const ECOM_HOSTING_BASE = 1500;

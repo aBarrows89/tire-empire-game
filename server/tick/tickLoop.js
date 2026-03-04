@@ -595,25 +595,119 @@ export async function runTick(clients) {
       if (game.economy.tcHistory.length > 52) game.economy.tcHistory.shift();
     }
 
-    // ── Dynamic Supplier Pricing ──
-    // Prices fluctuate ±15% based on demand (total purchase volume) and random market noise
+    // ── Dynamic Supplier Pricing with Commodity Cycles ──
     if (!game.economy.supplierPricing) game.economy.supplierPricing = {};
+    if (!game.economy.commodities) game.economy.commodities = { rubber: 1.0, steel: 1.0, chemicals: 1.0 };
+
+    // Commodity prices cycle independently (sine waves with different periods + noise)
+    const commodities = game.economy.commodities;
+    const cycleAmplitude = 0.12; // ±12% swing from commodity cycles
+    commodities.rubber    = 1.0 + cycleAmplitude * Math.sin(day / 45 * Math.PI) + (Math.random() - 0.5) * 0.03;
+    commodities.steel     = 1.0 + cycleAmplitude * Math.sin(day / 60 * Math.PI + 2.1) + (Math.random() - 0.5) * 0.03;
+    commodities.chemicals = 1.0 + cycleAmplitude * Math.sin(day / 75 * Math.PI + 4.2) + (Math.random() - 0.5) * 0.03;
+
+    // Clamp commodities to [0.80, 1.25]
+    for (const k of Object.keys(commodities)) {
+      commodities[k] = Math.round(Math.max(0.80, Math.min(1.25, commodities[k])) * 1000) / 1000;
+    }
+
+    // Commodity sensitivity by tire category (how much each commodity affects price)
+    const commodityWeights = {
+      // used tires: barely affected (secondhand market)
+      used_junk: { rubber: 0.05, steel: 0.02, chemicals: 0.01 },
+      used_poor: { rubber: 0.08, steel: 0.03, chemicals: 0.02 },
+      used_good: { rubber: 0.10, steel: 0.04, chemicals: 0.03 },
+      used_premium: { rubber: 0.12, steel: 0.05, chemicals: 0.03 },
+      // standard tires: moderate sensitivity
+      allSeason: { rubber: 0.30, steel: 0.15, chemicals: 0.10 },
+      performance: { rubber: 0.25, steel: 0.20, chemicals: 0.15 },
+      winter: { rubber: 0.30, steel: 0.15, chemicals: 0.20 },
+      lightTruck: { rubber: 0.35, steel: 0.20, chemicals: 0.10 },
+      commercial: { rubber: 0.35, steel: 0.25, chemicals: 0.10 },
+      // specialty: higher sensitivity
+      atv: { rubber: 0.25, steel: 0.10, chemicals: 0.10 },
+      implement: { rubber: 0.30, steel: 0.20, chemicals: 0.05 },
+      tractor: { rubber: 0.40, steel: 0.25, chemicals: 0.10 },
+      evTire: { rubber: 0.20, steel: 0.15, chemicals: 0.25 },
+      runFlat: { rubber: 0.25, steel: 0.25, chemicals: 0.15 },
+      luxuryTouring: { rubber: 0.20, steel: 0.15, chemicals: 0.20 },
+      premiumAllWeather: { rubber: 0.25, steel: 0.15, chemicals: 0.20 },
+    };
+
     const totalPurchaseVol = players.reduce((sum, p) => sum + (p.game_state.monthlyPurchaseVol || 0), 0);
-    const demandFactor = Math.min(1.0, totalPurchaseVol / 5000); // 0-1 scale
+    const demandFactor = Math.min(1.0, totalPurchaseVol / 5000);
+
     for (const tireKey of Object.keys(TIRES)) {
       const prev = game.economy.supplierPricing[tireKey] || 1.0;
-      const noise = (Math.random() - 0.5) * 0.04; // ±2% random
-      const demandPull = demandFactor * 0.08; // High demand pushes prices up to +8%
-      // Global events can affect pricing
+      const noise = (Math.random() - 0.5) * 0.03;
+      const demandPull = demandFactor * 0.08;
+
+      // Commodity impact: weighted sum of commodity deviations from 1.0
+      const w = commodityWeights[tireKey] || { rubber: 0.20, steel: 0.15, chemicals: 0.10 };
+      const commodityMod = w.rubber * (commodities.rubber - 1) + w.steel * (commodities.steel - 1) + w.chemicals * (commodities.chemicals - 1);
+
+      // Global events
       let eventMod = 0;
       for (const ge of (game.economy.activeGlobalEvents || [])) {
         const def = GLOBAL_EVENTS.find(d => d.id === ge.id);
         if (def?.effects?.productionCostMult) eventMod += (def.effects.productionCostMult - 1) * 0.5;
       }
-      const target = 1.0 + demandPull + noise + eventMod;
-      // Smooth toward target (don't jump too fast)
+
+      const target = 1.0 + demandPull + noise + commodityMod + eventMod;
       const next = prev + (target - prev) * 0.15;
-      game.economy.supplierPricing[tireKey] = Math.round(Math.max(0.85, Math.min(1.15, next)) * 1000) / 1000;
+      // Wider range: ±25% for more market impact
+      game.economy.supplierPricing[tireKey] = Math.round(Math.max(0.75, Math.min(1.25, next)) * 1000) / 1000;
+    }
+
+    // ── Dynamic Interest Rates (Bank Bot) — global weekly adjustment ──
+    // Centralized: all players see the same base rate, driven by macro factors.
+    // Per-player tiered deposit bonus is still applied in simDay.
+    if (!game.economy.bankRate) game.economy.bankRate = 0.042;
+    if (!game.economy.loanRateMult) game.economy.loanRateMult = 1.0;
+    if (!game.economy.rateHistory) game.economy.rateHistory = [];
+
+    if (day % 7 === 0) {
+      const cal = getCalendar(day);
+      const rateSeasonMult = { Spring: 0.92, Summer: 0.88, Fall: 1.08, Winter: 1.12 }[cal.season] || 1;
+      const rateNoise = 1 + (Math.random() - 0.5) * 0.10;
+      const baseSavingsRate = 0.042 * rateSeasonMult * rateNoise;
+
+      // TC scarcity bonus: less TC in circulation → higher rates (max +2%)
+      const tcScarcityBonus = totalTC > 0
+        ? Math.min(0.02, Math.max(0, (1 - totalTC / 50000) * 0.02))
+        : 0;
+
+      // Deposit abundance: more total deposits → higher savings rate, lower loan rate
+      // At $0: factor=0, $5M: ~0.5, $20M+: ~1.0
+      const depositFactor = Math.min(1.0, totalBankDeposits / 20000000);
+      const depositAbundanceBonus = depositFactor * 0.02;
+
+      // Global event impact on rates
+      let eventRateShift = 0;
+      for (const ge of (game.economy.activeGlobalEvents || [])) {
+        if (ge.id === 'economic_boom') eventRateShift -= 0.005;    // boom → lower rates (stimulate)
+        if (ge.id === 'rubber_shortage') eventRateShift += 0.005;  // crisis → higher rates
+        if (ge.id === 'safety_recall') eventRateShift += 0.003;    // uncertainty → higher rates
+      }
+
+      const newBankRate = baseSavingsRate + tcScarcityBonus + depositAbundanceBonus + eventRateShift;
+      game.economy.bankRate = Math.round(Math.max(0.015, Math.min(0.085, newBankRate)) * 10000) / 10000;
+
+      // Loan rate multiplier: high deposits → bank has capital → cheaper loans
+      // Range: 1.0 (no deposits) to 0.7 (massive deposits, 30% discount)
+      game.economy.loanRateMult = Math.round((1.0 - depositFactor * 0.30) * 1000) / 1000;
+
+      game.economy.tcScarcityBonus = Math.round(tcScarcityBonus * 10000) / 10000;
+
+      // Rate history for charts (keep last 52 weeks)
+      game.economy.rateHistory.push({
+        day,
+        bankRate: game.economy.bankRate,
+        loanRateMult: game.economy.loanRateMult,
+        depositFactor: +depositFactor.toFixed(3),
+        totalDeposits: Math.round(totalBankDeposits),
+      });
+      if (game.economy.rateHistory.length > 52) game.economy.rateHistory.shift();
     }
 
     const shared = {
@@ -630,6 +724,9 @@ export async function runTick(clients) {
       tcValue: game.economy.tcValue || 50000,
       tcMetrics: game.economy.tcMetrics || {},
       supplierPricing: game.economy.supplierPricing || {},
+      commodities: game.economy.commodities || { rubber: 1.0, steel: 1.0, chemicals: 1.0 },
+      bankRate: game.economy.bankRate,
+      loanRateMult: game.economy.loanRateMult,
     };
 
     const cal = getCalendar(day);
@@ -720,7 +817,7 @@ export async function runTick(clients) {
           })
           .sort((a, b) => b.weeklyRevenue - a.weeklyRevenue);
 
-        const prizes = [1];  // 1 TC for 1st place only (~12 TC/year entering economy)
+        const prizes = [10, 5, 3, 1];  // Top 4 places get TC (~228 TC/year entering economy)
         for (let i = 0; i < Math.min(ranked.length, prizes.length); i++) {
           const winner = players.find(p => p.id === ranked[i].id);
           if (winner) {
