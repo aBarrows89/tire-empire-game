@@ -493,6 +493,38 @@ export default function FactoryPanel() {
             );
           })}
 
+          {/* Active Listings — confirmation of what's visible to buyers */}
+          {factory?.isDistributor && (
+            <div className="card">
+              <div className="card-title">Your Active Listings</div>
+              <div className="text-xs text-dim mb-4">These tires are visible to other players in the wholesale marketplace.</div>
+              {(() => {
+                const listings = PRODUCIBLE_TYPES.filter(type => (factory?.wholesalePrices?.[type] || 0) > 0);
+                if (listings.length === 0) return <div className="text-sm text-dim">No prices set yet. Set wholesale prices above to list your tires.</div>;
+                return listings.map(type => {
+                  const t = TIRES[type];
+                  const brandKey = `brand_${type}`;
+                  const stock = (g.warehouseInventory?.[brandKey] || 0) + (g.warehouseInventory?.[type] || 0);
+                  const price = factory.wholesalePrices[type];
+                  const tireName = factory?.brandName ? `${factory.brandName} ${t?.n || type}` : (t?.n || type);
+                  return (
+                    <div key={type} className="row-between text-sm mb-4" style={{ padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
+                      <div>
+                        <span className="font-bold">{tireName}</span>
+                        <span className="text-dim ml-4"> — ${price}/ea</span>
+                      </div>
+                      <div>
+                        {stock > 0
+                          ? <span className="text-green">{fmt(stock)} in stock</span>
+                          : <span className="text-red">Out of stock</span>}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          )}
+
           {/* Discount Tiers */}
           <div className="card">
             <div className="card-title">Discount Tiers</div>
