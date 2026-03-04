@@ -10,7 +10,7 @@ import { TIRES } from '../../shared/constants/tires.js';
 import { STORAGE } from '../../shared/constants/storage.js';
 import { PAY } from '../../shared/constants/staff.js';
 import { SHOP_MO, shopRent } from '../../shared/constants/shop.js';
-import { CITIES } from '../../shared/constants/cities.js';
+import { CITIES, CITY_DEMAND_PROFILES } from '../../shared/constants/cities.js';
 import { CORP_PAY } from '../../shared/constants/corporate.js';
 import { EVENTS } from '../../shared/constants/events.js';
 import { SERVICES } from '../../shared/constants/services.js';
@@ -44,6 +44,11 @@ import { getCalendar } from '../../shared/helpers/calendar.js';
 import { getShopValuation, SHOP_BID, AI_BUYER_NAMES } from '../../shared/constants/shopSale.js';
 import { uid } from '../../shared/helpers/random.js';
 import { MONET } from '../../shared/constants/monetization.js';
+import { SUPPLIERS } from '../../shared/constants/suppliers.js';
+import { CONTRACT_TYPES, OFFERS_PER_MONTH, CONTRACTABLE_TIRES, SEASONAL_TIRES } from '../../shared/constants/contracts.js';
+import { VINNIE_TRIGGERS, PRIORITY_ORDER } from '../../shared/constants/vinnieTriggers.js';
+import { getActiveGoal } from '../../shared/constants/vinnieGoals.js';
+import { getVinnieStage } from '../../shared/constants/vinnieLifecycle.js';
 
 /** Compute max TC a player can hold based on upgrades + premium status */
 function getTcCap(s) {
@@ -131,6 +136,58 @@ export function simDay(g, shared = {}) {
       const qty = Math.min(imp.qty, space);
       if (qty > 0) s.warehouseInventory[imp.tire] = (s.warehouseInventory[imp.tire] || 0) + qty;
       s.log.push({ msg: `📦 Import arrived: ${qty} ${TIRES[imp.tire]?.n || imp.tire}${qty < imp.qty ? ` (${imp.qty - qty} didn't fit)` : ''}`, cat: 'source' });
+    }
+  }
+
+  // ── CONTRACT FULFILLMENT (daily deliveries) ──
+  if (s.contracts && s.contracts.length > 0) {
+    for (const ct of s.contracts) {
+      if (ct.status !== 'active') continue;
+      // Check expiration
+      if (s.day > ct.expirationDay) {
+        ct.status = ct.deliveredQuantity >= ct.totalQuantity ? 'completed' : 'expired';
+        if (ct.status === 'expired' && ct.deliveredQuantity < ct.totalQuantity) {
+          s.log.push({ msg: `Contract expired: ${ct.tireName} from ${ct.supplierName} (${ct.deliveredQuantity}/${ct.totalQuantity} delivered)`, cat: 'supplier' });
+        }
+        continue;
+      }
+      // Daily delivery mode
+      if (ct.deliveryMode === 'daily' && ct.deliveredQuantity < ct.totalQuantity) {
+        const dailyQty = Math.min(ct.dailyAllotment || 50, ct.totalQuantity - ct.deliveredQuantity);
+        const space = Math.max(0, getCap(s) - getInv(s));
+        const delivered = Math.min(dailyQty, space);
+        if (delivered > 0) {
+          s.warehouseInventory[ct.tireType] = (s.warehouseInventory[ct.tireType] || 0) + delivered;
+          ct.deliveredQuantity += delivered;
+        }
+        // Tires that don't fit are lost (spec requirement)
+        if (delivered < dailyQty) {
+          ct.deliveredQuantity += (dailyQty - delivered); // Count as delivered even if lost
+        }
+      }
+      // Scheduled delivery (seasonal pre-buy)
+      if (ct.deliveryMode === 'scheduled' && s.day >= ct.deliveryStartDay && !ct._scheduledDelivered) {
+        const space = Math.max(0, getCap(s) - getInv(s));
+        const delivered = Math.min(ct.totalQuantity, space);
+        if (delivered > 0) {
+          s.warehouseInventory[ct.tireType] = (s.warehouseInventory[ct.tireType] || 0) + delivered;
+        }
+        ct.deliveredQuantity = ct.totalQuantity;
+        ct._scheduledDelivered = true;
+        ct.status = 'completed';
+        const lost = ct.totalQuantity - delivered;
+        s.log.push({ msg: `📦 Seasonal delivery: ${delivered} ${ct.tireName}${lost > 0 ? ` (${lost} didn't fit — lost!)` : ''}`, cat: 'supplier' });
+      }
+      // Mark complete
+      if (ct.deliveredQuantity >= ct.totalQuantity && ct.status === 'active') {
+        ct.status = 'completed';
+      }
+    }
+    // Clean up old completed/expired contracts (keep last 5)
+    const done = s.contracts.filter(c => c.status !== 'active');
+    if (done.length > 5) {
+      const activeContracts = s.contracts.filter(c => c.status === 'active');
+      s.contracts = [...activeContracts, ...done.slice(-5)];
     }
   }
 
@@ -353,10 +410,10 @@ export function simDay(g, shared = {}) {
       const wsPrice = s.factory.wholesalePrices?.[baseType] || Math.round((FACTORY.productionCost[baseType] || 50) * 1.5);
       const discountedPrice = Math.round(wsPrice * (1 - tier.disc));
 
-      // Shipping cost
+      // Shipping cost (6a: oil commodity affects shipping)
       const shopDist = Math.floor(Math.random() * 1500);
       const zone = SHIPPING_ZONES.find(z => shopDist <= z.maxDist) || SHIPPING_ZONES[SHIPPING_ZONES.length - 1];
-      const shippingCost = orderQty * zone.costPerTire;
+      const shippingCost = orderQty * zone.costPerTire * (shared.commodities?.oil || 1.0);
 
       // Execute the sale
       s.warehouseInventory[chosenKey] -= orderQty;
@@ -610,8 +667,10 @@ export function simDay(g, shared = {}) {
     const demandMult = sDem * (1 + effectiveRep * .01) * (s._tB || 1);
     const whPenalty = 1 - getWhShortage(s) * .08;
 
-    // Early game boost: smooth exponential decay (~2x at day 1, asymptotically → 1x)
-    const earlyBoostShop = 1 + Math.exp(-s.day / 120);
+    // 16a: Early game boost: logarithmic decay over 270 days (no cliff)
+    const earlyBoostShop = s.day < 270
+      ? 1 + Math.max(0, Math.log(270 - s.day) / Math.log(270))
+      : 1;
 
     // Global staff capacity pool shared across all locations
     let remainingStaffCapGlobal = staffCapTotal;
@@ -691,9 +750,12 @@ export function simDay(g, shared = {}) {
 
         const evAdoptionMult = t.ev ? (1 + Math.min(2.0, s.day / 365 * 0.5)) : 1;
         const emergencyMult = t.emergency ? (1 + (Math.random() < 0.05 ? 3 : 0)) : 1;
+        // Regional demand profile: city-specific demand multiplier per tire category
+        const cityProfile = CITY_DEMAND_PROFILES[loc.cityId] || {};
+        const regionMult = cityProfile[k] || cityProfile[k.replace('brand_', '')] || 1.0;
         let qty = Math.min(
           locStock,
-          Math.floor(locDemand * (.25 + Math.random() * .15) * winterMult * agMult * priceMult * evAdoptionMult * emergencyMult * tireSeasonMult * brandBoost * geBrandMod * geUsedMod * geEvMod * geWinterMod)
+          Math.floor(locDemand * (.25 + Math.random() * .15) * winterMult * agMult * priceMult * evAdoptionMult * emergencyMult * tireSeasonMult * brandBoost * geBrandMod * geUsedMod * geEvMod * geWinterMod * regionMult)
         );
         qty = Math.min(qty, Math.ceil(remainingStaffCap));
         if (qty <= 0) continue;
@@ -733,8 +795,8 @@ export function simDay(g, shared = {}) {
     const usedByTires = s.daySold;
     const spareCap = Math.max(0, totalTechCap - usedByTires);
 
-    // Daily service demand (was loc*(4+rep*0.2) weekly)
-    const svcDemandBase = s.locations.length * (0.6 + s.reputation * .03) * sDem;
+    // 16g: Daily service demand — increased base for meaningful revenue
+    const svcDemandBase = s.locations.length * (1.2 + s.reputation * .05) * sDem;
     const svcPrices = s.servicePrices || { flatRepair: 25, balance: 20, install: 35, nitrogen: 10 };
 
     let capLeft = spareCap;
@@ -984,8 +1046,10 @@ export function simDay(g, shared = {}) {
 
     // Auto-generate new clients based on reputation + capacity (weekly chance)
     if (s.day % 7 === 0) {
-      // Client cap scales with reputation + locations (rewards both engagement and expansion)
-      const maxClients = Math.floor(s.reputation / 10) + Math.floor((s.locations || []).length / 3);
+      // 16i: Client cap scales with reputation + warehouse capacity
+      const whCapacity = getCap(s) - (s.locations || []).reduce((a, l) => a + getLocCap(l), 0);
+      const warehouseBonus = Math.floor(Math.max(0, whCapacity) / 5000);
+      const maxClients = Math.floor(s.reputation / 8) + warehouseBonus;
       if (s.wsClients.length < maxClients && Math.random() < 0.4) {
         const WS_CLIENT_NAMES = [
           'Metro Fleet Services', 'County Transit Authority', 'Regional Auto Group',
@@ -1109,7 +1173,9 @@ export function simDay(g, shared = {}) {
       const price = s.prices[k] || t.def;
       // DC coverage reduces average shipping cost (closer fulfillment)
       const dcShipDisc = dcCoverage > 0 ? Math.min(0.40, dcCoverage * 0.08) : 0;
-      const ship = Rf(ECOM_SHIP_COST_RANGE[0], ECOM_SHIP_COST_RANGE[1]) * (1 - dcShipDisc);
+      // 6a: Oil commodity affects shipping costs
+      const oilShipMult = (shared.commodities?.oil || 1.0);
+      const ship = Rf(ECOM_SHIP_COST_RANGE[0], ECOM_SHIP_COST_RANGE[1]) * (1 - dcShipDisc) * oilShipMult;
       const fee = price * ECOM_PAYMENT_FEE;
 
       pullFromStock(s, k, 1);
@@ -1212,23 +1278,26 @@ export function simDay(g, shared = {}) {
   }
 
   // ── COSTS — all converted from weekly (÷4 from monthly) to daily (÷30 from monthly) ──
+  // 6d: Inflation affects wages (±5% swing from inflation cycle)
+  const wageMult = shared.inflationIndex || 1.0;
+
   // Staff payroll
-  const payroll = Object.entries(s.staff).reduce((a, [k, v]) => a + (PAY[k] || 0) * v, 0) / 30;
+  const payroll = Object.entries(s.staff).reduce((a, [k, v]) => a + (PAY[k] || 0) * v, 0) / 30 * wageMult;
   s.cash -= payroll;
 
   // Warehouse staff payroll
-  s.cash -= getWhPayroll(s) / 30;
+  s.cash -= getWhPayroll(s) / 30 * wageMult;
 
   // Corp staff payroll
   const corpPayroll = Object.entries(s.corpStaff || {}).reduce(
     (a, [k, v]) => a + (CORP_PAY[k] || 0) * v, 0
-  ) / 30;
+  ) / 30 * wageMult;
   s.cash -= corpPayroll;
 
   // E-com staff payroll
   const ecomPayroll = Object.entries(s.ecomStaff || {}).reduce(
     (a, [role, hired]) => a + (hired ? (ECOM_STAFF[role]?.salary || 0) : 0), 0
-  ) / 30;
+  ) / 30 * wageMult;
   s.cash -= ecomPayroll;
 
   // E-com upgrade monthly costs
@@ -1252,11 +1321,14 @@ export function simDay(g, shared = {}) {
   const storageRent = s.isPremium ? rawStorageRent * 0.5 : rawStorageRent;
   s.cash -= storageRent;
 
-  // Shop rent (variable by city cost)
+  // Shop rent (variable by city cost, 6d: inflation affects rent)
+  // 16e: First shop gets 25% rent discount for first 90 days
+  if (!s._firstShopOpenDay && (s.locations || []).length > 0) s._firstShopOpenDay = s.day;
+  const firstShopDiscountActive = (s.locations || []).length === 1 && s._firstShopOpenDay && (s.day - s._firstShopOpenDay) < 90;
   const totalShopRent = s.locations.reduce((a, loc) => {
     const city = CITIES.find(c => c.id === loc.cityId);
     return a + shopRent(city);
-  }, 0) / 30;
+  }, 0) / 30 * wageMult * (firstShopDiscountActive ? 0.75 : 1);
   s.cash -= totalShopRent;
 
   // Distribution monthly: base network fee + per-DC operating cost
@@ -1276,9 +1348,15 @@ export function simDay(g, shared = {}) {
   // Marketplace specialist salary
   if (s.marketplaceSpecialist) s.cash -= 3500 / 30;
 
-  // Insurance premium
+  // Insurance premium (6a: volatile during economic turmoil / high commodity prices)
   if (s.insurance && INSURANCE[s.insurance]) {
-    s.cash -= INSURANCE[s.insurance].monthlyCost / 30;
+    const baseInsurance = (INSURANCE[s.insurance].costPerMonth || INSURANCE[s.insurance].monthlyCost) / 30;
+    // Insurance premiums rise with commodity volatility + active global events
+    const avgCommodity = ((shared.commodities?.rubber || 1) + (shared.commodities?.steel || 1) + (shared.commodities?.chemicals || 1)) / 3;
+    const volatilityMult = 1 + Math.max(0, (avgCommodity - 1.05)) * 2; // +2% insurance per 1% commodity above 1.05
+    const eventCount = (shared.globalEvents || []).length;
+    const eventMult = 1 + eventCount * 0.10; // +10% per active global event
+    s.cash -= baseInsurance * volatilityMult * eventMult;
   }
 
   // Loan payments (daily = weekly / 7)
@@ -1300,6 +1378,23 @@ export function simDay(g, shared = {}) {
     }
   }
   s.loans = (s.loans || []).filter(l => l.remaining > 0);
+
+  // ── 3PL LEASE PAYMENTS (monthly) ──
+  if (s.storageLeases && s.storageLeases.length > 0 && s.day % 30 === 0) {
+    for (const lease of s.storageLeases) {
+      if (s.cash >= lease.monthlyRent) {
+        s.cash -= lease.monthlyRent;
+        lease.lastPaidDay = s.day;
+        s.log.push({ msg: `3PL rent: $${lease.monthlyRent.toFixed(2)} to ${lease.ownerName}`, cat: 'cost' });
+      } else {
+        // Can't pay — start grace period countdown
+        if (!lease._graceDayStart) {
+          lease._graceDayStart = s.day;
+          s.log.push({ msg: `⚠️ 3PL rent overdue — ${7} day grace period`, cat: 'cost' });
+        }
+      }
+    }
+  }
 
   // ── BANKRUPTCY PROTECTION ──
   if (s.cash < -10000) {
@@ -1375,6 +1470,85 @@ export function simDay(g, shared = {}) {
     }
   }
 
+  // ── CONTRACT OFFER GENERATION (monthly, based on supplier tier) ──
+  if (s.day % 30 === 0) {
+    if (!s.contractOffers) s.contractOffers = [];
+    // Clear expired offers
+    s.contractOffers = s.contractOffers.filter(o => s.day < o.expiresDay);
+
+    for (const [supIdx, rel] of Object.entries(s.supplierRelationships || {})) {
+      const tier = getSupplierRelTier(rel.totalPurchased || 0);
+      const offersCount = OFFERS_PER_MONTH[tier.level] || 0;
+      if (offersCount <= 0) continue;
+
+      const sup = SUPPLIERS[Number(supIdx)];
+      if (!sup) continue;
+      const eligibleTires = CONTRACTABLE_TIRES.filter(t => {
+        if (sup.ag && !TIRES[t]?.ag) return false;
+        if (!sup.ag && TIRES[t]?.ag) return false;
+        return true;
+      });
+      if (eligibleTires.length === 0) continue;
+
+      for (let i = 0; i < offersCount; i++) {
+        // Pick contract type (weighted toward tier)
+        const typeKeys = Object.keys(CONTRACT_TYPES).filter(k => tier.level >= CONTRACT_TYPES[k].minTier);
+        if (typeKeys.length === 0) continue;
+        const typeKey = typeKeys[R(0, typeKeys.length - 1)];
+        const tmpl = CONTRACT_TYPES[typeKey];
+
+        // Pick a tire
+        let tire;
+        if (typeKey === 'seasonalPreBuy') {
+          // Only offer seasonal tires in appropriate seasons
+          const seasonalMatch = Object.values(SEASONAL_TIRES).find(st => st.offerSeasons.includes(season));
+          if (seasonalMatch) {
+            const seasonalEligible = seasonalMatch.tires.filter(t => eligibleTires.includes(t));
+            tire = seasonalEligible.length > 0 ? seasonalEligible[R(0, seasonalEligible.length - 1)] : eligibleTires[R(0, eligibleTires.length - 1)];
+          } else {
+            tire = eligibleTires[R(0, eligibleTires.length - 1)];
+          }
+        } else {
+          tire = eligibleTires[R(0, eligibleTires.length - 1)];
+        }
+
+        const t = TIRES[tire];
+        if (!t) continue;
+
+        const qty = R(tmpl.qtyRange[0], tmpl.qtyRange[1]);
+        const currentMult = (shared.supplierPricing && shared.supplierPricing[tire]) || 1.0;
+        const discount = Rf(tmpl.discountRange[0], tmpl.discountRange[1]);
+        const pricePerTire = Math.round(t.bMin * currentMult * (1 - sup.disc) * (1 - discount));
+        const upfrontCost = pricePerTire * qty;
+
+        s.contractOffers.push({
+          id: uid(),
+          type: typeKey,
+          label: tmpl.label,
+          supplierIndex: Number(supIdx),
+          supplierName: sup.n,
+          tireType: tire,
+          tireName: t.n,
+          pricePerTire,
+          totalQuantity: qty,
+          durationDays: tmpl.durationDays,
+          deliveryMode: tmpl.deliveryMode,
+          dailyAllotment: tmpl.deliveryMode === 'daily' ? Math.max(1, Math.ceil(qty * (tmpl.dailyAllotmentPct || 0.01))) : null,
+          deliveryLeadDays: tmpl.deliveryLeadDays || 0,
+          upfrontCost,
+          penaltyForDefault: tmpl.penaltyForDefault,
+          discount: Math.round(discount * 100),
+          offeredDay: s.day,
+          expiresDay: s.day + 14, // Offers expire after 14 days
+        });
+      }
+    }
+
+    if (s.contractOffers.length > 0) {
+      s.log.push({ msg: `📋 ${s.contractOffers.length} new supplier contract offer${s.contractOffers.length > 1 ? 's' : ''} available`, cat: 'supplier' });
+    }
+  }
+
   // ── PREMIUM: BONUS SOURCE FINDS ──
   if (s.isPremium && Math.random() < 0.5) {
     const freeSpace = getCap(s) - getInv(s);
@@ -1419,6 +1593,60 @@ export function simDay(g, shared = {}) {
     s.log.push({ msg: `\u{1F451} Vinnie's Insider Tip: ${tip}`, cat: 'vinnie' });
   }
 
+  // ── VINNIE: BANK RATE COMMENTARY (monthly) ──
+  if (s.day % 30 === 0 && shared.bankState) {
+    const bst = shared.bankState;
+    const rPct = (bst.savingsRate * 100).toFixed(1);
+    const totalLoanDebt = (s.loans || []).reduce((a, l) => a + (l.remaining || 0), 0);
+
+    if (bst.rateDirection === 'lowering' && Math.random() < 0.3) {
+      s.log.push({ msg: `Vinnie: "Rates just dropped to ${rPct}%. Time to borrow big and expand!"`, cat: 'vinnie' });
+    } else if (bst.rateDirection === 'raising' && Math.random() < 0.3) {
+      s.log.push({ msg: `Vinnie: "Oof, rates are going up. Maybe hold off on that loan for now."`, cat: 'vinnie' });
+    }
+    if (bst.savingsRate >= 0.070 && Math.random() < 0.2) {
+      s.log.push({ msg: `Vinnie: "Bank's paying ${rPct}% on savings? That's almost as good as selling tires."`, cat: 'vinnie' });
+    } else if (bst.savingsRate <= 0.020 && Math.random() < 0.2) {
+      s.log.push({ msg: `Vinnie: "I've never seen rates this low. Even I'm thinking about opening a shop."`, cat: 'vinnie' });
+    }
+    if (s.bankBalance > 200000 && bst.savingsRate < 0.025 && Math.random() < 0.4) {
+      s.log.push({ msg: `Vinnie: "You've got $${Math.round(s.bankBalance / 1000)}K sitting in savings earning peanuts at ${rPct}%. That money should be working for you."`, cat: 'vinnie' });
+    }
+    if (totalLoanDebt > 100000 && bst.rateDirection === 'raising' && Math.random() < 0.3) {
+      s.log.push({ msg: `Vinnie: "Your loan payments are about to go up. Might want to pay some of that down."`, cat: 'vinnie' });
+    }
+  }
+
+  // ── VINNIE: PRICE WAR COMMENTARY (6c) ──
+  if (s.locations.length > 0 && s.day % 14 === 0 && Math.random() < 0.3) {
+    // Check if player is in a price war (their prices significantly below market)
+    let undercuts = 0, totalChecked = 0;
+    for (const [k, t] of Object.entries(TIRES)) {
+      if (!s.prices[k]) continue;
+      const mkt = (s.marketPrices && s.marketPrices[k]) || t.def;
+      totalChecked++;
+      if (s.prices[k] < mkt * 0.80) undercuts++;
+    }
+    if (undercuts > 3 && totalChecked > 0) {
+      const msgs = [
+        `"You're pricing below cost on ${undercuts} tires. That's bold, kid. Hope you've got the cash to outlast them."`,
+        `"Word on the street is the other shops are NOT happy about your prices. Expect them to fight back."`,
+        `"A price war is fun until your bank account hits zero. Just saying."`,
+      ];
+      s.log.push({ msg: `Vinnie: ${msgs[R(0, msgs.length - 1)]}`, cat: 'vinnie' });
+    }
+  }
+
+  // ── VINNIE: INFLATION COMMENTARY (6d) ──
+  if (s.day % 30 === 15 && Math.random() < 0.25) {
+    const infl = shared.inflationIndex || 1.0;
+    if (infl > 1.06) {
+      s.log.push({ msg: `Vinnie: "Everything's getting more expensive — wages, rent, tires. Raise your prices or get squeezed."`, cat: 'vinnie' });
+    } else if (infl < 0.94) {
+      s.log.push({ msg: `Vinnie: "Prices are dropping across the board. Good time to stock up cheap, bad time to have inventory."`, cat: 'vinnie' });
+    }
+  }
+
   // ── WEEKLY TOURNAMENT SNAPSHOT ──
   if (s.day % 7 === 1) {
     s.weeklySnapshot = { day: s.day, totalRev: s.totalRev, totalProfit: s.totalProfit, totalSold: s.totalSold };
@@ -1458,7 +1686,9 @@ export function simDay(g, shared = {}) {
       const liveAI = aiAvg[k] || t.def;
       const blended = seasonalBase * 0.35 + livePlayer * 0.30 + liveAI * 0.25 + t.def * 0.10;
       const noise = 1 + (Math.random() - 0.5) * 0.20; // ±10%
-      const newPrice = Math.round(blended * noise);
+      // 6d: Inflation drifts market prices
+      const inflDrift = shared.inflationIndex || 1.0;
+      const newPrice = Math.round(blended * noise * inflDrift);
       mktPrices[k] = Math.max(t.lo, Math.min(t.hi, newPrice));
     }
     s.marketPrices = mktPrices;
@@ -1475,8 +1705,16 @@ export function simDay(g, shared = {}) {
 
   // ── TIRE COINS — weekly drip + reputation bonus ──
   const tcCap = getTcCap(s);
+
+  // 14b: Emission scaling — small servers mint faster to build liquidity
+  const tcEmit = MONET.tcEmission;
+  const tcMult = Math.min(
+    tcEmit.maxMultiplier,
+    Math.max(tcEmit.minMultiplier, tcEmit.targetPlayerCount / (shared.activePlayerCount || 1))
+  );
+
   if (s.day % 7 === 0) {
-    // Base weekly drip: 1 TC for all players (~52 TC/year)
+    // Base weekly drip: 1 TC for all players (~52 TC/year base)
     let weeklyTC = 1;
 
     // Reputation bonus: higher-rep players earn more TC (rewards engagement)
@@ -1484,17 +1722,20 @@ export function simDay(g, shared = {}) {
     else if (s.reputation >= 50) weeklyTC += 2;
     else if (s.reputation >= 25) weeklyTC += 1;
 
+    // Apply emission multiplier (rounds up, min 1)
+    const scaledTC = Math.max(1, Math.round(weeklyTC * tcMult));
     const prev = s.tireCoins || 0;
-    s.tireCoins = Math.min(prev + weeklyTC, tcCap);
-    if (s.tireCoins > prev && weeklyTC > 1) {
-      s.log.push({ msg: `Weekly TC drip: +${weeklyTC} TireCoins (rep bonus)`, cat: 'event' });
+    s.tireCoins = Math.min(prev + scaledTC, tcCap);
+    if (s.tireCoins > prev && scaledTC > 1) {
+      s.log.push({ msg: `Weekly TC drip: +${scaledTC} TireCoins${tcMult > 1.5 ? ' (small-server bonus)' : ' (rep bonus)'}`, cat: 'event' });
     }
   }
 
-  // Premium TC stipend — 50 TC every 30 days
+  // 16d: Premium TC stipend — increased to 100 TC/month (also scaled)
   if (s.isPremium && s.day % 30 === 0) {
-    s.tireCoins = Math.min((s.tireCoins || 0) + 50, tcCap);
-    s.log.push({ msg: 'Monthly PRO bonus: +50 TireCoins', cat: 'event' });
+    const scaledStipend = Math.max(100, Math.round(100 * tcMult));
+    s.tireCoins = Math.min((s.tireCoins || 0) + scaledStipend, tcCap);
+    s.log.push({ msg: `Monthly PRO bonus: +${scaledStipend} TireCoins`, cat: 'event' });
   }
 
   // Clean up temp event flags
@@ -1516,9 +1757,10 @@ export function simDay(g, shared = {}) {
     try {
       if (ach.check(s)) {
         s.achievements[ach.id] = true;
-        s.tireCoins = Math.min((s.tireCoins || 0) + ach.coins, tcCap);
-        s.log.push({ msg: `🏆 Achievement: ${ach.title} (+${ach.coins} TC)`, cat: 'event' });
-        s._newAchievements.push({ id: ach.id, name: ach.title, reward: ach.coins });
+        const scaledReward = Math.max(ach.coins, Math.round(ach.coins * tcMult));
+        s.tireCoins = Math.min((s.tireCoins || 0) + scaledReward, tcCap);
+        s.log.push({ msg: `🏆 Achievement: ${ach.title} (+${scaledReward} TC)`, cat: 'event' });
+        s._newAchievements.push({ id: ach.id, name: ach.title, reward: scaledReward });
       }
     } catch {}
   }
@@ -1723,6 +1965,88 @@ export function simDay(g, shared = {}) {
   if (!s.salesByType) s.salesByType = [];
   s.salesByType.push({ day: s.day, ...s.daySoldByType });
   if (s.salesByType.length > 30) s.salesByType = s.salesByType.slice(-30);
+
+  // ── VINNIE TRIGGER SYSTEM (Section 15) ──
+  if (!s.vinnieSeen) s.vinnieSeen = [];
+  if (!s.vinnieCooldowns) s.vinnieCooldowns = {};
+  s._vinnieQueue = [];
+
+  // Track days since last Vinnie message
+  s._vinnieDaysSilent = (s._vinnieDaysSilent || 0) + 1;
+
+  for (const trigger of VINNIE_TRIGGERS) {
+    // Check cooldown
+    const lastFired = s.vinnieCooldowns[trigger.id] || 0;
+    if (trigger.cooldown > 0 && s.day - lastFired < trigger.cooldown) continue;
+
+    // Check one-time triggers
+    if (trigger.oneTime) {
+      const seenId = trigger.seenId || trigger.id;
+      if (s.vinnieSeen.includes(seenId)) continue;
+    }
+
+    // Evaluate condition
+    try {
+      if (!trigger.condition(s, shared)) continue;
+    } catch { continue; }
+
+    // Render message with template variables
+    let msg = trigger.message;
+    msg = msg.replace(/\{cash\}/g, '$' + fmt(Math.round(s.cash || 0)));
+    msg = msg.replace(/\{tcAmount\}/g, String(s.tireCoins || 0));
+    msg = msg.replace(/\{tcValue\}/g, '$' + fmt(shared.tcValue || 0));
+    msg = msg.replace(/\{rate\}/g, ((shared.bankState?.savingsRate || 0.042) * 100).toFixed(1) + '%');
+
+    s._vinnieQueue.push({
+      id: trigger.id,
+      message: msg,
+      priority: trigger.priority || 'low',
+      priorityNum: PRIORITY_ORDER[trigger.priority] ?? 3,
+    });
+
+    // Mark as seen for one-time triggers
+    if (trigger.oneTime) {
+      const seenId = trigger.seenId || trigger.id;
+      s.vinnieSeen.push(seenId);
+    }
+
+    // Record cooldown
+    s.vinnieCooldowns[trigger.id] = s.day;
+  }
+
+  // ── 15e: Vinnie's Daily Briefing (if no triggers fired) ──
+  if (s._vinnieQueue.length === 0) {
+    const briefing = [];
+    if (s.daySold > 0) briefing.push(`sold ${s.daySold} tires ($${fmt(Math.round(s.dayRev))} rev)`);
+    if (s.dayProfit < 0) briefing.push(`lost $${fmt(Math.abs(Math.round(s.dayProfit)))} today — check your costs`);
+    const totalInv = getInv(s);
+    const totalCap = getCap(s);
+    if (totalCap > 20 && totalInv < totalCap * 0.2) briefing.push(`inventory is running low (${totalInv}/${totalCap})`);
+    if (shared.globalEvents && shared.globalEvents.length > 0) {
+      briefing.push(`${shared.globalEvents.length} active market event${shared.globalEvents.length > 1 ? 's' : ''} — stay sharp`);
+    }
+    if (briefing.length > 0) {
+      s._vinnieQueue.push({
+        id: 'daily_briefing',
+        message: `Yesterday: ${briefing.slice(0, 3).join('. ')}.`,
+        priority: 'low', priorityNum: 3,
+      });
+    }
+  }
+
+  // Sort by priority and limit to 2 per day (critical bypasses limit)
+  s._vinnieQueue.sort((a, b) => a.priorityNum - b.priorityNum);
+  const criticals = s._vinnieQueue.filter(v => v.priority === 'critical');
+  const others = s._vinnieQueue.filter(v => v.priority !== 'critical').slice(0, 2);
+  s._vinnieQueue = [...criticals, ...others];
+
+  if (s._vinnieQueue.length > 0) {
+    s._vinnieDaysSilent = 0;
+  }
+
+  // Set active Vinnie goal
+  s._vinnieGoal = getActiveGoal(s);
+  s._vinnieStage = getVinnieStage(s.reputation || 0);
 
   return s;
 }

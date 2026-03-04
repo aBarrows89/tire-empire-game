@@ -31,6 +31,7 @@ import adminRetentionRouter from './routes/admin/retention.js';
 import adminMarketingRouter from './routes/admin/marketing.js';
 import adminEconomyToolsRouter from './routes/admin/economy.js';
 import { startAnalytics } from './analytics/tracker.js';
+import { startRedditScanner } from './services/redditScanner.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -117,6 +118,19 @@ app.get('/download/apk', async (req, res) => {
 // ── Legal Pages (Terms of Service, Privacy Policy) ──
 app.use('/legal', express.static(path.join(__dirname, 'legal')));
 
+// ── Serve client build in production (Section 13b) ──
+if (NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, 'public')));
+  // SPA fallback — serve index.html for non-API routes
+  app.get('*', (req, res, next) => {
+    if (!req.path.startsWith('/api') && !req.path.startsWith('/admin') && !req.path.startsWith('/legal')) {
+      res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    } else {
+      next();
+    }
+  });
+}
+
 // ── Global Error Handler ──
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
@@ -151,6 +165,9 @@ server.listen(PORT, () => {
 
   // Start the game tick loop
   startTickLoop(clients);
+
+  // Start Reddit scanner (21c — polls every 15 min if REDDIT_USER_AGENT set)
+  startRedditScanner();
 });
 
 async function syncShopListings() {

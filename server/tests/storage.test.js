@@ -5,74 +5,74 @@ import { mockState, mockCtx } from './helpers.js';
 
 describe('handleStorage', () => {
   describe('buyStorage', () => {
-    it('buys a storage unit', () => {
+    it('buys a storage unit', async () => {
       const type = 'garage';
       const cost = STORAGE[type].c;
       const g = mockState({ cash: cost + 1000 });
       const ctx = mockCtx();
 
-      const result = handleStorage('buyStorage', { type }, g, ctx);
+      const result = await handleStorage('buyStorage', { type }, g, ctx);
       expect(ctx.failCalled).toBe(false);
       expect(result.cash).toBe(1000);
       expect(result.storage.length).toBe(2); // van + garage
     });
 
-    it('fails when not enough cash', () => {
+    it('fails when not enough cash', async () => {
       const g = mockState({ cash: 0 });
       const ctx = mockCtx();
 
-      handleStorage('buyStorage', { type: 'garage' }, g, ctx);
+      await handleStorage('buyStorage', { type: 'garage' }, g, ctx);
       expect(ctx.failCalled).toBe(true);
       expect(ctx.failMsg).toMatch(/Not enough cash/);
     });
 
-    it('fails on invalid storage type', () => {
+    it('fails on invalid storage type', async () => {
       const g = mockState({ cash: 999999 });
       const ctx = mockCtx();
 
-      handleStorage('buyStorage', { type: 'invalidType' }, g, ctx);
+      await handleStorage('buyStorage', { type: 'invalidType' }, g, ctx);
       expect(ctx.failCalled).toBe(true);
     });
 
-    it('sets hasWarehouse for warehouse types', () => {
+    it('sets hasWarehouse for warehouse types', async () => {
       const cost = STORAGE.smallWH.c;
       const g = mockState({ cash: cost + 1000 });
       const ctx = mockCtx();
 
-      const result = handleStorage('buyStorage', { type: 'smallWH' }, g, ctx);
+      const result = await handleStorage('buyStorage', { type: 'smallWH' }, g, ctx);
       expect(result.hasWarehouse).toBe(true);
       expect(result.warehouseInventory).toBeDefined();
     });
   });
 
   describe('setDisposalFee', () => {
-    it('sets disposal fee within bounds', () => {
+    it('sets disposal fee within bounds', async () => {
       const g = mockState();
       const ctx = mockCtx();
 
-      const result = handleStorage('setDisposalFee', { fee: 8 }, g, ctx);
+      const result = await handleStorage('setDisposalFee', { fee: 8 }, g, ctx);
       expect(result.disposalFee).toBe(8);
     });
 
-    it('clamps fee to max 15', () => {
+    it('clamps fee to max 15', async () => {
       const g = mockState();
       const ctx = mockCtx();
 
-      const result = handleStorage('setDisposalFee', { fee: 100 }, g, ctx);
+      const result = await handleStorage('setDisposalFee', { fee: 100 }, g, ctx);
       expect(result.disposalFee).toBe(15);
     });
 
-    it('clamps fee to min 0', () => {
+    it('clamps fee to min 0', async () => {
       const g = mockState();
       const ctx = mockCtx();
 
-      const result = handleStorage('setDisposalFee', { fee: -5 }, g, ctx);
+      const result = await handleStorage('setDisposalFee', { fee: -5 }, g, ctx);
       expect(result.disposalFee).toBe(0);
     });
   });
 
-  it('returns null for unknown actions', () => {
-    const result = handleStorage('unknownAction', {}, mockState(), mockCtx());
+  it('returns null for unknown actions', async () => {
+    const result = await handleStorage('unknownAction', {}, mockState(), mockCtx());
     expect(result).toBeNull();
   });
 });

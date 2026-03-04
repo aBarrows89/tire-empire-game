@@ -1,7 +1,8 @@
 import { TICK_MS } from '../config.js';
-import { getAllActivePlayers, savePlayerState, getGame, saveGame, upsertLeaderboard, getPlayerListings, updatePlayerListing, getPlayer, removePlayer } from '../db/queries.js';
+import { getAllActivePlayers, savePlayerState, getGame, saveGame, upsertLeaderboard, getPlayerListings, updatePlayerListing, getPlayer, removePlayer, addChatMessage } from '../db/queries.js';
 import { simDay } from '../engine/simDay.js';
 import { simAIPlayerDay, isBotPlayer } from '../engine/aiPlayers.js';
+import { runBotTick, resetBotChatBudget, getPendingBotChats, getBotPhaseOutTargets } from '../engine/botDecision.js';
 import { initAIShops } from '../engine/aiShops.js';
 import { getWealth } from '../../shared/helpers/wealth.js';
 import { getStorageCap, getLocInv, getLocCap, rebuildGlobalInv, getCap, getInv } from '../../shared/helpers/inventory.js';
@@ -465,13 +466,21 @@ export async function runTick(clients) {
       }
     }
 
-    // ── TC VALUE FLUCTUATION — multi-factor economic model ──
+    // ── TC VALUE FLUCTUATION — stabilized multi-factor model (Section 14) ──
     if (!game.economy.tcValue) game.economy.tcValue = 50000;
     if (!game.economy.tcMetrics) game.economy.tcMetrics = {};
     if (!game.economy.tcHistory) game.economy.tcHistory = [];
+    if (!game.economy.tcReserve) game.economy.tcReserve = {
+      cashBalance: MONET.tcReserve.reserveBalance, tcHoldings: 0,
+    };
+    if (!game.economy.tcCircuitBreaker) game.economy.tcCircuitBreaker = {
+      weekStartValue: game.economy.tcValue, weekStartDay: day, frozenUntil: 0,
+    };
+    if (!game.economy.tcMarketplace) game.economy.tcMarketplace = { listings: [], tradeHistory: [] };
 
     // Collect economic data from all players
     const realPlayers = players.filter(p => !isBotPlayer(p.game_state));
+    const activePlayerCount = Math.max(1, realPlayers.length);
     const totalCash = players.reduce((sum, p) =>
       sum + (p.game_state.cash || 0) + (p.game_state.bankBalance || 0), 0
     );
@@ -483,7 +492,6 @@ export async function runTick(clients) {
 
     for (const p of players) {
       const gs = p.game_state;
-      // Rubber production capacity (daily)
       if (gs.factory?.rubberFarm) {
         const fl = gs.factory.rubberFarm.level || 1;
         totalRubberOutput += [0, 5, 15, 30][fl] || 5;
@@ -492,97 +500,117 @@ export async function runTick(clients) {
         const sl = gs.factory.syntheticLab.level || 1;
         totalRubberOutput += [0, 8, 20, 40][sl] || 8;
       }
-      // Tire manufacturing (queue items)
       totalTireProduction += (gs.factory?.productionQueue || []).reduce((a, q) => a + (q.qty || 0), 0);
-      // Recent high-value TC purchases (farm/lab bought in last 7 days)
       if (gs.factory?.rubberFarm?.purchasedDay && day - gs.factory.rubberFarm.purchasedDay <= 7) recentFarmLabPurchases++;
       if (gs.factory?.syntheticLab?.purchasedDay && day - gs.factory.syntheticLab.purchasedDay <= 7) recentFarmLabPurchases++;
-      // Track #1 player by wealth
       const w = getWealth(gs);
       if (w > topPlayerWealth) { topPlayerWealth = w; topPlayerId = p.id; }
     }
 
-    if (day % 7 === 0) {
-      const prevTcValue = game.economy.tcValue;
+    // ── 14d: Reserve buyback — replenish daily ──
+    const reserve = game.economy.tcReserve;
+    reserve.cashBalance += MONET.tcReserve.replenishRate;
 
-      // ── Factor 1: Per-Capita TC Scarcity (log-scale) ──
-      // Baseline: 10 TC per player = neutral (factor 1.0)
-      // Uses power-law (exponent 0.35) for gentle scaling across all player counts:
-      //   tcPerCapita=1  → factor ≈ 2.2  (scarce)
-      //   tcPerCapita=10 → factor = 1.0  (baseline)
-      //   tcPerCapita=42 → factor ≈ 0.6  (moderate abundance)
-      //   tcPerCapita=100 → factor ≈ 0.45 (abundant)
-      //   tcPerCapita=1000 → factor ≈ 0.3  (floor)
-      const playerCount = Math.max(1, realPlayers.length);
-      const tcPerCapita = totalTC / playerCount;
-      const scarcityBaseline = 10; // 10 TC per player = neutral
+    // ── 14e: Expire old TC marketplace listings — refund expired orders ──
+    const tcMkt = game.economy.tcMarketplace;
+    const expiredRefunds = []; // { playerId, type: 'tc'|'cash', amount }
+    for (const l of (tcMkt.listings || [])) {
+      if (l.status !== 'active') continue;
+      if (l.expiresDay <= day) {
+        l.status = 'expired';
+        if (l.type === 'tc_sell') expiredRefunds.push({ playerId: l.sellerId, type: 'tc', amount: l.tcAmount });
+        if (l.type === 'tc_buy') expiredRefunds.push({ playerId: l.buyerId, type: 'cash', amount: l.bidPrice });
+      }
+    }
+    // Apply refunds (batched after loop to avoid mid-iteration saves)
+    for (const refund of expiredRefunds) {
+      try {
+        const rp = await getPlayer(refund.playerId);
+        if (rp) {
+          if (refund.type === 'tc') rp.game_state.tireCoins = (rp.game_state.tireCoins || 0) + refund.amount;
+          else rp.game_state.cash = (rp.game_state.cash || 0) + refund.amount;
+          rp.game_state.log = rp.game_state.log || [];
+          rp.game_state.log.push({ msg: `TC Market listing expired — refunded ${refund.type === 'tc' ? refund.amount + ' TC' : '$' + refund.amount.toLocaleString()}`, cat: 'exchange' });
+          await savePlayerState(refund.playerId, rp.game_state);
+        }
+      } catch {}
+    }
+    // Clean up old filled/expired/cancelled listings (keep last 50)
+    tcMkt.listings = (tcMkt.listings || []).filter(l => l.status === 'active').concat(
+      (tcMkt.listings || []).filter(l => l.status !== 'active').slice(-50)
+    );
+
+    // ── Weekly TC value recalculation with EMA smoothing (14c) ──
+    const cb = game.economy.tcCircuitBreaker;
+    const tcVal = MONET.tcValuation;
+    const prevTcValue = game.economy.tcValue;
+
+    if (day % 7 === 0) {
+      // Track weekly start for circuit breaker
+      cb.weekStartValue = prevTcValue;
+      cb.weekStartDay = day;
+
+      // ── Factor 1: Per-Capita TC Scarcity (power-law) ──
+      const tcPerCapita = totalTC / activePlayerCount;
+      const scarcityBaseline = 10;
       const tcSupplyFactor = totalTC > 0
         ? Math.max(0.3, Math.min(3.0, Math.pow(scarcityBaseline / Math.max(0.1, tcPerCapita), 0.35)))
         : 1.0;
 
       // ── Factor 2: Velocity of Money (Cash Inflation) ──
-      // Per-capita cash compared to baseline. More cash per player = inflation = TC worth less in cash terms
-      const expectedCashPerPlayer = 50000;
-      const cashPerCapita = totalCash / Math.max(1, playerCount);
-      const cashRatio = cashPerCapita / expectedCashPerPlayer;
-      // cashRatio > 1 = lots of cash = inflation = TC value rises (buys more inflated cash)
-      // cashRatio < 1 = cash scarce = deflation = TC value drops
+      const cashPerCapita = totalCash / activePlayerCount;
+      const cashRatio = cashPerCapita / 50000;
       const velocityFactor = Math.max(0.5, Math.min(2.0, Math.sqrt(Math.max(0.1, cashRatio))));
 
       // ── Factor 3: Resource Scarcity (Rubber) ──
-      // High rubber output + low manufacturing = oversupply = TC cheaper
-      // Low rubber output + high manufacturing = shortage = TC more valuable
       const rubberDemandRatio = totalRubberOutput > 0
-        ? Math.max(0.1, totalTireProduction / (totalRubberOutput * 7)) // weekly production vs daily output*7
+        ? Math.max(0.1, totalTireProduction / (totalRubberOutput * 7))
         : 1.0;
       const rubberFactor = Math.max(0.8, Math.min(1.3, 0.85 + rubberDemandRatio * 0.15));
 
-      // ── Factor 4: Player Sentiment (Demand) ──
-      // Each recent farm/lab purchase signals TC demand → pushes value up
-      const sentimentBoost = 1 + recentFarmLabPurchases * 0.02; // +2% per purchase, up to ~10%
-      const sentimentFactor = Math.min(1.15, sentimentBoost);
+      // ── Factor 4: Player Sentiment ──
+      const sentimentFactor = Math.min(1.15, 1 + recentFarmLabPurchases * 0.02);
 
       // ── Factor 5: Market Maker ──
-      // #1 player's TC holdings influence the rate more heavily
       let marketMakerFactor = 1.0;
       if (topPlayerId) {
         const topPlayer = players.find(p => p.id === topPlayerId);
         if (topPlayer) {
-          const topTC = topPlayer.game_state.tireCoins || 0;
-          // If #1 player is hoarding TC, value rises; if spending, it dips
-          const topTcShare = totalTC > 0 ? topTC / totalTC : 0;
-          // Share > 0.3 = heavy hoarder = +5% value; < 0.1 = selling = -3% value
-          marketMakerFactor = 1 + (topTcShare - 0.2) * 0.15;
-          marketMakerFactor = Math.max(0.92, Math.min(1.10, marketMakerFactor));
+          const topTcShare = totalTC > 0 ? (topPlayer.game_state.tireCoins || 0) / totalTC : 0;
+          marketMakerFactor = Math.max(0.92, Math.min(1.10, 1 + (topTcShare - 0.2) * 0.15));
         }
       }
 
       // ── Factor 6: Global Event Chaos ──
       let chaosFactor = 1.0;
       for (const ge of (game.economy.activeGlobalEvents || [])) {
-        if (ge.id === 'rubber_shortage') chaosFactor *= 1.08;    // scarcity → TC up
-        if (ge.id === 'economic_boom') chaosFactor *= 0.95;      // cash flows → TC down
-        if (ge.id === 'steel_surplus') chaosFactor *= 0.97;      // cheap materials → TC down
-        if (ge.id === 'safety_recall') chaosFactor *= 1.05;      // uncertainty → TC up
+        if (ge.id === 'rubber_shortage') chaosFactor *= 1.08;
+        if (ge.id === 'economic_boom') chaosFactor *= 0.95;
+        if (ge.id === 'steel_surplus') chaosFactor *= 0.97;
+        if (ge.id === 'safety_recall') chaosFactor *= 1.05;
       }
       chaosFactor = Math.max(0.85, Math.min(1.20, chaosFactor));
 
-      // ── Random noise ±5% ──
-      const tcNoise = 1 + (Math.random() - 0.5) * 0.10;
-
-      // ── Combine factors into a TARGET value, then mean-revert ──
-      // Instead of multiplying current value (which compounds and crashes),
-      // calculate where the value *should* be, then move 10% toward it each week.
+      // ── Calculate raw target value ──
       const baseTargetValue = 50000;
       const targetFactor = tcSupplyFactor * velocityFactor * rubberFactor * sentimentFactor * marketMakerFactor * chaosFactor;
-      const targetValue = Math.max(5000, Math.min(500000, baseTargetValue * targetFactor));
+      const rawTargetValue = Math.max(5000, Math.min(500000, baseTargetValue * targetFactor));
 
-      // Mean reversion: move 10% toward target each week + random noise
-      const reversionRate = 0.10;
-      const newValue = game.economy.tcValue + (targetValue - game.economy.tcValue) * reversionRate;
-      game.economy.tcValue = Math.round(
-        Math.max(5000, Math.min(500000, newValue * tcNoise))
-      );
+      // ── 14c: EMA smoothing — blend raw target into current price ──
+      const smoothed = tcVal.smoothingFactor * rawTargetValue + (1 - tcVal.smoothingFactor) * prevTcValue;
+
+      // ── 14c: Daily move cap (±5%) ──
+      const maxChange = prevTcValue * tcVal.maxDailyMove;
+      let clamped = Math.max(prevTcValue - maxChange, Math.min(prevTcValue + maxChange, smoothed));
+
+      // ── 14c: Circuit breaker — freeze if weekly move exceeds ±15% ──
+      if (day < cb.frozenUntil) {
+        clamped = prevTcValue; // Price frozen during cooldown
+      }
+
+      // ── 14a: Floor price enforcement ──
+      const tcFloor = MONET.tcFloor.absoluteMinimum;
+      game.economy.tcValue = Math.round(Math.max(clamped, tcFloor));
 
       // Store metrics for dashboard
       game.economy.tcMetrics = {
@@ -600,29 +628,90 @@ export async function runTick(clients) {
         topPlayerId,
         prevTcValue,
         tcPerCapita: +tcPerCapita.toFixed(2),
-        targetValue: Math.round(targetValue),
+        targetValue: Math.round(rawTargetValue),
+        smoothedValue: Math.round(smoothed),
+        reserveCash: Math.round(reserve.cashBalance),
+        reserveTC: reserve.tcHoldings,
+        circuitBreakerFrozen: day < cb.frozenUntil,
       };
 
       // History for charting (keep last 52 weeks)
       game.economy.tcHistory.push({ day, value: game.economy.tcValue });
       if (game.economy.tcHistory.length > 52) game.economy.tcHistory.shift();
+
+      // ── 14c: Check weekly circuit breaker ──
+      const weeklyMove = Math.abs(game.economy.tcValue - cb.weekStartValue) / Math.max(1, cb.weekStartValue);
+      if (weeklyMove > tcVal.maxWeeklyMove) {
+        cb.frozenUntil = day + tcVal.circuitBreakerCooldown;
+      }
+    }
+
+    // ── 14d: Reserve buyback/sell — runs daily ──
+    if (MONET.tcReserve.enabled) {
+      const tcAvg30 = game.economy.tcHistory.length > 0
+        ? game.economy.tcHistory.reduce((s, h) => s + h.value, 0) / game.economy.tcHistory.length
+        : game.economy.tcValue;
+
+      // Buy TC when price is below 80% of 30-day average
+      if (game.economy.tcValue < tcAvg30 * MONET.tcReserve.buybackThreshold) {
+        const buyPrice = Math.round(game.economy.tcValue * (1 - MONET.tcReserve.buybackPriceDiscount));
+        const affordable = Math.floor(reserve.cashBalance / Math.max(1, buyPrice));
+        const buyQty = Math.min(MONET.tcReserve.maxDailyBuyback, affordable);
+        if (buyQty > 0) {
+          reserve.cashBalance -= buyQty * buyPrice;
+          reserve.tcHoldings += buyQty;
+        }
+      }
+      // Sell TC when price is above 130% of 30-day average (take profit)
+      else if (game.economy.tcValue > tcAvg30 * MONET.tcReserve.sellThreshold && reserve.tcHoldings > 0) {
+        const sellQty = Math.min(MONET.tcReserve.maxDailySell, reserve.tcHoldings);
+        if (sellQty > 0) {
+          reserve.cashBalance += sellQty * game.economy.tcValue;
+          reserve.tcHoldings -= sellQty;
+        }
+      }
     }
 
     // ── Dynamic Supplier Pricing with Commodity Cycles ──
     if (!game.economy.supplierPricing) game.economy.supplierPricing = {};
-    if (!game.economy.commodities) game.economy.commodities = { rubber: 1.0, steel: 1.0, chemicals: 1.0 };
+    if (!game.economy.commodities) game.economy.commodities = { rubber: 1.0, steel: 1.0, chemicals: 1.0, oil: 1.0 };
+    if (!game.economy.commodities.oil) game.economy.commodities.oil = 1.0;
+
+    // ── Macro Inflation/Deflation Cycle (90-180 day period) ──
+    if (!game.economy.inflationCycle) game.economy.inflationCycle = { phase: 0, period: 135, amplitude: 0.08 };
+    const ic = game.economy.inflationCycle;
+    // Slowly drift the period (creates irregular cycles)
+    if (day % 90 === 0) {
+      ic.period = 90 + Math.floor(Math.random() * 90); // 90-180 days
+      ic.amplitude = 0.05 + Math.random() * 0.06;       // 5-11% swing
+    }
+    const inflationIndex = 1.0 + ic.amplitude * Math.sin(day / ic.period * 2 * Math.PI);
 
     // Commodity prices cycle independently (sine waves with different periods + noise)
+    // Inflation index biases ALL commodities up during inflationary periods
     const commodities = game.economy.commodities;
     const cycleAmplitude = 0.12; // ±12% swing from commodity cycles
-    commodities.rubber    = 1.0 + cycleAmplitude * Math.sin(day / 45 * Math.PI) + (Math.random() - 0.5) * 0.03;
-    commodities.steel     = 1.0 + cycleAmplitude * Math.sin(day / 60 * Math.PI + 2.1) + (Math.random() - 0.5) * 0.03;
-    commodities.chemicals = 1.0 + cycleAmplitude * Math.sin(day / 75 * Math.PI + 4.2) + (Math.random() - 0.5) * 0.03;
+    const inflBias = (inflationIndex - 1.0) * 0.5; // half of inflation index bleeds into commodities
+    commodities.rubber    = 1.0 + cycleAmplitude * Math.sin(day / 45 * Math.PI) + (Math.random() - 0.5) * 0.03 + inflBias;
+    commodities.steel     = 1.0 + cycleAmplitude * Math.sin(day / 60 * Math.PI + 2.1) + (Math.random() - 0.5) * 0.03 + inflBias;
+    commodities.chemicals = 1.0 + cycleAmplitude * Math.sin(day / 75 * Math.PI + 4.2) + (Math.random() - 0.5) * 0.03 + inflBias;
+    commodities.oil       = 1.0 + cycleAmplitude * Math.sin(day / 55 * Math.PI + 1.0) + (Math.random() - 0.5) * 0.04 + inflBias;
 
-    // Clamp commodities to [0.80, 1.25]
-    for (const k of Object.keys(commodities)) {
-      commodities[k] = Math.round(Math.max(0.80, Math.min(1.25, commodities[k])) * 1000) / 1000;
+    // Global events modify commodities directly
+    for (const ge of (game.economy.activeGlobalEvents || [])) {
+      if (ge.id === 'rubber_shortage') commodities.rubber += 0.15;
+      if (ge.id === 'steel_surplus') commodities.steel -= 0.12;
+      if (ge.id === 'winter_storm') commodities.oil += 0.10;
+      if (ge.id === 'port_strike') { commodities.oil += 0.08; commodities.rubber += 0.05; }
     }
+
+    // Clamp commodities to [0.75, 1.35]
+    for (const k of Object.keys(commodities)) {
+      commodities[k] = Math.round(Math.max(0.75, Math.min(1.35, commodities[k])) * 1000) / 1000;
+    }
+
+    // Store inflation index in economy for downstream use
+    game.economy.inflationIndex = Math.round(inflationIndex * 1000) / 1000;
 
     // Commodity sensitivity by tire category (how much each commodity affects price)
     const commodityWeights = {
@@ -672,53 +761,138 @@ export async function runTick(clients) {
       game.economy.supplierPricing[tireKey] = Math.round(Math.max(0.75, Math.min(1.25, next)) * 1000) / 1000;
     }
 
-    // ── Dynamic Interest Rates (Bank Bot) — global weekly adjustment ──
-    // Centralized: all players see the same base rate, driven by macro factors.
-    // Per-player tiered deposit bonus is still applied in simDay.
+    // Per-supplier pricing: each supplier has unique sensitivity to economic factors
+    if (!game.economy.supplierPrices) game.economy.supplierPrices = {};
+    const cal2 = getCalendar(day);
+    const seasonDemandMult = { Spring: 1.05, Summer: 0.95, Fall: 1.10, Winter: 1.15 }[cal2.season] || 1.0;
+
+    for (let si = 0; si < SUPPLIERS.length; si++) {
+      const sup = SUPPLIERS[si];
+      const pf = sup.priceFactors || { rubberIndex: 0.35, steelIndex: 0.15, seasonalDemand: 0.20, globalEvents: 0.20, supplyChain: 0.10 };
+      if (!game.economy.supplierPrices[si]) game.economy.supplierPrices[si] = {};
+
+      // Supply chain noise: ±3% daily drift, mean-reverting
+      if (!game.economy._supplyChainNoise) game.economy._supplyChainNoise = {};
+      const prevNoise = game.economy._supplyChainNoise[si] || 0;
+      const chainDrift = (Math.random() - 0.5) * 0.06; // ±3%
+      game.economy._supplyChainNoise[si] = Math.max(-0.10, Math.min(0.10, prevNoise * 0.85 + chainDrift)); // Mean-reverts
+
+      for (const tireKey of Object.keys(TIRES)) {
+        const baseMult = game.economy.supplierPricing[tireKey] || 1.0;
+        // Supplier-specific delta from their price factor weights
+        const rubberDelta = (commodities.rubber - 1) * pf.rubberIndex;
+        const steelDelta = (commodities.steel - 1) * pf.steelIndex;
+        const seasonDelta = (seasonDemandMult - 1) * pf.seasonalDemand;
+        let eventDelta = 0;
+        for (const ge of (game.economy.activeGlobalEvents || [])) {
+          const def = GLOBAL_EVENTS.find(d => d.id === ge.id);
+          if (def?.effects?.productionCostMult) eventDelta += (def.effects.productionCostMult - 1) * pf.globalEvents;
+        }
+        const chainNoiseDelta = game.economy._supplyChainNoise[si] * pf.supplyChain;
+        const supplierMod = rubberDelta + steelDelta + seasonDelta + eventDelta + chainNoiseDelta;
+        const finalMult = Math.round(Math.max(0.70, Math.min(1.35, baseMult + supplierMod)) * 1000) / 1000;
+        game.economy.supplierPrices[si][tireKey] = finalMult;
+      }
+    }
+
+    // ── Dynamic Interest Rates (Bank Bot) — intelligent rate adjustments ──
     if (!game.economy.bankRate) game.economy.bankRate = 0.042;
     if (!game.economy.loanRateMult) game.economy.loanRateMult = 1.0;
     if (!game.economy.rateHistory) game.economy.rateHistory = [];
+    if (!game.economy.bankState) game.economy.bankState = {
+      savingsRate: 0.042, totalDeposits: 0, totalLoansOutstanding: 0,
+      reserveRatio: 0, inflationIndex: 1.0, rateDirection: 'hold',
+      lastAdjustmentDay: 0, adjustmentHistory: [],
+      loanRates: { micro: 0.14, small: 0.095, sba: 0.07, equipment: 0.065, commercial: 0.055, expansion: 0.05 },
+    };
 
-    if (day % 7 === 0) {
+    const bs = game.economy.bankState;
+    const totalLoans = players.reduce((sum, p) => sum + (p.game_state.loans || []).reduce((s, l) => s + (l.remaining || 0), 0), 0);
+    bs.totalDeposits = Math.round(totalBankDeposits);
+    bs.totalLoansOutstanding = Math.round(totalLoans);
+    bs.reserveRatio = totalLoans > 0 ? +(totalBankDeposits / totalLoans).toFixed(2) : 999;
+    bs.inflationIndex = game.economy.inflationIndex || 1.0;
+
+    // Evaluate every 30 days with 15-day cooldown
+    if (day % 30 === 0 && day - bs.lastAdjustmentDay >= 15) {
+      const prevRate = bs.savingsRate;
       const cal = getCalendar(day);
       const rateSeasonMult = { Spring: 0.92, Summer: 0.88, Fall: 1.08, Winter: 1.12 }[cal.season] || 1;
-      const rateNoise = 1 + (Math.random() - 0.5) * 0.10;
-      const baseSavingsRate = 0.042 * rateSeasonMult * rateNoise;
 
-      // TC scarcity bonus: less TC in circulation → higher rates (max +2%)
-      const tcScarcityBonus = totalTC > 0
-        ? Math.min(0.02, Math.max(0, (1 - totalTC / 50000) * 0.02))
-        : 0;
-
-      // Deposit abundance: more total deposits → higher savings rate, lower loan rate
-      // At $0: factor=0, $5M: ~0.5, $20M+: ~1.0
+      // Factor 1: Deposit level — high deposits → lower rates to discourage hoarding
       const depositFactor = Math.min(1.0, totalBankDeposits / 20000000);
-      const depositAbundanceBonus = depositFactor * 0.02;
+      let signal = 0;
+      if (depositFactor > 0.7) signal -= 0.0025;    // Too much saving
+      else if (depositFactor < 0.2) signal += 0.0025; // Not enough saving
 
-      // Global event impact on rates
-      let eventRateShift = 0;
+      // Factor 2: Loan demand — high borrowing → raise rates to cool down
+      const loanDemandFactor = Math.min(1.0, totalLoans / 5000000);
+      if (loanDemandFactor > 0.6) signal += 0.0025;
+      else if (loanDemandFactor < 0.15) signal -= 0.0025;
+
+      // Factor 3: Commodity prices (inflationary pressure)
+      const avgCommodity = (commodities.rubber + commodities.steel + commodities.chemicals) / 3;
+      if (avgCommodity > 1.10) signal += 0.0025;    // Inflation
+      else if (avgCommodity < 0.90) signal -= 0.0025; // Deflation
+
+      // Factor 4: Global events
       for (const ge of (game.economy.activeGlobalEvents || [])) {
-        if (ge.id === 'economic_boom') eventRateShift -= 0.005;    // boom → lower rates (stimulate)
-        if (ge.id === 'rubber_shortage') eventRateShift += 0.005;  // crisis → higher rates
-        if (ge.id === 'safety_recall') eventRateShift += 0.003;    // uncertainty → higher rates
+        if (ge.id === 'economic_boom') signal -= 0.005;    // Boom → cut
+        if (ge.id === 'rubber_shortage') signal += 0.005;   // Crisis → hike
+        if (ge.id === 'safety_recall') signal += 0.0025;
       }
 
-      const newBankRate = baseSavingsRate + tcScarcityBonus + depositAbundanceBonus + eventRateShift;
-      game.economy.bankRate = Math.round(Math.max(0.015, Math.min(0.085, newBankRate)) * 10000) / 10000;
+      // Factor 5: TC scarcity
+      const tcScarcityBonus = totalTC > 0
+        ? Math.min(0.005, Math.max(0, (1 - totalTC / 50000) * 0.005))
+        : 0;
+      signal += tcScarcityBonus;
 
-      // Loan rate multiplier: high deposits → bank has capital → cheaper loans
-      // Range: 1.0 (no deposits) to 0.7 (massive deposits, 30% discount)
+      // Factor 6: Season
+      signal += (rateSeasonMult - 1) * 0.01;
+
+      // Factor 7: Inflation cycle — inflationary periods → raise rates
+      if (inflationIndex > 1.04) signal += 0.0025;
+      else if (inflationIndex < 0.96) signal -= 0.0025;
+
+      // Mean reversion toward baseline when no strong signals
+      const meanReversion = (0.042 - bs.savingsRate) * 0.05;
+      signal += meanReversion;
+
+      // Clamp adjustment to ±0.50% in 0.25% increments
+      const rawAdj = Math.max(-0.005, Math.min(0.005, signal));
+      const adjustment = Math.round(rawAdj / 0.0025) * 0.0025;
+
+      if (adjustment !== 0) {
+        bs.savingsRate = Math.round(Math.max(0.010, Math.min(0.080, bs.savingsRate + adjustment)) * 10000) / 10000;
+        bs.rateDirection = adjustment > 0 ? 'raising' : 'lowering';
+        bs.lastAdjustmentDay = day;
+        bs.adjustmentHistory.push({ day, adjustment, newRate: bs.savingsRate });
+        if (bs.adjustmentHistory.length > 12) bs.adjustmentHistory.shift();
+
+        // Update per-tier loan rates (savings rate + spread)
+        const tierSpreads = { micro: 0.10, small: 0.06, sba: 0.035, equipment: 0.03, commercial: 0.02, expansion: 0.015 };
+        for (const [tier, spread] of Object.entries(tierSpreads)) {
+          bs.loanRates[tier] = Math.round(Math.max(0.030, Math.min(0.200, bs.savingsRate + spread)) * 10000) / 10000;
+        }
+      } else {
+        bs.rateDirection = 'hold';
+      }
+
+      // Sync with legacy fields
+      game.economy.bankRate = bs.savingsRate;
       game.economy.loanRateMult = Math.round((1.0 - depositFactor * 0.30) * 1000) / 1000;
-
       game.economy.tcScarcityBonus = Math.round(tcScarcityBonus * 10000) / 10000;
 
-      // Rate history for charts (keep last 52 weeks)
+      // Rate history for charts (keep last 52 entries)
       game.economy.rateHistory.push({
         day,
-        bankRate: game.economy.bankRate,
+        bankRate: bs.savingsRate,
         loanRateMult: game.economy.loanRateMult,
         depositFactor: +depositFactor.toFixed(3),
         totalDeposits: Math.round(totalBankDeposits),
+        totalLoans: Math.round(totalLoans),
+        rateDirection: bs.rateDirection,
       });
       if (game.economy.rateHistory.length > 52) game.economy.rateHistory.shift();
     }
@@ -731,27 +905,44 @@ export async function runTick(clients) {
       aiPriceAvg,
       totalTC,
       totalBankDeposits,
+      activePlayerCount,
       factorySuppliers,
       wholesaleSuppliers,
       globalEvents: game.economy.activeGlobalEvents || [],
       tcValue: game.economy.tcValue || 50000,
       tcMetrics: game.economy.tcMetrics || {},
       supplierPricing: game.economy.supplierPricing || {},
-      commodities: game.economy.commodities || { rubber: 1.0, steel: 1.0, chemicals: 1.0 },
+      supplierPrices: game.economy.supplierPrices || {},
+      commodities: game.economy.commodities || { rubber: 1.0, steel: 1.0, chemicals: 1.0, oil: 1.0 },
+      inflationIndex: game.economy.inflationIndex || 1.0,
       bankRate: game.economy.bankRate,
       loanRateMult: game.economy.loanRateMult,
+      bankState: game.economy.bankState || null,
+      exchange: game.economy?.exchange || null,
     };
 
     const cal = getCalendar(day);
+
+    // Reset bot chat budget for this tick (1-5 messages per day across all bots)
+    resetBotChatBudget();
+
+    // Collect player states for WebSocket broadcast (Section 11)
+    const playerStatesMap = new Map();
 
     for (const player of players) {
       const state = player.game_state;
       if (isBotPlayer(state)) {
         // Skip bot simulation if paused by admin
         if (game.economy?.botsPaused) continue;
-        // Lightweight bot simulation (legacy isAI + stealth _botConfig)
         try {
-          const newState = simAIPlayerDay(state);
+          let newState;
+          if (state._botConfig) {
+            // New personality-driven bot system
+            newState = runBotTick(state, shared, players);
+          } else {
+            // Legacy isAI bots (pre-personality system)
+            newState = simAIPlayerDay(state);
+          }
           await savePlayerState(player.id, newState);
           await upsertLeaderboard(
             player.id,
@@ -775,6 +966,20 @@ export async function runTick(clients) {
         const newState = simDay(state, shared);
         await savePlayerState(player.id, newState);
 
+        // Attach dynamic economy data for WS broadcast (mirrors state.js)
+        const wsState = { ...newState };
+        if (game.economy?.supplierPricing) wsState._supplierPricing = game.economy.supplierPricing;
+        if (game.economy?.supplierPrices) wsState._supplierPrices = game.economy.supplierPrices;
+        if (game.economy?.commodities) wsState._commodities = game.economy.commodities;
+        if (game.economy?.bankRate != null) {
+          wsState._bankRate = game.economy.bankRate;
+          wsState._loanRateMult = game.economy.loanRateMult;
+          wsState._rateHistory = game.economy.rateHistory;
+          wsState._bankState = game.economy.bankState;
+        }
+        if (game.economy?.inflationIndex != null) wsState._inflationIndex = game.economy.inflationIndex;
+        playerStatesMap.set(player.id, wsState);
+
         await upsertLeaderboard(
           player.id,
           newState.companyName || newState.name || 'Unknown',
@@ -792,14 +997,28 @@ export async function runTick(clients) {
       }
     }
 
+    // Post bot chat messages accumulated during this tick
+    try {
+      const botChats = getPendingBotChats();
+      for (const msg of botChats) {
+        await addChatMessage(msg);
+      }
+    } catch (chatErr) {
+      console.error('[Tick] Bot chat error:', chatErr.message);
+    }
+
     // Resolve expired marketplace auctions
     await resolveAuctions(day);
 
-    // AI price wars — update weekly (every 7 days)
-    if (day % 7 === 0) {
+    // AI price wars — update every 3 days for faster response
+    if (day % 3 === 0) {
       try {
         const aiShops = game.ai_shops || [];
-        updateAIPrices(aiShops, playerPriceAvg);
+        updateAIPrices(aiShops, playerPriceAvg, null, {
+          inflationIndex: game.economy.inflationIndex || 1.0,
+          commodities: game.economy.commodities || {},
+          players,
+        });
       } catch (err) {
         console.error('AI price war error:', err);
       }
@@ -810,6 +1029,22 @@ export async function runTick(clients) {
       await phaseOutAI(game, players);
     } catch (err) {
       console.error('AI phase-out error:', err);
+    }
+
+    // New bot phase-out — reduce _botConfig bots as real player count grows
+    try {
+      const botConfigPlayers = players.filter(p => p.game_state._botConfig);
+      const realCount = players.filter(p => !isBotPlayer(p.game_state) && p.game_state.companyName).length;
+      const phaseOutIds = getBotPhaseOutTargets(botConfigPlayers, realCount);
+      for (const botId of phaseOutIds) {
+        await removePlayer(botId);
+        const victim = botConfigPlayers.find(p => p.id === botId);
+        if (victim && day % 30 === 0) {
+          console.log(`  [Bot Phase-Out] "${victim.game_state.companyName}" closed shop (${botConfigPlayers.length - 1} bots remain, ${realCount} real)`);
+        }
+      }
+    } catch (err) {
+      console.error('Bot phase-out error:', err);
     }
 
     // Monthly tournaments — every 30 days, rank players and award TireCoins
@@ -832,7 +1067,12 @@ export async function runTick(clients) {
           })
           .sort((a, b) => b.weeklyRevenue - a.weeklyRevenue);
 
-        const prizes = [10, 5, 3, 1];  // Top 4 places get TC (~228 TC/year entering economy)
+        // 14b: Scale tournament prizes with emission multiplier
+        const emissionMult = Math.min(
+          MONET.tcEmission.maxMultiplier,
+          Math.max(MONET.tcEmission.minMultiplier, MONET.tcEmission.targetPlayerCount / activePlayerCount)
+        );
+        const prizes = [10, 5, 3, 1].map(p => Math.max(p, Math.round(p * emissionMult)));
         for (let i = 0; i < Math.min(ranked.length, prizes.length); i++) {
           const winner = players.find(p => p.id === ranked[i].id);
           if (winner) {
@@ -934,7 +1174,7 @@ export async function runTick(clients) {
       tcValue: game.economy.tcValue || 50000,
       tcMetrics: game.economy.tcMetrics || {},
       tcHistory: game.economy.tcHistory || [],
-    });
+    }, playerStatesMap);
 
     if (day % 30 === 0) {
       console.log(`Day ${day} (${cal.monthName} Year ${cal.year}): ${players.length} players`);

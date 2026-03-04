@@ -5,11 +5,17 @@ export const INSURANCE = {
     covers: ['chargeback'],
     icon: '🛡️',
   },
+  standard: {
+    name: 'Standard Insurance',  // 16j: Mid-tier between basic and business
+    costPerMonth: 1000,
+    covers: ['chargeback', 'workersComp'],
+    icon: '🛡️🛡️',
+  },
   business: {
     name: 'Business Insurance',
     costPerMonth: 1500,
     covers: ['chargeback', 'workersComp', 'recall', 'earthquake'],
-    icon: '🛡️🛡️',
+    icon: '🛡️🛡️🛡️',
   },
   premium: {
     name: 'Premium Insurance',

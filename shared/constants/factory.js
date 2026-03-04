@@ -1,10 +1,10 @@
 export const FACTORY = {
-  buildCost: 5000000,
+  buildCost: 3500000,   // 16h: Reduced from $5M to $3.5M for realistic ROI
   minRep: 75,
   minLocations: 5,
 
   levels: [
-    { level: 1, dailyCapacity: 50, upgradeCost: 0, qualityMax: 0.85, name: 'Small Plant' },
+    { level: 1, dailyCapacity: 80, upgradeCost: 0, qualityMax: 0.85, name: 'Small Plant' },  // 16h: 50→80
     { level: 2, dailyCapacity: 150, upgradeCost: 2000000, qualityMax: 0.92, name: 'Regional Factory' },
     { level: 3, dailyCapacity: 500, upgradeCost: 10000000, qualityMax: 1.0, name: 'National Plant' },
   ],

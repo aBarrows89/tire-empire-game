@@ -51,9 +51,16 @@ export async function handleFactory(action, params, g, ctx) {
       const isExclusive = tire.startsWith('brand_') && (g.factory.unlockedSpecials || []).includes(tire);
       if (!isExclusive && !FACTORY.productionCost[tire]) return ctx.fail('Cannot manufacture this tire type');
       const prodQty = Math.max(1, Math.floor(Number(rawQty2) || 0));
-      const unitCost = isExclusive
+      let unitCost = isExclusive
         ? (EXCLUSIVE_TIRES[tire]?.baseCost || 80)
         : getEffectiveProductionCost(g.factory, tire);
+      // 6a: Global commodity prices cascade into factory production costs
+      const gameData = await ctx.getGame();
+      const gc = gameData?.economy?.commodities || {};
+      if (gc.rubber || gc.steel || gc.chemicals) {
+        const commodityMult = ((gc.rubber || 1) * 0.4 + (gc.steel || 1) * 0.35 + (gc.chemicals || 1) * 0.25);
+        unitCost = Math.round(unitCost * commodityMult);
+      }
       const cost = prodQty * unitCost;
       if (g.cash < cost) return ctx.fail('Not enough cash');
       const currentQueue = (g.factory.productionQueue || []).reduce((a, q) => a + q.qty, 0);

@@ -7,6 +7,10 @@ import { uid } from '../../../shared/helpers/random.js';
 const router = Router();
 router.use(adminAuthMiddleware);
 
+// ── Reddit User-Agent (21a) ──
+const REDDIT_USER_AGENT = process.env.REDDIT_USER_AGENT
+  || 'nodejs:tire-empire-admin:v1.0.0 (by /u/TireEmpireGame)';
+
 // ── Helper: push to audit log ──
 async function auditLog(req, action, targetId, details) {
   try {
@@ -44,6 +48,11 @@ const REDDIT_CONFIG = {
     'idle business', 'multiplayer tycoon', 'economy sim',
     'recommend me a game', 'new mobile game', 'indie game',
     'what games are you playing', 'feedback friday', 'screenshot saturday',
+    'any good', 'business game', 'management game', 'sim game',
+    'tycoon game', 'what should I play', 'hidden gem',
+    'underrated game', 'new release', 'early access',
+    'self promotion', 'my game', 'feedback wanted',
+    'stock market game', 'trading sim', 'industry sim',
   ],
   scoring: {
     keywordInTitle: 0.4,
@@ -125,23 +134,40 @@ router.post('/reddit/scan', async (req, res) => {
   try {
     const { pool } = await import('../../db/pool.js');
     let totalFound = 0;
+    const errors = [];
+    const subResults = [];
 
     for (const sub of REDDIT_CONFIG.subreddits) {
       try {
         const url = `https://www.reddit.com/r/${sub}/new.json?limit=25`;
         const resp = await fetch(url, {
-          headers: { 'User-Agent': 'TireEmpireAdmin/1.0' },
+          headers: {
+            'User-Agent': REDDIT_USER_AGENT,
+            'Accept': 'application/json',
+          },
         });
-        if (!resp.ok) continue;
+
+        if (resp.status === 429) {
+          errors.push({ sub, error: 'Rate limited by Reddit', status: 429 });
+          await new Promise(r => setTimeout(r, 5000));
+          continue;
+        }
+        if (!resp.ok) {
+          errors.push({ sub, error: `HTTP ${resp.status}`, status: resp.status });
+          continue;
+        }
 
         const data = await resp.json();
         const posts = data?.data?.children || [];
+        let subFound = 0;
 
         for (const { data: post } of posts) {
           const { score: relevance, matchedKeywords } = scoreThread(post, sub);
-          if (relevance < 0.2 && matchedKeywords.length === 0) continue;
+          // 21d: Lower threshold for gaming subreddits
+          const minRelevance = REDDIT_CONFIG.gamingSubs.has(sub) ? 0.15 : 0.25;
+          if (relevance < minRelevance && matchedKeywords.length === 0) continue;
 
-          const fullname = post.name; // t3_xxxxx
+          const fullname = post.name;
           const suggestedAngle = getSuggestedAngle(post.title, post.selftext || '');
 
           await pool.query(`
@@ -153,18 +179,26 @@ router.post('/reddit/scan', async (req, res) => {
             post.author, `https://reddit.com${post.permalink}`,
             post.score || 0, matchedKeywords, relevance, suggestedAngle,
           ]);
+          subFound++;
           totalFound++;
         }
 
-        // Rate limit: small delay between subreddit fetches
-        await new Promise(r => setTimeout(r, 500));
+        subResults.push({ sub, postsScanned: posts.length, matched: subFound });
+        // Rate limit: delay between subreddit fetches
+        await new Promise(r => setTimeout(r, 1200));
       } catch (subErr) {
-        console.error(`Reddit scan error for r/${sub}:`, subErr.message);
+        errors.push({ sub, error: subErr.message });
       }
     }
 
-    await auditLog(req, 'redditScan', null, { threadsFound: totalFound });
-    res.json({ ok: true, threadsFound: totalFound });
+    await auditLog(req, 'redditScan', null, { threadsFound: totalFound, errors: errors.length });
+    res.json({
+      ok: true,
+      threadsFound: totalFound,
+      subredditsScanned: REDDIT_CONFIG.subreddits.length,
+      errors,
+      subResults,
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

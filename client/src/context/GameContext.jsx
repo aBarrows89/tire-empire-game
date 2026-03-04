@@ -2,6 +2,7 @@ import React, { createContext, useContext, useReducer, useEffect, useCallback, u
 import { getState, useWebSocket, sendWsMessage } from '../api/client.js';
 import { cacheGameState, getCachedGameState, getPendingActions, clearPendingActions } from '../services/offlineCache.js';
 import { postAction } from '../api/client.js';
+import { safeSetItem, safeGetItem } from '../services/storage.js';
 
 const GameContext = createContext();
 
@@ -31,7 +32,7 @@ function gameReducer(state, action) {
         chatMessages: (state.chatMessages || []).filter(m => m.id !== action.payload),
       };
     case 'SET_PANEL':
-      try { localStorage.setItem('te_activePanel', action.payload); } catch {}
+      safeSetItem('te_activePanel', action.payload);
       return { ...state, activePanel: action.payload, viewingProfile: null };
     case 'SET_VIEWING_PROFILE':
       return { ...state, viewingProfile: action.payload, activePanel: 'profile' };
@@ -60,7 +61,7 @@ function gameReducer(state, action) {
   }
 }
 
-const savedPanel = (() => { try { return localStorage.getItem('te_activePanel'); } catch { return null; } })();
+const savedPanel = safeGetItem('te_activePanel');
 
 const initialState = {
   game: null,
@@ -110,9 +111,17 @@ export function GameProvider({ children }) {
   // Initial load
   useEffect(() => { refreshState(); }, [refreshState]);
 
-  // WebSocket tick handler — refresh state on each tick
+  // WebSocket tick handler — use state from WS if available, else fallback to HTTP
   const onTick = useCallback((tickMsg) => {
-    refreshState();
+    if (tickMsg?.state) {
+      // Section 11: Use state directly from WebSocket — no HTTP fetch needed
+      dispatch({ type: 'SET_STATE', payload: tickMsg.state });
+      cacheGameState(tickMsg.state);
+      dispatch({ type: 'SET_OFFLINE', payload: false });
+    } else {
+      // Fallback to HTTP fetch if no state in tick message
+      refreshState();
+    }
     // Capture global events and TC value from tick broadcast
     if (tickMsg) {
       dispatch({ type: 'SET_TICK_DATA', payload: {

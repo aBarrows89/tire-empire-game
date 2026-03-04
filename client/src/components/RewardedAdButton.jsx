@@ -4,8 +4,8 @@ import { postAction } from '../api/client.js';
 import { prepareRewarded, showRewarded } from '../services/ads.js';
 import { MONET } from '@shared/constants/monetization.js';
 
-const MAX_REWARDED = MONET.maxRewardedPerDay;
-const REWARD_TC = MONET.adRewardTC;
+const MAX_REWARDED = MONET.adRewards.maxRewardedPerDay;
+const REWARD_SCHEDULE = MONET.adRewards.schedule;
 
 function getRewardedCount(day) {
   try {
@@ -51,6 +51,7 @@ export default function RewardedAdButton() {
 
   const canShow = !isPremium && rewardedToday < MAX_REWARDED;
   const remaining = MAX_REWARDED - rewardedToday;
+  const nextReward = REWARD_SCHEDULE[Math.min(rewardedToday, REWARD_SCHEDULE.length - 1)];
 
   const handleClick = useCallback(async () => {
     if (!canShow || loading) return;
@@ -68,7 +69,7 @@ export default function RewardedAdButton() {
       } catch (e) {
         console.warn('Failed to grant ad reward:', e);
       }
-      setFlash(`+${REWARD_TC} TC!`);
+      setFlash(`+${nextReward} TC!`);
     } else {
       setFlash('No reward');
     }
@@ -96,7 +97,7 @@ export default function RewardedAdButton() {
           ? 'Playing Ad...'
           : flash
             ? flash
-            : `\u{1F3AC} Watch Ad — Earn ${REWARD_TC} TC`}
+            : `\u{1F3AC} Watch Ad — Earn ${nextReward} TC`}
       </button>
       <div className="text-xs text-dim" style={{ marginTop: 3 }}>
         {remaining > 0

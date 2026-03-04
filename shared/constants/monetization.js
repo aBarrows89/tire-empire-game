@@ -27,9 +27,13 @@ export const MONET = {
     installerRecruited: 25,
     becameInstaller: 40,
   },
-  // Ad strategy
-  adRewardTC: 50,
-  maxRewardedPerDay: 3,
+  // 16d: Ad strategy — diminishing returns per ad
+  adRewards: {
+    schedule: [50, 30, 15, 10, 10],  // 1st=50, 2nd=30, etc.
+    maxRewardedPerDay: 5,
+  },
+  adRewardTC: 50,  // Legacy compat — 1st ad reward
+  maxRewardedPerDay: 5,
   interstitialCooldownMs: 300_000,
   interstitialMinPanelSwitches: 3,
 
@@ -61,4 +65,52 @@ export const MONET = {
     { id: "celebration", n: "Celebration Effects", cost: 100, desc: "Extra sparkle animation on achievement toasts" },
     { id: "elite_border", n: "Elite Profile Border", cost: 400, desc: "Animated gold border on your profile card" },
   ],
+
+  // ── TC Economic Stabilization (Section 14) ──
+
+  // 14a: Floor price — TC can never drop below this value
+  tcFloor: {
+    enabled: true,
+    calculationMethod: 'purchase_parity',
+    absoluteMinimum: 50,       // Hard floor — TC never worth less than $50
+    recalcInterval: 30,        // Recalculate floor every 30 game days
+  },
+
+  // 14b: Emission scaling — TC earn rates scale inversely with player count
+  tcEmission: {
+    targetPlayerCount: 100,    // "Designed for" player count
+    maxMultiplier: 50,         // Cap so 1-player servers don't mint infinite coins
+    minMultiplier: 1,          // Never reduce below base earn rate
+  },
+
+  // 14c: Volatility dampening — EMA smoothing + circuit breaker
+  tcValuation: {
+    smoothingFactor: 0.1,      // How much today's calculation affects price (lower = smoother)
+    maxDailyMove: 0.05,        // ±5% max change per day
+    maxWeeklyMove: 0.15,       // ±15% max change per week (circuit breaker)
+    circuitBreakerCooldown: 3, // If weekly limit hit, freeze price changes for 3 days
+  },
+
+  // 14d: Reserve buyback — game acts as market maker via NPC reserve
+  tcReserve: {
+    enabled: true,
+    reserveBalance: 1000000,   // Starting game-cash reserve for buybacks
+    buybackThreshold: 0.8,     // Activate when TC < 80% of 30-day avg
+    buybackPriceDiscount: 0.05, // Reserve buys at 5% below current price
+    maxDailyBuyback: 50,       // Max TC the reserve buys per day
+    sellThreshold: 1.3,        // Reserve sells TC when price is 130% of avg
+    maxDailySell: 20,          // Sells slower than buys (stabilizing bias)
+    replenishRate: 5000,       // Reserve gets $5K/day added
+  },
+
+  // 14e: TC marketplace fees
+  tcMarketplace: {
+    sellerFee: 0.05,           // 5% fee on TC trades
+    sellerFeePremium: 0.02,    // 2% for premium members
+    maxListingPct: 0.50,       // Max 50% of TC balance per listing
+    minListing: 5,             // Minimum 5 TC per listing
+    listingCooldownDays: 1,    // 1 listing per day per player
+    listingDurationDays: 30,   // Auto-expire after 30 days
+    priceRangeLimit: 0.50,     // Listings must be within ±50% of fair value
+  },
 };

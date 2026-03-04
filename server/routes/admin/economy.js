@@ -4,7 +4,8 @@ import {
   getAllActivePlayers, getPlayer, savePlayerState, getGame, saveGame, createPlayer,
 } from '../../db/queries.js';
 import { getWealth } from '../../../shared/helpers/wealth.js';
-import { isBotPlayer, createStealthPlayer } from '../../engine/aiPlayers.js';
+import { isBotPlayer } from '../../engine/aiPlayers.js';
+import { createBot } from '../../engine/botPlayers.js';
 import { uid } from '../../../shared/helpers/random.js';
 
 const router = Router();
@@ -38,10 +39,14 @@ router.get('/bots', async (req, res) => {
 
     const botList = bots.map(p => {
       const g = p.game_state || {};
+      const cfg = g._botConfig || {};
       return {
         id: p.id, name: g.companyName || g.name || 'Unknown',
-        intensity: g._botConfig?.intensity || (g.isAI ? 5 : 0),
-        personality: g._botConfig?.personality || 'standard',
+        intensity: cfg.intensity || (g.isAI ? 5 : 0),
+        personality: cfg.personality || 'standard',
+        quirks: cfg.quirks || [],
+        schedule: cfg.schedule || 'regular',
+        homeCity: cfg.homeCityId || null,
         rep: g.reputation || 0, cash: g.cash || 0,
         shops: (g.locations || []).length, day: g.day || 0,
         wealth: getWealth(g),
@@ -65,26 +70,26 @@ router.get('/bots', async (req, res) => {
 
 router.post('/bots/spawn', async (req, res) => {
   try {
-    const { count = 1, intensity = 5 } = req.body;
+    const { count = 1, intensity = 5, personality = null } = req.body;
     const toCreate = Math.min(Math.max(1, count), 10); // Max 10 at once
     const created = [];
 
     for (let i = 0; i < toCreate; i++) {
       try {
-        const player = createStealthPlayer(
-          null, null, null,
-          Math.max(1, Math.min(10, intensity)),
-          req.adminId
-        );
+        const player = createBot({
+          intensity: Math.max(1, Math.min(11, intensity)),
+          personality: personality || null,
+          adminId: req.adminId,
+        });
         await createPlayer(player.id, player.game_state.name || 'Bot', player.game_state);
-        created.push(player.id);
+        created.push({ id: player.id, name: player.game_state.companyName });
       } catch (e) {
         console.error('Bot spawn error:', e.message);
       }
     }
 
-    await auditLog(req, 'spawnBots', null, { count: created.length, intensity });
-    res.json({ ok: true, created: created.length });
+    await auditLog(req, 'spawnBots', null, { count: created.length, intensity, personality });
+    res.json({ ok: true, created: created.length, bots: created });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -93,8 +98,8 @@ router.post('/bots/spawn', async (req, res) => {
 router.post('/bots/:id/intensity', async (req, res) => {
   try {
     const { intensity } = req.body;
-    if (intensity == null || intensity < 1 || intensity > 10) {
-      return res.status(400).json({ error: 'Intensity must be 1-10' });
+    if (intensity == null || intensity < 1 || intensity > 11) {
+      return res.status(400).json({ error: 'Intensity must be 1-11' });
     }
     const player = await getPlayer(req.params.id);
     if (!player) return res.status(404).json({ error: 'Bot not found' });

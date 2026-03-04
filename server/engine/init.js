@@ -101,6 +101,14 @@ export function init(playerName = "Player", globalDay = 1) {
     retreadQueue: [],
     // Supplier relationships
     supplierRelationships: {},
+    // Fixed-price supplier contracts (Tier 3+)
+    contracts: [],
+    contractOffers: [],
+    // 3PL storage leasing
+    storageListings: [],   // Listings this player has created (as owner)
+    storageLeases: [],     // Leases this player has rented (as tenant)
+    tplInventory: {},      // Inventory stored in leased 3PL space { leaseId: { tireKey: qty } }
+    tplIncome: 0,          // Total 3PL income earned
     // Pending tire lot inspection
     pendingLot: null,
     // Regional market share

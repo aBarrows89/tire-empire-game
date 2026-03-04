@@ -1,7 +1,8 @@
 import { LOANS } from '../../../shared/constants/loans.js';
+import { LOAN_INDEX_TO_TIER } from '../../../shared/constants/bank.js';
 import { uid } from '../../../shared/helpers/random.js';
 
-export function handleBank(action, params, g, ctx) {
+export async function handleBank(action, params, g, ctx) {
   switch (action) {
     case 'takeLoan': {
       const { index } = params;
@@ -9,16 +10,28 @@ export function handleBank(action, params, g, ctx) {
       if (!loan) return ctx.fail('Invalid loan');
       if ((g.loans || []).length >= 3) return ctx.fail('Max 3 active loans');
       if (loan.rr && g.reputation < loan.rr) return ctx.fail('Not enough reputation');
-      const effectiveRate = +(loan.r * (g.loanRateMult || 1)).toFixed(4);
+
+      // Use dynamic per-tier rate from bankState if available
+      let effectiveRate;
+      const tierKey = LOAN_INDEX_TO_TIER[index];
+      const bankState = g._bankState;
+      if (bankState?.loanRates && tierKey && bankState.loanRates[tierKey]) {
+        effectiveRate = bankState.loanRates[tierKey];
+      } else {
+        effectiveRate = +(loan.r * (g.loanRateMult || 1)).toFixed(4);
+      }
+
       g.cash += loan.amt;
       g.loans.push({
         id: uid(),
         name: loan.n,
         amt: loan.amt,
-        r: effectiveRate,
+        r: effectiveRate,  // Locked at time of borrowing
         remaining: loan.amt * (1 + effectiveRate),
         weeklyPayment: (loan.amt * (1 + effectiveRate)) / (loan.t * 4),
+        takenDay: g.day,
       });
+      g.log.push({ msg: `Took ${loan.n} loan: $${loan.amt.toLocaleString()} at ${(effectiveRate * 100).toFixed(1)}% APR`, cat: 'bank' });
       break;
     }
 

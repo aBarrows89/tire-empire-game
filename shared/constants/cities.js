@@ -226,3 +226,102 @@ export const CITIES = [
   { id: "nampa_id", name: "Nampa", state: "ID", pop: 100, size: "city", lat: 43.540, lng: -116.563, mx: 5, dem: 48, cost: .90, win: 1.1, agPct: .35 },
   { id: "gainesville_fl", name: "Gainesville", state: "FL", pop: 141, size: "city", lat: 29.651, lng: -82.324, mx: 7, dem: 60, cost: .92, win: .05 },
 ];
+
+/**
+ * Regional demand profiles — 6b: Enhanced Market Realism
+ * Derived from city characteristics (state, winter index, cost, agPct, size).
+ * Returns multipliers for each tire category demand.
+ * Values > 1.0 = higher demand, < 1.0 = lower demand.
+ */
+const RUST_BELT_STATES = new Set(['PA', 'OH', 'WV', 'MI', 'IN']);
+const SUNBELT_STATES = new Set(['FL', 'TX', 'AZ', 'NM', 'NV']);
+const COASTAL_METRO_STATES = new Set(['CA', 'NY', 'NJ', 'MA', 'CT', 'WA', 'OR']);
+const SOUTHERN_STATES = new Set(['GA', 'AL', 'SC', 'NC', 'TN', 'MS', 'AR', 'LA', 'KY', 'VA']);
+
+export function getCityDemandProfile(city) {
+  const profile = {
+    used_junk: 1.0, used_poor: 1.0, used_good: 1.0, used_premium: 1.0,
+    allSeason: 1.0, performance: 1.0, winter: 1.0, lightTruck: 1.0,
+    commercial: 1.0, evTire: 1.0, runFlat: 1.0, luxuryTouring: 1.0,
+    premiumAllWeather: 1.0, tractor: 1.0, implement: 1.0, atv: 1.0,
+  };
+
+  const st = city.state;
+  const isRural = city.size === 'rural' || city.size === 'small';
+  const isMega = city.size === 'mega' || city.size === 'metro';
+  const hasAg = (city.agPct || 0) > 0.2;
+  const highCost = city.cost >= 1.15;
+  const lowCost = city.cost < 0.60;
+  const coldWinter = city.win >= 1.2;
+
+  // Rust Belt: higher used/budget, lower luxury, good commercial
+  if (RUST_BELT_STATES.has(st)) {
+    profile.used_junk *= 1.3; profile.used_poor *= 1.25; profile.used_good *= 1.2;
+    profile.allSeason *= 1.1;
+    profile.luxuryTouring *= 0.75; profile.runFlat *= 0.80;
+    profile.commercial *= 1.15; profile.lightTruck *= 1.15;
+    profile.evTire *= 0.85;
+  }
+
+  // Sunbelt: high all-season, very low winter, moderate EV/performance
+  if (SUNBELT_STATES.has(st)) {
+    profile.allSeason *= 1.25; profile.premiumAllWeather *= 1.15;
+    profile.winter *= 0.15; // almost no winter demand
+    profile.performance *= 1.1;
+    profile.lightTruck *= 1.2; // trucks popular in TX/AZ
+  }
+
+  // Coastal metros: high EV/premium, high operating costs → premium buyers
+  if (COASTAL_METRO_STATES.has(st) && isMega) {
+    profile.evTire *= 1.5; profile.performance *= 1.3;
+    profile.luxuryTouring *= 1.4; profile.runFlat *= 1.3;
+    profile.premiumAllWeather *= 1.3;
+    profile.used_junk *= 0.7; profile.used_poor *= 0.75;
+    profile.commercial *= 0.85;
+  }
+
+  // Rural/agricultural: high truck/tractor/implement, low luxury
+  if (isRural || hasAg) {
+    profile.tractor *= 1.0 + (city.agPct || 0.2) * 2; // up to 2.4x
+    profile.implement *= 1.0 + (city.agPct || 0.2) * 1.5;
+    profile.atv *= 1.3;
+    profile.lightTruck *= 1.25; profile.commercial *= 1.2;
+    profile.luxuryTouring *= 0.5; profile.runFlat *= 0.4;
+    profile.evTire *= 0.4;
+    profile.performance *= 0.6;
+  }
+
+  // Cold winter: boost winter tires, all-weather
+  if (coldWinter) {
+    profile.winter *= 1.0 + (city.win - 1.0) * 1.5; // win=1.5 → 1.75x winter demand
+    profile.premiumAllWeather *= 1.0 + (city.win - 1.0) * 0.8;
+  }
+
+  // High cost of living: shift toward premium, away from used
+  if (highCost) {
+    profile.luxuryTouring *= 1.2; profile.performance *= 1.15;
+    profile.used_junk *= 0.8; profile.used_poor *= 0.85;
+  }
+
+  // Low cost: more price-sensitive, more used
+  if (lowCost) {
+    profile.used_junk *= 1.4; profile.used_poor *= 1.3; profile.used_good *= 1.2;
+    profile.luxuryTouring *= 0.6; profile.performance *= 0.7;
+  }
+
+  // Southern states: moderate all-season, low winter
+  if (SOUTHERN_STATES.has(st)) {
+    profile.allSeason *= 1.1;
+    profile.winter *= Math.max(0.2, city.win); // use win index directly
+    profile.lightTruck *= 1.1;
+  }
+
+  return profile;
+}
+
+// Pre-compute and cache demand profiles for all cities
+export const CITY_DEMAND_PROFILES = {};
+for (const city of CITIES) {
+  CITY_DEMAND_PROFILES[city.id] = getCityDemandProfile(city);
+}
+

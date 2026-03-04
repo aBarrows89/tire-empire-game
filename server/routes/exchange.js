@@ -13,6 +13,7 @@ import {
   TC_FEATURES, VINNIE_TIP_COST, LOTTERY_TICKET_COST,
   DIVIDEND_MAX_PAYOUT, CAP_GAINS_HOLD_THRESHOLD,
 } from '../../shared/constants/exchange.js';
+import { MONET } from '../../shared/constants/monetization.js';
 
 const router = Router();
 
@@ -526,6 +527,310 @@ router.post('/scratch-ticket/claim', authMiddleware, async (req, res) => {
     g.log.push({ msg: 'Scratch ticket winner! +$' + clampedPrize.toLocaleString(), cat: 'exchange' });
     await savePlayerState(req.playerId, g);
     res.json({ ok: true, prize: clampedPrize, state: g });
+  } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// ── TC Marketplace (Section 14e) ──
+
+// Get TC marketplace listings + trade history
+router.get('/tc-market', authMiddleware, async (req, res) => {
+  try {
+    const game = await getGame();
+    const mkt = game?.economy?.tcMarketplace || { listings: [], tradeHistory: [] };
+    const fairValue = game?.economy?.tcValue || 50000;
+    const activeListings = (mkt.listings || []).filter(l => l.status === 'active');
+    const sellOrders = activeListings.filter(l => l.type === 'tc_sell').sort((a, b) => a.pricePerTc - b.pricePerTc);
+    const buyOrders = activeListings.filter(l => l.type === 'tc_buy').sort((a, b) => b.pricePerTc - a.pricePerTc);
+    res.json({
+      sellOrders, buyOrders, fairValue,
+      tradeHistory: (mkt.tradeHistory || []).slice(0, 50),
+      reserve: {
+        cashBalance: Math.round(game?.economy?.tcReserve?.cashBalance || 0),
+        tcHoldings: game?.economy?.tcReserve?.tcHoldings || 0,
+      },
+    });
+  } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// List TC for sale
+router.post('/tc-market/sell', authMiddleware, async (req, res) => {
+  try {
+    const player = await getPlayer(req.playerId);
+    if (!player) return res.status(404).json({ error: 'Player not found' });
+    const g = player.game_state;
+    const { tcAmount, askingPrice } = req.body;
+    const mkt = MONET.tcMarketplace;
+    const game = await getGame();
+    const day = game?.day || 1;
+    const fairValue = game?.economy?.tcValue || 50000;
+    const tcMkt = game?.economy?.tcMarketplace || { listings: [], tradeHistory: [] };
+
+    // Validation
+    if (!tcAmount || tcAmount < mkt.minListing) return res.status(400).json({ error: `Minimum listing: ${mkt.minListing} TC` });
+    if ((g.tireCoins || 0) < tcAmount) return res.status(400).json({ error: 'Not enough TC' });
+    if (tcAmount > Math.floor((g.tireCoins || 0) * mkt.maxListingPct)) return res.status(400).json({ error: `Max ${Math.round(mkt.maxListingPct * 100)}% of your TC balance per listing` });
+    const pricePerTc = askingPrice / tcAmount;
+    if (pricePerTc < fairValue * (1 - mkt.priceRangeLimit) || pricePerTc > fairValue * (1 + mkt.priceRangeLimit)) {
+      return res.status(400).json({ error: `Price must be within ±${Math.round(mkt.priceRangeLimit * 100)}% of fair value ($${fairValue})` });
+    }
+    // Cooldown check
+    const recentListing = tcMkt.listings.find(l => l.sellerId === req.playerId && l.listedDay === day);
+    if (recentListing) return res.status(400).json({ error: 'Only 1 TC listing per day' });
+
+    // Deduct TC and create listing
+    g.tireCoins -= tcAmount;
+    const listing = {
+      id: uid(), type: 'tc_sell', sellerId: req.playerId,
+      sellerName: g.companyName || g.name || 'Unknown',
+      tcAmount, askingPrice: Math.round(askingPrice),
+      pricePerTc: Math.round(pricePerTc),
+      listedDay: day, expiresDay: day + mkt.listingDurationDays,
+      status: 'active', offers: [],
+    };
+    tcMkt.listings.push(listing);
+
+    // Check for matching buy orders
+    const matchedBuys = tcMkt.listings
+      .filter(l => l.type === 'tc_buy' && l.status === 'active' && l.pricePerTc >= pricePerTc)
+      .sort((a, b) => b.pricePerTc - a.pricePerTc);
+
+    let remainingTC = tcAmount;
+    for (const buy of matchedBuys) {
+      if (remainingTC <= 0) break;
+      const fillQty = Math.min(remainingTC, buy.tcAmount);
+      const fillPrice = buy.pricePerTc * fillQty;
+      const fee = Math.round(fillPrice * (g.isPremium ? mkt.sellerFeePremium : mkt.sellerFee));
+      g.cash += fillPrice - fee;
+
+      // Credit buyer
+      const buyer = await getPlayer(buy.buyerId);
+      if (buyer) {
+        buyer.game_state.tireCoins = (buyer.game_state.tireCoins || 0) + fillQty;
+        buyer.game_state.log = buyer.game_state.log || [];
+        buyer.game_state.log.push({ msg: `TC Market: Bought ${fillQty} TC for $${fillPrice.toLocaleString()}`, cat: 'exchange' });
+        await savePlayerState(buy.buyerId, buyer.game_state);
+      }
+
+      // Fee goes to reserve
+      if (game.economy.tcReserve) game.economy.tcReserve.cashBalance += fee;
+
+      // Record trade
+      tcMkt.tradeHistory.unshift({ day, qty: fillQty, pricePerTc: buy.pricePerTc, buyerId: buy.buyerId, sellerId: req.playerId });
+      if (tcMkt.tradeHistory.length > 100) tcMkt.tradeHistory.pop();
+
+      buy.tcAmount -= fillQty;
+      if (buy.tcAmount <= 0) buy.status = 'filled';
+      remainingTC -= fillQty;
+
+      g.log = g.log || [];
+      g.log.push({ msg: `TC Market: Sold ${fillQty} TC for $${fillPrice.toLocaleString()} (-$${fee} fee)`, cat: 'exchange' });
+    }
+
+    // Update listing with remaining
+    if (remainingTC <= 0) {
+      listing.status = 'filled';
+    } else {
+      listing.tcAmount = remainingTC;
+      listing.askingPrice = Math.round(remainingTC * pricePerTc);
+    }
+
+    game.economy.tcMarketplace = tcMkt;
+    await saveGame('default', day, game.economy, game.ai_shops || [], game.liquidation || []);
+    await savePlayerState(req.playerId, g);
+    res.json({ ok: true, listing, state: g });
+  } catch (err) { console.error('TC sell error:', err); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// Post TC buy order
+router.post('/tc-market/buy', authMiddleware, async (req, res) => {
+  try {
+    const player = await getPlayer(req.playerId);
+    if (!player) return res.status(404).json({ error: 'Player not found' });
+    const g = player.game_state;
+    const { tcAmount, bidPrice } = req.body;
+    const mkt = MONET.tcMarketplace;
+    const game = await getGame();
+    const day = game?.day || 1;
+    const fairValue = game?.economy?.tcValue || 50000;
+    const tcMkt = game?.economy?.tcMarketplace || { listings: [], tradeHistory: [] };
+
+    if (!tcAmount || tcAmount < mkt.minListing) return res.status(400).json({ error: `Minimum order: ${mkt.minListing} TC` });
+    if ((g.cash || 0) < bidPrice) return res.status(400).json({ error: 'Not enough cash' });
+    const pricePerTc = bidPrice / tcAmount;
+    if (pricePerTc < fairValue * (1 - mkt.priceRangeLimit) || pricePerTc > fairValue * (1 + mkt.priceRangeLimit)) {
+      return res.status(400).json({ error: `Price must be within ±${Math.round(mkt.priceRangeLimit * 100)}% of fair value ($${fairValue})` });
+    }
+    const recentListing = tcMkt.listings.find(l => l.buyerId === req.playerId && l.listedDay === day);
+    if (recentListing) return res.status(400).json({ error: 'Only 1 TC listing per day' });
+
+    g.cash -= Math.round(bidPrice);
+    const listing = {
+      id: uid(), type: 'tc_buy', buyerId: req.playerId,
+      buyerName: g.companyName || g.name || 'Unknown',
+      tcAmount, bidPrice: Math.round(bidPrice),
+      pricePerTc: Math.round(pricePerTc),
+      listedDay: day, expiresDay: day + mkt.listingDurationDays,
+      status: 'active', offers: [],
+    };
+    tcMkt.listings.push(listing);
+
+    // Check for matching sell orders
+    const matchedSells = tcMkt.listings
+      .filter(l => l.type === 'tc_sell' && l.status === 'active' && l.pricePerTc <= pricePerTc)
+      .sort((a, b) => a.pricePerTc - b.pricePerTc);
+
+    let remainingTC = tcAmount;
+    let totalSpent = 0;
+    for (const sell of matchedSells) {
+      if (remainingTC <= 0) break;
+      const fillQty = Math.min(remainingTC, sell.tcAmount);
+      const fillPrice = sell.pricePerTc * fillQty;
+      totalSpent += fillPrice;
+
+      // Credit seller (minus fee)
+      const seller = await getPlayer(sell.sellerId);
+      if (seller) {
+        const sellerFee = Math.round(fillPrice * (seller.game_state.isPremium ? mkt.sellerFeePremium : mkt.sellerFee));
+        seller.game_state.cash += fillPrice - sellerFee;
+        seller.game_state.log = seller.game_state.log || [];
+        seller.game_state.log.push({ msg: `TC Market: Sold ${fillQty} TC for $${fillPrice.toLocaleString()} (-$${sellerFee} fee)`, cat: 'exchange' });
+        await savePlayerState(sell.sellerId, seller.game_state);
+        if (game.economy.tcReserve) game.economy.tcReserve.cashBalance += sellerFee;
+      }
+
+      g.tireCoins = (g.tireCoins || 0) + fillQty;
+
+      tcMkt.tradeHistory.unshift({ day, qty: fillQty, pricePerTc: sell.pricePerTc, buyerId: req.playerId, sellerId: sell.sellerId });
+      if (tcMkt.tradeHistory.length > 100) tcMkt.tradeHistory.pop();
+
+      sell.tcAmount -= fillQty;
+      if (sell.tcAmount <= 0) sell.status = 'filled';
+      remainingTC -= fillQty;
+
+      g.log = g.log || [];
+      g.log.push({ msg: `TC Market: Bought ${fillQty} TC for $${Math.round(fillPrice).toLocaleString()}`, cat: 'exchange' });
+    }
+
+    // Refund unspent cash if partially filled but listing stays open
+    if (remainingTC < tcAmount && remainingTC > 0) {
+      listing.tcAmount = remainingTC;
+      listing.bidPrice = Math.round(remainingTC * pricePerTc);
+    } else if (remainingTC <= 0) {
+      listing.status = 'filled';
+      // Refund excess (bid was at higher price than fills)
+      const refund = Math.round(bidPrice) - Math.round(totalSpent);
+      if (refund > 0) g.cash += refund;
+    }
+
+    game.economy.tcMarketplace = tcMkt;
+    await saveGame('default', day, game.economy, game.ai_shops || [], game.liquidation || []);
+    await savePlayerState(req.playerId, g);
+    res.json({ ok: true, listing, state: g });
+  } catch (err) { console.error('TC buy error:', err); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// Accept an existing TC listing (one-click match)
+router.post('/tc-market/accept', authMiddleware, async (req, res) => {
+  try {
+    const player = await getPlayer(req.playerId);
+    if (!player) return res.status(404).json({ error: 'Player not found' });
+    const g = player.game_state;
+    const { listingId } = req.body;
+    const game = await getGame();
+    const day = game?.day || 1;
+    const tcMkt = game?.economy?.tcMarketplace || { listings: [], tradeHistory: [] };
+    const mkt = MONET.tcMarketplace;
+
+    const listing = tcMkt.listings.find(l => l.id === listingId && l.status === 'active');
+    if (!listing) return res.status(400).json({ error: 'Listing not found or no longer active' });
+
+    if (listing.type === 'tc_sell') {
+      // Buyer accepts a sell listing
+      if (listing.sellerId === req.playerId) return res.status(400).json({ error: 'Cannot buy your own listing' });
+      if ((g.cash || 0) < listing.askingPrice) return res.status(400).json({ error: 'Not enough cash' });
+
+      g.cash -= listing.askingPrice;
+      g.tireCoins = (g.tireCoins || 0) + listing.tcAmount;
+
+      // Pay seller minus fee
+      const seller = await getPlayer(listing.sellerId);
+      if (seller) {
+        const fee = Math.round(listing.askingPrice * (seller.game_state.isPremium ? mkt.sellerFeePremium : mkt.sellerFee));
+        seller.game_state.cash += listing.askingPrice - fee;
+        seller.game_state.log = seller.game_state.log || [];
+        seller.game_state.log.push({ msg: `TC Market: Sold ${listing.tcAmount} TC for $${listing.askingPrice.toLocaleString()} (-$${fee} fee)`, cat: 'exchange' });
+        await savePlayerState(listing.sellerId, seller.game_state);
+        if (game.economy.tcReserve) game.economy.tcReserve.cashBalance += fee;
+      }
+
+      g.log = g.log || [];
+      g.log.push({ msg: `TC Market: Bought ${listing.tcAmount} TC for $${listing.askingPrice.toLocaleString()}`, cat: 'exchange' });
+      listing.status = 'filled';
+      tcMkt.tradeHistory.unshift({ day, qty: listing.tcAmount, pricePerTc: listing.pricePerTc, buyerId: req.playerId, sellerId: listing.sellerId });
+
+    } else if (listing.type === 'tc_buy') {
+      // Seller accepts a buy listing
+      if (listing.buyerId === req.playerId) return res.status(400).json({ error: 'Cannot sell to your own listing' });
+      if ((g.tireCoins || 0) < listing.tcAmount) return res.status(400).json({ error: 'Not enough TC' });
+
+      const fee = Math.round(listing.bidPrice * (g.isPremium ? mkt.sellerFeePremium : mkt.sellerFee));
+      g.tireCoins -= listing.tcAmount;
+      g.cash += listing.bidPrice - fee;
+
+      // Credit buyer with TC
+      const buyer = await getPlayer(listing.buyerId);
+      if (buyer) {
+        buyer.game_state.tireCoins = (buyer.game_state.tireCoins || 0) + listing.tcAmount;
+        buyer.game_state.log = buyer.game_state.log || [];
+        buyer.game_state.log.push({ msg: `TC Market: Bought ${listing.tcAmount} TC for $${listing.bidPrice.toLocaleString()}`, cat: 'exchange' });
+        await savePlayerState(listing.buyerId, buyer.game_state);
+      }
+      if (game.economy.tcReserve) game.economy.tcReserve.cashBalance += fee;
+
+      g.log = g.log || [];
+      g.log.push({ msg: `TC Market: Sold ${listing.tcAmount} TC for $${listing.bidPrice.toLocaleString()} (-$${fee} fee)`, cat: 'exchange' });
+      listing.status = 'filled';
+      tcMkt.tradeHistory.unshift({ day, qty: listing.tcAmount, pricePerTc: listing.pricePerTc, buyerId: listing.buyerId, sellerId: req.playerId });
+    }
+
+    if (tcMkt.tradeHistory.length > 100) tcMkt.tradeHistory.pop();
+    game.economy.tcMarketplace = tcMkt;
+    await saveGame('default', day, game.economy, game.ai_shops || [], game.liquidation || []);
+    await savePlayerState(req.playerId, g);
+    res.json({ ok: true, state: g });
+  } catch (err) { console.error('TC accept error:', err); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// Cancel own TC listing
+router.post('/tc-market/cancel', authMiddleware, async (req, res) => {
+  try {
+    const player = await getPlayer(req.playerId);
+    if (!player) return res.status(404).json({ error: 'Player not found' });
+    const g = player.game_state;
+    const { listingId } = req.body;
+    const game = await getGame();
+    const day = game?.day || 1;
+    const tcMkt = game?.economy?.tcMarketplace || { listings: [], tradeHistory: [] };
+
+    const listing = tcMkt.listings.find(l => l.id === listingId && l.status === 'active');
+    if (!listing) return res.status(400).json({ error: 'Listing not found' });
+
+    // Verify ownership
+    if (listing.type === 'tc_sell' && listing.sellerId !== req.playerId) return res.status(403).json({ error: 'Not your listing' });
+    if (listing.type === 'tc_buy' && listing.buyerId !== req.playerId) return res.status(403).json({ error: 'Not your listing' });
+
+    // Refund
+    if (listing.type === 'tc_sell') {
+      g.tireCoins = (g.tireCoins || 0) + listing.tcAmount;
+    } else {
+      g.cash += listing.bidPrice;
+    }
+
+    listing.status = 'cancelled';
+    game.economy.tcMarketplace = tcMkt;
+    await saveGame('default', day, game.economy, game.ai_shops || [], game.liquidation || []);
+    await savePlayerState(req.playerId, g);
+    res.json({ ok: true, state: g });
   } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
 });
 

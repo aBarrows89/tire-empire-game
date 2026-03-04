@@ -75,12 +75,21 @@ async function scanReddit() {
   try {
     const res = await fetch(`${API}/marketing/reddit/scan`, { method: 'POST', headers: AUTH_HEADER });
     const data = await res.json();
-    btn.textContent = `Found ${data.threadsFound || 0}`;
-    setTimeout(() => { btn.textContent = 'Scan Now'; btn.disabled = false; }, 2000);
+
+    if (data.errors && data.errors.length > 0) {
+      const errorSummary = data.errors.map(e => `r/${e.sub}: ${e.error}`).join('\n');
+      console.warn('Reddit scan errors:', errorSummary);
+      btn.textContent = `Found ${data.threadsFound || 0} (${data.errors.length} errors)`;
+      btn.style.color = '#ffa726';
+    } else {
+      btn.textContent = `Found ${data.threadsFound || 0}`;
+    }
+
+    setTimeout(() => { btn.textContent = 'Scan Now'; btn.disabled = false; btn.style.color = ''; }, 3000);
     loadRedditScout();
   } catch (e) {
-    btn.textContent = 'Error';
-    setTimeout(() => { btn.textContent = 'Scan Now'; btn.disabled = false; }, 2000);
+    btn.textContent = 'Error: ' + e.message;
+    setTimeout(() => { btn.textContent = 'Scan Now'; btn.disabled = false; }, 3000);
   }
 }
 

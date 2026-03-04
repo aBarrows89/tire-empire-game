@@ -4,6 +4,7 @@ import { SUPPLIERS } from '../../../shared/constants/suppliers.js';
 import { RETREADING } from '../../../shared/constants/retreading.js';
 import { INSPECTION } from '../../../shared/constants/inspection.js';
 import { MANUFACTURERS } from '../../../shared/constants/manufacturers.js';
+import { CONTRACT_TYPES } from '../../../shared/constants/contracts.js';
 import { getCap, getInv, getLocInv, getLocCap, getStorageCap, rebuildGlobalInv, addA } from '../../../shared/helpers/inventory.js';
 import { R } from '../../../shared/helpers/format.js';
 import { getCalendar } from '../../../shared/helpers/calendar.js';
@@ -75,7 +76,9 @@ export async function handleSourcing(action, params, g, ctx) {
         priceMult = contract.lockedMult;
       } else {
         const gameData = await ctx.getGame();
-        priceMult = gameData?.economy?.supplierPricing?.[tire] || 1.0;
+        // Use per-supplier pricing if available, fall back to per-tire
+        priceMult = gameData?.economy?.supplierPrices?.[supplierIndex]?.[tire]
+          || gameData?.economy?.supplierPricing?.[tire] || 1.0;
       }
       const orderCost = Math.round(qty * t.bMin * priceMult * (1 - sup.disc));
       if (g.cash < orderCost) return ctx.fail('Not enough cash');
@@ -286,6 +289,86 @@ export async function handleSourcing(action, params, g, ctx) {
       const { supplierIndex, tire } = params;
       if (!g.autoSuppliers) { g.autoSuppliers = []; break; }
       g.autoSuppliers = g.autoSuppliers.filter(a => !(a.supplierIndex === supplierIndex && a.tire === tire));
+      break;
+    }
+
+    case 'acceptContract': {
+      const { offerId } = params;
+      if (!g.contractOffers) g.contractOffers = [];
+      const offerIdx = g.contractOffers.findIndex(o => o.id === offerId);
+      if (offerIdx === -1) return ctx.fail('Contract offer not found or expired');
+      const offer = g.contractOffers[offerIdx];
+      if (g.day >= offer.expiresDay) return ctx.fail('This offer has expired');
+      if (g.cash < offer.upfrontCost) return ctx.fail(`Need $${offer.upfrontCost.toLocaleString()} to sign this contract`);
+
+      g.cash -= offer.upfrontCost;
+      if (!g.contracts) g.contracts = [];
+
+      const contract = {
+        id: uid(),
+        type: offer.type,
+        label: offer.label,
+        supplierIndex: offer.supplierIndex,
+        supplierName: offer.supplierName,
+        tireType: offer.tireType,
+        tireName: offer.tireName,
+        pricePerTire: offer.pricePerTire,
+        totalQuantity: offer.totalQuantity,
+        deliveredQuantity: 0,
+        deliveryMode: offer.deliveryMode,
+        dailyAllotment: offer.dailyAllotment,
+        startDay: g.day,
+        expirationDay: g.day + offer.durationDays,
+        deliveryStartDay: offer.deliveryLeadDays ? g.day + offer.deliveryLeadDays : g.day,
+        status: 'active',
+        upfrontCost: offer.upfrontCost,
+        penaltyForDefault: offer.penaltyForDefault,
+      };
+
+      // Bulk delivery: deliver immediately
+      if (offer.deliveryMode === 'bulk') {
+        const space = Math.max(0, getCap(g) - getInv(g));
+        const delivered = Math.min(offer.totalQuantity, space);
+        if (delivered > 0) {
+          g.warehouseInventory = g.warehouseInventory || {};
+          g.warehouseInventory[offer.tireType] = (g.warehouseInventory[offer.tireType] || 0) + delivered;
+          rebuildGlobalInv(g);
+        }
+        contract.deliveredQuantity = offer.totalQuantity;
+        contract.status = 'completed';
+        const lost = offer.totalQuantity - delivered;
+        g.log.push({ msg: `📦 Contract fulfilled: ${delivered} ${offer.tireName}${lost > 0 ? ` (${lost} didn't fit — lost!)` : ''} from ${offer.supplierName}`, cat: 'supplier' });
+      } else {
+        g.log.push({ msg: `📋 Signed ${offer.label} with ${offer.supplierName}: ${offer.totalQuantity} ${offer.tireName} at $${offer.pricePerTire}/tire`, cat: 'supplier' });
+      }
+
+      g.contracts.push(contract);
+      g.contractOffers.splice(offerIdx, 1);
+      break;
+    }
+
+    case 'cancelContract': {
+      const { contractId } = params;
+      if (!g.contracts) return ctx.fail('No contracts');
+      const ct = g.contracts.find(c => c.id === contractId && c.status === 'active');
+      if (!ct) return ctx.fail('Active contract not found');
+
+      // Calculate penalty
+      const penalty = Math.round(ct.upfrontCost * (ct.penaltyForDefault || 0.15));
+      if (g.cash < penalty) return ctx.fail(`Need $${penalty.toLocaleString()} to pay cancellation penalty`);
+
+      g.cash -= penalty;
+      ct.status = 'defaulted';
+
+      // Damage supplier relationship by 1 tier worth of purchases
+      const supKey = String(ct.supplierIndex);
+      if (g.supplierRelationships?.[supKey]) {
+        g.supplierRelationships[supKey].totalPurchased = Math.max(0, g.supplierRelationships[supKey].totalPurchased - 2000);
+        const tier = getSupplierRelTier(g.supplierRelationships[supKey].totalPurchased);
+        g.supplierRelationships[supKey].level = tier.level;
+      }
+
+      g.log.push({ msg: `❌ Cancelled contract with ${ct.supplierName} — $${penalty.toLocaleString()} penalty, reputation damaged`, cat: 'supplier' });
       break;
     }
 

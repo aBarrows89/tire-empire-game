@@ -297,25 +297,54 @@ export async function handleMisc(action, params, g, ctx) {
     }
 
     case 'rewardAdWatch': {
+      const { MONET: monetAd } = await import('../../../shared/constants/monetization.js');
+      const schedule = monetAd.adRewards.schedule;
+      const maxAds = monetAd.adRewards.maxRewardedPerDay;
+
       if (!g.adRewards) g.adRewards = { lastDay: 0, count: 0 };
       const adDay = g.day || 1;
       if (g.adRewards.lastDay !== adDay) {
         g.adRewards.lastDay = adDay;
         g.adRewards.count = 0;
       }
-      if (g.adRewards.count >= 3) {
-        return ctx.fail('Daily ad reward limit reached');
+      if (g.adRewards.count >= maxAds) {
+        return ctx.fail(`Maximum ${maxAds} ad rewards per day`);
       }
-      g.adRewards.count += 1;
-      // Diminishing returns: 1st=50, 2nd=30, 3rd=15
-      const adRewardTiers = [50, 30, 15];
-      const reward = adRewardTiers[g.adRewards.count - 1] || 15;
-      const { MONET: monetAd } = await import('../../../shared/constants/monetization.js');
+
+      // Diminishing returns from schedule
+      const reward = schedule[Math.min(g.adRewards.count, schedule.length - 1)];
+
+      // TC cap check
       let adCap = monetAd.tcStorage.baseCap;
       if (g.isPremium) adCap += monetAd.tcStorage.premiumBonus;
       for (let i = 0; i < (g.tcStorageLevel || 0) && i < monetAd.tcStorage.upgrades.length; i++) adCap += monetAd.tcStorage.upgrades[i].addCap;
-      g.tireCoins = Math.min((g.tireCoins || 0) + reward, adCap);
-      g.log.push(`Earned ${reward} TC from watching an ad (${g.adRewards.count}/3 today)`);
+
+      const prev = g.tireCoins || 0;
+      g.tireCoins = Math.min(prev + reward, adCap);
+      const actual = g.tireCoins - prev;
+
+      g.adRewards.count += 1;
+      g.totalAdWatches = (g.totalAdWatches || 0) + 1;
+
+      if (actual > 0) {
+        g.log.push(`Earned ${actual} TC from watching an ad (${g.adRewards.count}/${maxAds} today)`);
+      } else {
+        g.log.push({ msg: 'TC at capacity — ad reward lost!', cat: 'warning' });
+      }
+
+      ctx.trackEvent(ctx.playerId, 'ad_watched', {
+        reward: actual, adsToday: g.adRewards.count, totalAds: g.totalAdWatches,
+      });
+
+      // Log to revenue_events for admin dashboard
+      try {
+        const { pool } = await import('../../db/pool.js');
+        await pool.query(`
+          INSERT INTO revenue_events (player_id, event_type, revenue_cents, platform, metadata)
+          VALUES ($1, 'ad_impression', 0, 'android', $2)
+        `, [ctx.playerId, JSON.stringify({ adUnit: 'rewarded_tc', rewardAmount: actual, adIndex: g.adRewards.count })]);
+      } catch { /* non-critical */ }
+
       break;
     }
 
