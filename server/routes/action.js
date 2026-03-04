@@ -1373,6 +1373,35 @@ router.post('/', authMiddleware, async (req, res) => {
         break;
       }
 
+      case 'buyFactory': {
+        const { sellerId } = params;
+        if (!sellerId) return res.status(400).json({ error: 'Missing seller' });
+        if (g.hasFactory) return res.status(400).json({ error: 'You already own a factory' });
+        const seller = await getPlayer(sellerId);
+        if (!seller) return res.status(404).json({ error: 'Seller not found' });
+        const sg = seller.game_state;
+        if (!sg.factoryListing || !sg.hasFactory) return res.status(400).json({ error: 'Factory not for sale' });
+        const price = sg.factoryListing.askingPrice;
+        if (g.cash < price) return res.status(400).json({ error: `Need $${price.toLocaleString()}` });
+        // Transfer factory
+        g.cash -= price;
+        g.hasFactory = true;
+        g.factory = { ...sg.factory };
+        g.factory.customerList = [];
+        g.factory.orderHistory = [];
+        g.factoryListing = null;
+        g.log.push(`Purchased ${sg.factory.brandName || 'factory'} from ${sg.companyName} for $${price.toLocaleString()}!`);
+        // Remove factory from seller
+        sg.cash += price;
+        sg.hasFactory = false;
+        sg.factory = null;
+        sg.factoryListing = null;
+        sg.log = sg.log || [];
+        sg.log.push(`Factory sold to ${g.companyName} for $${price.toLocaleString()}!`);
+        await savePlayerState(sellerId, sg);
+        break;
+      }
+
       // ── FACTORY DISTRIBUTION ──
       case 'enableFactoryDistribution': {
         if (!g.hasFactory || !g.factory) return res.status(400).json({ error: 'No factory' });

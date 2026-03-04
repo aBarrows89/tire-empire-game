@@ -4,7 +4,7 @@ import { TIRES } from '@shared/constants/tires.js';
 import { MAP_FLOOR } from '@shared/constants/wholesale.js';
 import { P2P_FEES, MARKETPLACE_SPECIALIST } from '@shared/constants/marketplace.js';
 import { fmt } from '@shared/helpers/format.js';
-import { postAction, API_BASE, getHeaders, fetchShopListings, sendShopOffer, sendShopMessage, fetchShopMessages } from '../../api/client.js';
+import { postAction, API_BASE, getHeaders, fetchShopListings, fetchFactoryListings, sendShopOffer, sendShopMessage, fetchShopMessages } from '../../api/client.js';
 import { getUid } from '../../services/firebase.js';
 import { hapticsMedium } from '../../api/haptics.js';
 import EmptyState from '../EmptyState.jsx';
@@ -36,6 +36,7 @@ export default function MarketplacePanel() {
 
   // Real Estate tab state
   const [shopListings, setShopListings] = useState([]);
+  const [factoryListings, setFactoryListings] = useState([]);
   const [offerForm, setOfferForm] = useState({});
   const [shopMessages, setShopMessages] = useState({});
   const [msgInput, setMsgInput] = useState({});
@@ -52,6 +53,7 @@ export default function MarketplacePanel() {
       fetch(`${API_BASE}/market/my-listings`, { headers: h }).then(r => r.json()).then(setMyListings).catch(() => {});
     });
     fetchShopListings().then(setShopListings).catch(() => {});
+    fetchFactoryListings().then(r => setFactoryListings(r.listings || [])).catch(() => {});
   };
 
   const fetchListings = fetchAllListings;
@@ -410,6 +412,76 @@ export default function MarketplacePanel() {
 
       {tab === 'realestate' && (
         <>
+          {/* ── Factory Listings ── */}
+          <div className="card">
+            <div className="card-title">Factories For Sale</div>
+            <div className="text-xs text-dim mb-4">
+              Buy or sell tire factories. Includes brand, equipment, and reputation.
+            </div>
+          </div>
+
+          {/* Your factory listing */}
+          {g.factoryListing && (
+            <div className="card" style={{ borderLeft: '3px solid var(--accent)' }}>
+              <div className="text-xs font-bold mb-4">Your Factory Listing</div>
+              <div className="row-between text-sm mb-4">
+                <span>{g.factory?.brandName || 'Your Factory'}</span>
+                <span className="text-accent font-bold">${fmt(g.factoryListing.askingPrice)}</span>
+              </div>
+              <div className="text-xs text-dim mb-4">Listed on day {g.factoryListing.listedDay}</div>
+              <button className="btn btn-full btn-sm btn-red" disabled={busy}
+                onClick={async () => { setBusy('delist-factory'); await postAction('delistFactory'); refreshState(); setBusy(null); }}>
+                Remove Listing
+              </button>
+            </div>
+          )}
+
+          {factoryListings.filter(l => !l.isOwn).length === 0 && !g.factoryListing && (
+            <div className="card">
+              <div className="text-sm text-dim">No factories listed for sale right now.</div>
+            </div>
+          )}
+
+          {factoryListings.filter(l => !l.isOwn).map(l => (
+            <div key={l.playerId} className="card">
+              <div className="row-between mb-4">
+                <span className="font-bold text-sm">{l.brandName}</span>
+                <span className="badge-listed">FOR SALE</span>
+              </div>
+              <div className="val-grid mb-4">
+                <span className="text-dim">Asking Price</span>
+                <span className="font-bold text-accent">${fmt(l.askingPrice)}</span>
+                <span className="text-dim">Seller</span>
+                <span>{l.companyName}</span>
+                <span className="text-dim">Brand Rep</span>
+                <span>{l.brandReputation}</span>
+                <span className="text-dim">Wholesale Rev</span>
+                <span>${fmt(l.totalWholesaleRev)}</span>
+                <span className="text-dim">Customers</span>
+                <span>{l.customerCount}</span>
+                <span className="text-dim">Distributor</span>
+                <span>{l.isDistributor ? 'Yes' : 'No'}</span>
+              </div>
+              {g.hasFactory ? (
+                <div className="text-xs text-dim">You already own a factory.</div>
+              ) : g.cash < l.askingPrice ? (
+                <div className="text-xs text-red">Not enough cash (need ${fmt(l.askingPrice)}, have ${fmt(g.cash)})</div>
+              ) : (
+                <button className="btn btn-full btn-sm btn-green" disabled={busy === `buy-factory-${l.playerId}`}
+                  onClick={async () => {
+                    if (!confirm(`Buy ${l.brandName} for $${fmt(l.askingPrice)}?`)) return;
+                    setBusy(`buy-factory-${l.playerId}`);
+                    const res = await postAction('buyFactory', { sellerId: l.playerId });
+                    if (res.ok) { hapticsMedium(); refreshState(); fetchAllListings(); }
+                    setBusy(null);
+                  }}>
+                  Buy Factory (${fmt(l.askingPrice)})
+                </button>
+              )}
+            </div>
+          ))}
+
+          {/* ── Shop Real Estate ── */}
           <div className="card">
             <div className="card-title">Shop Real Estate</div>
             <div className="text-xs text-dim mb-4">

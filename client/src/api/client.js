@@ -236,6 +236,13 @@ export async function setWholesalePrices(prices) {
   return res.json();
 }
 
+// Factory marketplace API
+export async function fetchFactoryListings() {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/market/factory-listings`, { headers });
+  return res.json();
+}
+
 // Shop marketplace API
 export async function fetchShopListings() {
   const headers = await getHeaders();

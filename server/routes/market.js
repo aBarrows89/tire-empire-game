@@ -368,4 +368,34 @@ router.post('/cancel', authMiddleware, async (req, res) => {
   }
 });
 
+// GET /api/market/factory-listings — browse factories for sale
+router.get('/factory-listings', authMiddleware, async (req, res) => {
+  try {
+    const players = await getAllActivePlayers();
+    const listings = [];
+    for (const p of players) {
+      const g = p.game_state;
+      if (!g?.factoryListing || !g.hasFactory || !g.factory) continue;
+      listings.push({
+        playerId: p.id,
+        companyName: g.companyName || g.name || 'Unknown',
+        brandName: g.factory.brandName || 'Unknown Brand',
+        askingPrice: g.factoryListing.askingPrice,
+        listedDay: g.factoryListing.listedDay,
+        level: g.factory.level || 1,
+        brandReputation: g.factory.brandReputation || 0,
+        totalWholesaleRev: g.factory.totalWholesaleRev || 0,
+        totalWholesaleOrders: g.factory.totalWholesaleOrders || 0,
+        isDistributor: !!g.factory.isDistributor,
+        customerCount: (g.factory.customerList || []).length,
+        isOwn: p.id === req.playerId,
+      });
+    }
+    res.json({ ok: true, listings });
+  } catch (err) {
+    console.error('GET /api/market/factory-listings error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
