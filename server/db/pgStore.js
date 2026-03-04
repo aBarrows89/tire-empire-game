@@ -1,5 +1,25 @@
 import { pool } from './pool.js';
 
+// ── Per-player in-memory mutex to serialize actions ──
+const playerLocks = new Map();
+export async function withPlayerLock(playerId, fn) {
+  // Get or create a lock queue for this player
+  if (!playerLocks.has(playerId)) playerLocks.set(playerId, Promise.resolve());
+  // Chain onto the existing lock
+  const prev = playerLocks.get(playerId);
+  let release;
+  const next = new Promise(resolve => { release = resolve; });
+  playerLocks.set(playerId, next);
+  await prev; // Wait for previous action on this player to finish
+  try {
+    return await fn();
+  } finally {
+    release();
+    // Clean up if no more waiters
+    if (playerLocks.get(playerId) === next) playerLocks.delete(playerId);
+  }
+}
+
 // ── In-memory stores for features without dedicated tables ──
 const playerListings = [];
 const directTrades = [];

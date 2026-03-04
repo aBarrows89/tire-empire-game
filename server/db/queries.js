@@ -45,3 +45,4 @@ export const removeChatMute = (...args) => impl.removeChatMute(...args);
 export const deleteChatMessage = (...args) => impl.deleteChatMessage(...args);
 export const saveFile = (...args) => impl.saveFile(...args);
 export const getFile = (...args) => impl.getFile(...args);
+export const withPlayerLock = (...args) => impl.withPlayerLock ? impl.withPlayerLock(...args) : args[1]();

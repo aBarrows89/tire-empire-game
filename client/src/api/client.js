@@ -82,18 +82,42 @@ export async function registerPlayer(playerName, companyName) {
   return res.json();
 }
 
+// Client-side action queue — serialize requests to prevent race conditions
+let _actionInFlight = false;
+const _actionQueue = [];
+
 export async function postAction(action, params = {}) {
   if (!navigator.onLine) {
     await queueAction(action, params);
     return { ok: true, queued: true };
   }
-  const headers = await getHeaders();
-  const res = await fetchWithRetry(`${API_BASE}/action`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ action, ...params }),
-  });
-  return res.json();
+  // If an action is already in flight, queue this one
+  if (_actionInFlight) {
+    return new Promise((resolve, reject) => {
+      _actionQueue.push({ action, params, resolve, reject });
+    });
+  }
+  return _executeAction(action, params);
+}
+
+async function _executeAction(action, params) {
+  _actionInFlight = true;
+  try {
+    const headers = await getHeaders();
+    const res = await fetchWithRetry(`${API_BASE}/action`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ action, ...params }),
+    });
+    return await res.json();
+  } finally {
+    _actionInFlight = false;
+    // Process next queued action
+    if (_actionQueue.length > 0) {
+      const next = _actionQueue.shift();
+      _executeAction(next.action, next.params).then(next.resolve).catch(next.reject);
+    }
+  }
 }
 
 export async function getMarket() {

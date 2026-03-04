@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getPlayer, savePlayerState, getGame, saveGame, addShopSaleListing, removeShopSaleListing, getShopSaleListings } from '../db/queries.js';
+import { getPlayer, savePlayerState, getGame, saveGame, addShopSaleListing, removeShopSaleListing, getShopSaleListings, withPlayerLock } from '../db/queries.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { NODE_ENV } from '../config.js';
 import { uid } from '../../shared/helpers/random.js';
@@ -33,9 +33,10 @@ import { getShopValuation, SHOP_BID, AI_BUYER_NAMES } from '../../shared/constan
 
 const router = Router();
 
-// POST /api/action — player actions
+// POST /api/action — player actions (serialized per-player to prevent race conditions)
 router.post('/', authMiddleware, async (req, res) => {
   try {
+    await withPlayerLock(req.playerId, async () => {
     const player = await getPlayer(req.playerId);
     if (!player) return res.status(404).json({ error: 'Player not found' });
 
@@ -1616,6 +1617,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
     await savePlayerState(req.playerId, g);
     res.json({ ok: true, state: g });
+    }); // end withPlayerLock
   } catch (err) {
     console.error('POST /api/action error:', err);
     res.status(500).json({ error: 'Internal server error' });
