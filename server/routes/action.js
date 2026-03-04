@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getPlayer, savePlayerState, getGame, saveGame, addShopSaleListing, removeShopSaleListing, getShopSaleListings, withPlayerLock, VersionConflictError } from '../db/queries.js';
+import { getPlayer, savePlayerState, getGame, saveGame, addShopSaleListing, removeShopSaleListing, getShopSaleListings, withPlayerLock, VersionConflictError, createPlayerContract, updatePlayerContract, addDM } from '../db/queries.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { NODE_ENV } from '../config.js';
 import { trackEvent } from '../analytics/tracker.js';
@@ -13,6 +13,7 @@ import { handleBank } from './actions/bank.js';
 import { handleWholesale } from './actions/wholesale.js';
 import { handleEcommerce } from './actions/ecommerce.js';
 import { handleFactory } from './actions/factory.js';
+import { handleContracts } from './actions/contracts.js';
 import { handleShopMarket } from './actions/shopMarket.js';
 import { handleMisc } from './actions/misc.js';
 
@@ -27,6 +28,7 @@ const handlers = [
   handleWholesale,
   handleEcommerce,
   handleFactory,
+  handleContracts,
   handleShopMarket,
   handleMisc,
 ];
@@ -75,6 +77,9 @@ router.post('/', authMiddleware, async (req, res) => {
         addShopSaleListing,
         removeShopSaleListing,
         getShopSaleListings,
+        createPlayerContract,
+        updatePlayerContract,
+        addDM,
         trackEvent,
       };
 

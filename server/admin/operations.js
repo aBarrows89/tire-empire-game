@@ -229,7 +229,7 @@ async function loadBots() {
         <div class="stat-card"><div class="label">Bot:Real Ratio</div><div class="value">${data.ratio}:1</div></div>
         <div class="stat-card"><div class="label">Bots Status</div><div class="value ${data.botsPaused ? 'red' : 'green'}">${data.botsPaused ? 'PAUSED' : 'RUNNING'}</div></div>
       </div>
-      <div style="display:flex;gap:8px;margin-bottom:16px">
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
         <button class="btn btn-green btn-sm" onclick="spawnBots()">Spawn Bots</button>
         <input type="number" id="spawn-count" value="3" min="1" max="10" style="width:60px">
         <label style="font-size:12px;color:#888;align-self:center">Intensity:</label>
@@ -238,21 +238,67 @@ async function loadBots() {
           ${data.botsPaused ? 'Resume All' : 'Pause All'}
         </button>
       </div>
+
+      <!-- Scenarios Section -->
+      <div style="padding:12px;background:#1a1a2e;border-radius:8px;border:1px solid #333;margin-bottom:16px">
+        <h4 style="margin-bottom:8px;font-size:14px">Scenarios</h4>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-red btn-sm" onclick="runScenario('marketCrash')" title="All bots dump inventory and undercut prices">Market Crash</button>
+          <button class="btn btn-green btn-sm" onclick="runScenario('bullRun')" title="All bots raise prices and invest heavily">Bull Run</button>
+          <button class="btn btn-blue btn-sm" onclick="runScenario('expansionWave')" title="Bots aggressively open new shops">Expansion Wave</button>
+          <button class="btn btn-red btn-sm" onclick="runScenario('botCulling')" title="Weakest bots go bankrupt">Bot Culling</button>
+          <button class="btn btn-outline btn-sm" onclick="runScenario('shuffle')" title="Randomize all bot personalities">Shuffle</button>
+          <button class="btn btn-outline btn-sm" onclick="runScenarioDethrone()" title="All bots target a specific player">Dethrone</button>
+        </div>
+        <div id="scenario-result" style="font-size:12px;margin-top:6px;color:#4caf50"></div>
+      </div>
+
+      <!-- Bulk Actions Section -->
+      <div style="padding:12px;background:#1a1a2e;border-radius:8px;border:1px solid #333;margin-bottom:16px">
+        <h4 style="margin-bottom:8px;font-size:14px">Bulk Actions</h4>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-outline btn-sm" onclick="selectAllBots()">Select All</button>
+          <button class="btn btn-outline btn-sm" onclick="deselectAllBots()">Deselect All</button>
+          <select id="bulk-action" style="min-width:140px">
+            <option value="setIntensity">Set Intensity</option>
+            <option value="setPersonality">Set Personality</option>
+            <option value="pause">Pause</option>
+            <option value="resume">Resume</option>
+            <option value="delete">Delete</option>
+          </select>
+          <input type="number" id="bulk-intensity" value="5" min="1" max="10" style="width:60px" placeholder="Intensity">
+          <select id="bulk-personality" style="width:120px">
+            <option value="conservative">Conservative</option>
+            <option value="aggressive">Aggressive</option>
+            <option value="balanced">Balanced</option>
+            <option value="adventurous">Adventurous</option>
+            <option value="opportunist">Opportunist</option>
+          </select>
+          <button class="btn btn-blue btn-sm" onclick="executeBulkAction()">Apply</button>
+        </div>
+        <div id="bulk-result" style="font-size:12px;margin-top:6px;color:#4caf50"></div>
+      </div>
+
       <table>
-        <thead><tr><th>Name</th><th>Type</th><th>Intensity</th><th>Rep</th><th>Cash</th><th>Shops</th><th>Wealth</th><th>Actions</th></tr></thead>
+        <thead><tr><th><input type="checkbox" id="bot-select-all" onchange="toggleAllBotCheckboxes(this.checked)"></th><th>Name</th><th>Type</th><th>Personality</th><th>Intensity</th><th>Rep</th><th>Cash</th><th>Shops</th><th>Wealth</th><th>Actions</th></tr></thead>
         <tbody>${data.bots.map(b => `
           <tr>
+            <td><input type="checkbox" class="bot-cb" value="${esc(b.id)}"></td>
             <td>${esc(b.name)}</td>
             <td><span class="badge badge-${b.isStealth ? 'blue' : 'gray'}">${b.isStealth ? 'Stealth' : 'Legacy'}</span></td>
+            <td>${esc(b.personality || 'standard')}</td>
             <td>${b.intensity}</td>
             <td>${Math.round(b.rep)}</td>
             <td>${fmt(b.cash)}</td>
             <td>${b.shops}</td>
             <td>${fmt(b.wealth)}</td>
-            <td>
-              <select onchange="setBotIntensity('${esc(b.id)}', this.value)" style="width:60px">
+            <td style="display:flex;gap:4px;flex-wrap:nowrap">
+              <select onchange="setBotIntensity('${esc(b.id)}', this.value)" style="width:50px">
                 ${[1,2,3,4,5,6,7,8,9,10].map(i => `<option value="${i}" ${i===b.intensity?'selected':''}>${i}</option>`).join('')}
               </select>
+              <button class="btn btn-outline btn-sm" onclick="viewBot('${esc(b.id)}')" title="View full state">View</button>
+              <button class="btn btn-outline btn-sm" onclick="cloneBot('${esc(b.id)}')" title="Clone this bot">Clone</button>
+              <button class="btn btn-red btn-sm" onclick="deleteBot('${esc(b.id)}')" title="Delete permanently">X</button>
             </td>
           </tr>
         `).join('')}</tbody>
@@ -426,6 +472,146 @@ async function scheduleEvent() {
 async function cancelScheduled(id) {
   await fetch(`${API}/economy/schedule/${id}`, { method: 'DELETE', headers: AUTH_HEADER });
   loadSchedule();
+}
+
+// ═══════════════════════════════════════
+// MARKET WATCH
+// ═══════════════════════════════════════
+
+// ═══════════════════════════════════════
+// EXPANDED BOT CONTROLS
+// ═══════════════════════════════════════
+
+async function viewBot(id) {
+  try {
+    const res = await fetch(`${API}/economy/bots/${id}/view`, { headers: AUTH_HEADER });
+    const data = await res.json();
+    if (!data.ok) return alert(data.error);
+    // Show in player detail modal (reuse existing)
+    const modal = document.getElementById('player-detail-modal');
+    document.getElementById('detail-name').textContent = data.gameState?.companyName || 'Bot';
+    const fmt = n => n >= 1000000 ? `$${(n/1000000).toFixed(1)}M` : n >= 1000 ? `$${(n/1000).toFixed(0)}K` : `$${Math.round(n)}`;
+    document.getElementById('detail-stats').innerHTML = `
+      <div class="stat-grid">
+        <div class="stat-card"><div class="label">Cash</div><div class="value">${fmt(data.metrics.cash)}</div></div>
+        <div class="stat-card"><div class="label">Rep</div><div class="value">${Math.round(data.metrics.rep)}</div></div>
+        <div class="stat-card"><div class="label">Shops</div><div class="value">${data.metrics.shops}</div></div>
+        <div class="stat-card"><div class="label">Wealth</div><div class="value green">${fmt(data.wealth)}</div></div>
+        <div class="stat-card"><div class="label">Day</div><div class="value">${data.metrics.day}</div></div>
+        <div class="stat-card"><div class="label">Personality</div><div class="value blue">${data.botConfig?.personality || '-'}</div></div>
+      </div>
+    `;
+    document.getElementById('detail-boosts').innerHTML = `
+      <h4 style="margin-bottom:8px;font-size:14px">Quick Edit</h4>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <div class="edit-field"><label>Cash</label><input type="number" id="qe-cash" value="${Math.round(data.metrics.cash)}" style="width:100px"></div>
+        <div class="edit-field"><label>Rep</label><input type="number" id="qe-rep" value="${Math.round(data.metrics.rep)}" style="width:80px"></div>
+        <button class="btn btn-blue btn-sm" onclick="quickEditBot('${esc(id)}')">Save</button>
+      </div>
+      <h4 style="margin-bottom:8px;font-size:14px">Directives</h4>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" onclick="sendDirective('${esc(id)}','dump_inventory')">Dump Inv</button>
+        <button class="btn btn-outline btn-sm" onclick="sendDirective('${esc(id)}','buy_spree')">Buy Spree</button>
+        <button class="btn btn-outline btn-sm" onclick="sendDirective('${esc(id)}','add_shop')">Add Shop</button>
+        <button class="btn btn-outline btn-sm" onclick="sendDirective('${esc(id)}','close_all_shops')">Close Shops</button>
+        <button class="btn btn-outline btn-sm" onclick="sendDirective('${esc(id)}','go_bankrupt')">Bankrupt</button>
+        <button class="btn btn-outline btn-sm" onclick="sendDirective('${esc(id)}','ipo')">IPO</button>
+        <button class="btn btn-outline btn-sm" onclick="sendDirective('${esc(id)}','hoard_tc')">Hoard TC</button>
+        <button class="btn btn-outline btn-sm" onclick="sendDirective('${esc(id)}','crash_stock')">Crash Stock</button>
+      </div>
+    `;
+    document.getElementById('detail-actions').innerHTML = '';
+    document.getElementById('detail-raw').textContent = JSON.stringify(data.gameState, null, 2);
+    modal.classList.remove('hidden');
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+async function quickEditBot(id) {
+  const cash = Number(document.getElementById('qe-cash').value);
+  const rep = Number(document.getElementById('qe-rep').value);
+  await fetch(`${API}/economy/bots/${id}/edit`, {
+    method: 'POST', headers: AUTH_HEADER,
+    body: JSON.stringify({ fields: { cash, reputation: rep } }),
+  });
+  loadBots();
+}
+
+async function sendDirective(id, type, params) {
+  await fetch(`${API}/economy/bots/${id}/directive`, {
+    method: 'POST', headers: AUTH_HEADER,
+    body: JSON.stringify({ type, params: params || {} }),
+  });
+}
+
+async function cloneBot(id) {
+  const res = await fetch(`${API}/economy/bots/${id}/clone`, { method: 'POST', headers: AUTH_HEADER });
+  const data = await res.json();
+  if (data.ok) loadBots();
+  else alert(data.error);
+}
+
+async function deleteBot(id) {
+  if (!confirm('Permanently delete this bot?')) return;
+  await fetch(`${API}/economy/bots/${id}`, { method: 'DELETE', headers: AUTH_HEADER });
+  loadBots();
+}
+
+async function runScenario(scenarioId, params) {
+  const el = document.getElementById('scenario-result');
+  el.textContent = 'Running...';
+  try {
+    const res = await fetch(`${API}/economy/bots/scenario`, {
+      method: 'POST', headers: AUTH_HEADER,
+      body: JSON.stringify({ scenarioId, params: params || {} }),
+    });
+    const data = await res.json();
+    el.textContent = data.ok ? `${data.scenario}: ${data.message}` : data.error;
+    loadBots();
+  } catch (e) {
+    el.textContent = 'Error: ' + e.message;
+  }
+}
+
+function runScenarioDethrone() {
+  const targetId = prompt('Enter target player ID to dethrone:');
+  if (targetId) runScenario('targetDethrone', { targetPlayerId: targetId });
+}
+
+function selectAllBots() {
+  document.querySelectorAll('.bot-cb').forEach(cb => cb.checked = true);
+}
+function deselectAllBots() {
+  document.querySelectorAll('.bot-cb').forEach(cb => cb.checked = false);
+}
+function toggleAllBotCheckboxes(checked) {
+  document.querySelectorAll('.bot-cb').forEach(cb => cb.checked = checked);
+}
+
+async function executeBulkAction() {
+  const selected = [...document.querySelectorAll('.bot-cb:checked')].map(cb => cb.value);
+  if (selected.length === 0) return alert('Select at least one bot');
+
+  const operation = document.getElementById('bulk-action').value;
+  const params = {};
+  if (operation === 'setIntensity') params.intensity = Number(document.getElementById('bulk-intensity').value);
+  if (operation === 'setPersonality') params.personality = document.getElementById('bulk-personality').value;
+  if (operation === 'delete' && !confirm(`Delete ${selected.length} bots?`)) return;
+
+  const el = document.getElementById('bulk-result');
+  el.textContent = 'Processing...';
+  try {
+    const res = await fetch(`${API}/economy/bots/bulk`, {
+      method: 'POST', headers: AUTH_HEADER,
+      body: JSON.stringify({ botIds: selected, operation, params }),
+    });
+    const data = await res.json();
+    el.textContent = data.ok ? `${data.affected} bots updated` : data.error;
+    loadBots();
+  } catch (e) {
+    el.textContent = 'Error: ' + e.message;
+  }
 }
 
 // ═══════════════════════════════════════

@@ -269,6 +269,25 @@ async function ensureSchema() {
         event_type    TEXT NOT NULL,
         created_at    TIMESTAMPTZ DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS player_contracts (
+        id            TEXT PRIMARY KEY,
+        buyer_id      TEXT NOT NULL,
+        seller_id     TEXT NOT NULL,
+        status        TEXT NOT NULL DEFAULT 'proposed',
+        terms         JSONB NOT NULL DEFAULT '{}',
+        history       JSONB DEFAULT '[]',
+        deliveries    JSONB DEFAULT '[]',
+        delivered_qty INTEGER DEFAULT 0,
+        staged_qty    INTEGER DEFAULT 0,
+        total_revenue INTEGER DEFAULT 0,
+        created_at    TIMESTAMPTZ DEFAULT NOW(),
+        updated_at    TIMESTAMPTZ DEFAULT NOW(),
+        completed_at  TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS idx_pcontracts_buyer ON player_contracts(buyer_id);
+      CREATE INDEX IF NOT EXISTS idx_pcontracts_seller ON player_contracts(seller_id);
+      CREATE INDEX IF NOT EXISTS idx_pcontracts_status ON player_contracts(status);
+
       CREATE INDEX IF NOT EXISTS idx_reddit_status ON reddit_threads(status);
       CREATE INDEX IF NOT EXISTS idx_reddit_fetched ON reddit_threads(fetched_at DESC);
       CREATE INDEX IF NOT EXISTS idx_referral_code ON referral_events(code);
@@ -797,4 +816,65 @@ export async function saveFile(id, filename, contentType, data) {
 export async function getFile(id) {
   const { rows } = await pool.query('SELECT * FROM files WHERE id = $1', [id]);
   return rows[0] || null;
+}
+
+// ── Player Contracts (P2P Factory Contracts) ──
+
+export async function getPlayerContract(id) {
+  const { rows } = await pool.query('SELECT * FROM player_contracts WHERE id = $1', [id]);
+  if (!rows[0]) return null;
+  const r = rows[0];
+  return {
+    id: r.id, buyerId: r.buyer_id, sellerId: r.seller_id, status: r.status,
+    terms: parseJson(r.terms), history: parseJson(r.history), deliveries: parseJson(r.deliveries),
+    deliveredQty: r.delivered_qty, stagedQty: r.staged_qty, totalRevenue: r.total_revenue,
+    createdAt: r.created_at, updatedAt: r.updated_at, completedAt: r.completed_at,
+  };
+}
+
+export async function createPlayerContract(contract) {
+  const { id, buyerId, sellerId, status, terms, history } = contract;
+  await pool.query(
+    `INSERT INTO player_contracts (id, buyer_id, seller_id, status, terms, history)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb) ON CONFLICT (id) DO NOTHING`,
+    [id, buyerId, sellerId, status || 'proposed', JSON.stringify(terms || {}), JSON.stringify(history || [])]
+  );
+  return contract;
+}
+
+export async function updatePlayerContract(id, updates) {
+  const setClauses = [];
+  const params = [id];
+  let idx = 2;
+  if (updates.status !== undefined) { setClauses.push(`status = $${idx++}`); params.push(updates.status); }
+  if (updates.terms !== undefined) { setClauses.push(`terms = $${idx++}::jsonb`); params.push(JSON.stringify(updates.terms)); }
+  if (updates.history !== undefined) { setClauses.push(`history = $${idx++}::jsonb`); params.push(JSON.stringify(updates.history)); }
+  if (updates.deliveries !== undefined) { setClauses.push(`deliveries = $${idx++}::jsonb`); params.push(JSON.stringify(updates.deliveries)); }
+  if (updates.deliveredQty !== undefined) { setClauses.push(`delivered_qty = $${idx++}`); params.push(updates.deliveredQty); }
+  if (updates.stagedQty !== undefined) { setClauses.push(`staged_qty = $${idx++}`); params.push(updates.stagedQty); }
+  if (updates.totalRevenue !== undefined) { setClauses.push(`total_revenue = $${idx++}`); params.push(updates.totalRevenue); }
+  if (updates.completedAt !== undefined) { setClauses.push(`completed_at = $${idx++}`); params.push(updates.completedAt); }
+  setClauses.push('updated_at = NOW()');
+  if (setClauses.length === 1) return; // Only updated_at, nothing to do
+  await pool.query(`UPDATE player_contracts SET ${setClauses.join(', ')} WHERE id = $1`, params);
+}
+
+export async function getPlayerContracts(filter = {}) {
+  let query = 'SELECT * FROM player_contracts WHERE 1=1';
+  const params = [];
+  if (filter.buyerId) { params.push(filter.buyerId); query += ` AND buyer_id = $${params.length}`; }
+  if (filter.sellerId) { params.push(filter.sellerId); query += ` AND seller_id = $${params.length}`; }
+  if (filter.status) { params.push(filter.status); query += ` AND status = $${params.length}`; }
+  if (filter.playerId) {
+    params.push(filter.playerId);
+    query += ` AND (buyer_id = $${params.length} OR seller_id = $${params.length})`;
+  }
+  query += ' ORDER BY created_at DESC';
+  const { rows } = await pool.query(query, params);
+  return rows.map(r => ({
+    id: r.id, buyerId: r.buyer_id, sellerId: r.seller_id, status: r.status,
+    terms: parseJson(r.terms), history: parseJson(r.history), deliveries: parseJson(r.deliveries),
+    deliveredQty: r.delivered_qty, stagedQty: r.staged_qty, totalRevenue: r.total_revenue,
+    createdAt: r.created_at, updatedAt: r.updated_at, completedAt: r.completed_at,
+  }));
 }

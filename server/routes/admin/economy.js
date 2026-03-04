@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { adminAuthMiddleware } from '../../middleware/adminAuth.js';
 import {
-  getAllActivePlayers, getPlayer, savePlayerState, getGame, saveGame, createPlayer,
+  getAllActivePlayers, getPlayer, savePlayerState, getGame, saveGame, createPlayer, removePlayer,
 } from '../../db/queries.js';
 import { getWealth } from '../../../shared/helpers/wealth.js';
 import { isBotPlayer } from '../../engine/aiPlayers.js';
 import { createBot } from '../../engine/botPlayers.js';
 import { uid } from '../../../shared/helpers/random.js';
+import { BOT_SCENARIOS } from '../../engine/botScenarios.js';
 
 const router = Router();
 router.use(adminAuthMiddleware);
@@ -137,6 +138,254 @@ router.post('/bots/resume', async (req, res) => {
     await saveGame('default', game.day, game.economy, game.ai_shops, game.liquidation || []);
     await auditLog(req, 'resumeBots', null, {});
     res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════
+// EXPANDED BOT CONTROL — puppet-master tools
+// ═══════════════════════════════════════
+
+// View full bot state
+router.get('/bots/:id/view', async (req, res) => {
+  try {
+    const player = await getPlayer(req.params.id);
+    if (!player) return res.status(404).json({ error: 'Bot not found' });
+    const g = player.game_state;
+    res.json({
+      ok: true,
+      id: req.params.id,
+      gameState: g,
+      botConfig: g._botConfig || null,
+      wealth: getWealth(g),
+      metrics: {
+        cash: g.cash || 0, rep: g.reputation || 0,
+        shops: (g.locations || []).length, day: g.day || 0,
+        totalRev: g.totalRev || 0, totalSold: g.totalSold || 0,
+      },
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Bulk field editing via dot-path object
+router.post('/bots/:id/edit', async (req, res) => {
+  try {
+    const player = await getPlayer(req.params.id);
+    if (!player) return res.status(404).json({ error: 'Bot not found' });
+
+    const g = player.game_state;
+    const { fields } = req.body; // { "cash": 50000, "reputation": 80, "factory.level": 3 }
+    if (!fields || typeof fields !== 'object') return res.status(400).json({ error: 'fields object required' });
+
+    const applied = [];
+    for (const [path, value] of Object.entries(fields)) {
+      const parts = path.split('.');
+      let target = g;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (target[parts[i]] == null) target[parts[i]] = {};
+        target = target[parts[i]];
+      }
+      target[parts[parts.length - 1]] = value;
+      applied.push(path);
+    }
+
+    await savePlayerState(req.params.id, g, player.version);
+    await auditLog(req, 'editBot', req.params.id, { fields: applied });
+    res.json({ ok: true, applied });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Queue a behavior directive
+router.post('/bots/:id/directive', async (req, res) => {
+  try {
+    const player = await getPlayer(req.params.id);
+    if (!player) return res.status(404).json({ error: 'Bot not found' });
+
+    const g = player.game_state;
+    if (!g._botConfig) return res.status(400).json({ error: 'Not a bot' });
+
+    const { type, params: directiveParams } = req.body;
+    if (!type) return res.status(400).json({ error: 'directive type required' });
+
+    g._botConfig.overrides = g._botConfig.overrides || {};
+    g._botConfig.overrides.directives = g._botConfig.overrides.directives || [];
+    g._botConfig.overrides.directives.push({ type, params: directiveParams || {} });
+
+    await savePlayerState(req.params.id, g, player.version);
+    await auditLog(req, 'botDirective', req.params.id, { type, params: directiveParams });
+    res.json({ ok: true, queued: type, queueLength: g._botConfig.overrides.directives.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Change personality + quirks + playFrequency
+router.post('/bots/:id/personality', async (req, res) => {
+  try {
+    const player = await getPlayer(req.params.id);
+    if (!player) return res.status(404).json({ error: 'Bot not found' });
+
+    const g = player.game_state;
+    if (!g._botConfig) return res.status(400).json({ error: 'Not a bot' });
+
+    const { personality, quirks, schedule } = req.body;
+    if (personality) g._botConfig.personality = personality;
+    if (quirks) g._botConfig.quirks = quirks;
+    if (schedule) g._botConfig.schedule = schedule;
+
+    await savePlayerState(req.params.id, g, player.version);
+    await auditLog(req, 'setBotPersonality', req.params.id, { personality, quirks, schedule });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Set behavior overrides (pricingMode, canOpenShops, etc.)
+router.post('/bots/:id/overrides', async (req, res) => {
+  try {
+    const player = await getPlayer(req.params.id);
+    if (!player) return res.status(404).json({ error: 'Bot not found' });
+
+    const g = player.game_state;
+    if (!g._botConfig) return res.status(400).json({ error: 'Not a bot' });
+
+    const { overrides } = req.body;
+    if (!overrides || typeof overrides !== 'object') return res.status(400).json({ error: 'overrides object required' });
+
+    g._botConfig.overrides = { ...(g._botConfig.overrides || {}), ...overrides };
+
+    await savePlayerState(req.params.id, g, player.version);
+    await auditLog(req, 'setBotOverrides', req.params.id, { overrides });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Permanently delete a bot
+router.delete('/bots/:id', async (req, res) => {
+  try {
+    const player = await getPlayer(req.params.id);
+    if (!player) return res.status(404).json({ error: 'Bot not found' });
+
+    const removed = await removePlayer(req.params.id);
+    await auditLog(req, 'deleteBot', req.params.id, { name: player.game_state?.companyName });
+    res.json({ ok: true, removed });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Clone a bot (deep copy with new id/name)
+router.post('/bots/:id/clone', async (req, res) => {
+  try {
+    const player = await getPlayer(req.params.id);
+    if (!player) return res.status(404).json({ error: 'Bot not found' });
+
+    const cloned = structuredClone(player.game_state);
+    const newId = uid();
+    cloned.id = newId;
+    cloned.name = (cloned.name || 'Bot') + ' (Clone)';
+    cloned.companyName = (cloned.companyName || 'Bot Co') + ' Clone';
+    cloned.day = 1;
+
+    await createPlayer(newId, cloned.name, cloned);
+    await auditLog(req, 'cloneBot', req.params.id, { newId, newName: cloned.companyName });
+    res.json({ ok: true, newId, newName: cloned.companyName });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Bulk operations on multiple bots
+router.post('/bots/bulk', async (req, res) => {
+  try {
+    const { botIds, operation, params: opParams } = req.body;
+    if (!Array.isArray(botIds) || botIds.length === 0) return res.status(400).json({ error: 'botIds array required' });
+    if (!operation) return res.status(400).json({ error: 'operation required' });
+
+    let affected = 0;
+    for (const botId of botIds) {
+      try {
+        const player = await getPlayer(botId);
+        if (!player) continue;
+        const g = player.game_state;
+
+        switch (operation) {
+          case 'pause':
+            if (g._botConfig) { g._botConfig.paused = true; }
+            break;
+          case 'resume':
+            if (g._botConfig) { g._botConfig.paused = false; }
+            break;
+          case 'setIntensity':
+            if (g._botConfig && opParams?.intensity) { g._botConfig.intensity = opParams.intensity; }
+            break;
+          case 'setPersonality':
+            if (g._botConfig && opParams?.personality) { g._botConfig.personality = opParams.personality; }
+            break;
+          case 'directive':
+            if (g._botConfig && opParams?.type) {
+              g._botConfig.overrides = g._botConfig.overrides || {};
+              g._botConfig.overrides.directives = g._botConfig.overrides.directives || [];
+              g._botConfig.overrides.directives.push({ type: opParams.type, params: opParams.directiveParams || {} });
+            }
+            break;
+          case 'delete':
+            await removePlayer(botId);
+            affected++;
+            continue;
+          default:
+            continue;
+        }
+
+        if (operation !== 'delete') {
+          await savePlayerState(botId, g, player.version);
+        }
+        affected++;
+      } catch (e) {
+        console.error(`Bulk op error for ${botId}:`, e.message);
+      }
+    }
+
+    await auditLog(req, 'bulkBotOp', null, { operation, affected, total: botIds.length });
+    res.json({ ok: true, affected });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Run a pre-built scenario
+router.post('/bots/scenario', async (req, res) => {
+  try {
+    const { scenarioId, params: scenarioParams } = req.body;
+    if (!scenarioId) return res.status(400).json({ error: 'scenarioId required' });
+
+    const scenario = BOT_SCENARIOS[scenarioId];
+    if (!scenario) return res.status(400).json({ error: `Unknown scenario: ${scenarioId}`, available: Object.keys(BOT_SCENARIOS) });
+
+    const players = await getAllActivePlayers();
+    const bots = players.filter(p => isBotPlayer(p.game_state || {}));
+
+    const result = await scenario.execute(bots, scenarioParams || {});
+
+    // Save all modified bot states
+    for (const bot of bots) {
+      try {
+        await savePlayerState(bot.id, bot.game_state);
+      } catch (e) {
+        console.error(`Scenario save error for ${bot.id}:`, e.message);
+      }
+    }
+
+    await auditLog(req, 'runScenario', null, { scenarioId, ...result });
+    res.json({ ok: true, scenario: scenario.label, ...result });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

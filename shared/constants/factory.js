@@ -7,6 +7,9 @@ export const FACTORY = {
     { level: 1, dailyCapacity: 80, upgradeCost: 0, qualityMax: 0.85, name: 'Small Plant' },  // 16h: 50→80
     { level: 2, dailyCapacity: 150, upgradeCost: 2000000, qualityMax: 0.92, name: 'Regional Factory' },
     { level: 3, dailyCapacity: 500, upgradeCost: 10000000, qualityMax: 1.0, name: 'National Plant' },
+    { level: 4, dailyCapacity: 1500, upgradeCost: 35000000, qualityMax: 1.0, name: 'Mega Plant' },
+    { level: 5, dailyCapacity: 5000, upgradeCost: 100000000, qualityMax: 1.0, name: 'Continental' },
+    { level: 6, dailyCapacity: 15000, upgradeCost: 500000000, qualityMax: 1.0, name: 'Global' },
   ],
 
   productionCost: {
@@ -21,8 +24,16 @@ export const FACTORY = {
 
   monthlyOverhead: 50000,
 
+  // Per-level monthly overhead
+  monthlyOverheadByLevel: [0, 50000, 100000, 250000, 600000, 1500000, 5000000],
+
+  // Multiple factories
+  maxFactories: 4,
+  additionalFactoryCosts: [8000000, 15000000, 30000000],
+  factoryMinRep: [75, 80, 90, 95],
+
   // Asset values for wealth calculation
-  factoryValue: [0, 5000000, 7000000, 17000000], // index = level
+  factoryValue: [0, 5000000, 7000000, 17000000, 52000000, 152000000, 652000000], // index = level
 
   // Factory staffing
   staff: {

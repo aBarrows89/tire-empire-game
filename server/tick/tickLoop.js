@@ -1,5 +1,5 @@
 import { TICK_MS } from '../config.js';
-import { getAllActivePlayers, savePlayerState, getGame, saveGame, upsertLeaderboard, getPlayerListings, updatePlayerListing, getPlayer, removePlayer, addChatMessage } from '../db/queries.js';
+import { getAllActivePlayers, savePlayerState, getGame, saveGame, upsertLeaderboard, getPlayerListings, updatePlayerListing, getPlayer, removePlayer, addChatMessage, updatePlayerContract } from '../db/queries.js';
 import { simDay } from '../engine/simDay.js';
 import { simAIPlayerDay, isBotPlayer } from '../engine/aiPlayers.js';
 import { runBotTick, resetBotChatBudget, getPendingBotChats, getBotPhaseOutTargets } from '../engine/botDecision.js';
@@ -20,6 +20,8 @@ import { checkAndSendPush } from '../notifications/sender.js';
 import { updateAIPrices } from '../engine/aiPriceWar.js';
 import { saveTournament } from '../db/queries.js';
 import { runExchangeTick } from '../engine/exchangeTick.js';
+import { CONTRACT_COMMISSION, P2P_DELIVERY_FEE } from '../../shared/constants/contracts.js';
+import { getBrandTireKey } from '../../shared/helpers/factoryBrand.js';
 
 let tickInterval = null;
 
@@ -368,6 +370,178 @@ async function resolveAuctions(currentDay) {
     }
   } catch (err) {
     console.error('Auction resolution error:', err);
+  }
+}
+
+// ═══════════════════════════════════════
+// P2P CONTRACT FULFILLMENT & PAYMENTS
+// ═══════════════════════════════════════
+
+/**
+ * Process pending contract shipments — transfer tires from seller staging to buyer warehouse.
+ */
+async function fulfillContractShipments(players, day) {
+  for (const seller of players) {
+    const sg = seller.game_state;
+    if (!sg.factory?.contractStaging) continue;
+
+    for (const contract of (sg.p2pContracts || [])) {
+      if (contract.status !== 'active') continue;
+      if (!contract._pendingShipment) continue;
+
+      const shipQty = contract._shipmentQty || 0;
+      if (shipQty <= 0) { delete contract._pendingShipment; continue; }
+
+      // Find buyer
+      const buyer = players.find(p => p.id === contract.buyerId);
+      if (!buyer) { delete contract._pendingShipment; continue; }
+
+      const bg = buyer.game_state;
+      const tireKey = getBrandTireKey(contract.terms.tireType);
+
+      // Transfer tires to buyer's warehouse
+      if (!bg.warehouseInventory) bg.warehouseInventory = {};
+      bg.warehouseInventory[tireKey] = (bg.warehouseInventory[tireKey] || 0) + shipQty;
+
+      // Calculate payment
+      const grossPayment = shipQty * contract.terms.pricePerUnit;
+      const deliveryFee = shipQty * (contract.terms.deliveryFee || P2P_DELIVERY_FEE);
+      const commission = Math.floor(grossPayment * (contract.terms.commission || CONTRACT_COMMISSION));
+      const sellerReceives = grossPayment - commission;
+      const buyerPays = grossPayment + deliveryFee;
+
+      // Process payment based on terms
+      if (contract.terms.paymentTerms === 'on_delivery') {
+        bg.cash -= buyerPays;
+        sg.cash += sellerReceives;
+        bg.log = bg.log || [];
+        bg.log.push({ msg: `Contract delivery: ${shipQty} tires received (-$${buyerPays})`, cat: 'contract' });
+        sg.log = sg.log || [];
+        sg.log.push({ msg: `Contract shipped: ${shipQty} tires (+$${sellerReceives})`, cat: 'contract' });
+      } else if (contract.terms.paymentTerms === 'prepaid') {
+        // Already paid — just log delivery
+        sg.cash += sellerReceives;
+        bg.log = bg.log || [];
+        bg.log.push({ msg: `Contract delivery: ${shipQty} tires received (prepaid)`, cat: 'contract' });
+        sg.log = sg.log || [];
+        sg.log.push({ msg: `Contract shipped: ${shipQty} tires (+$${sellerReceives} from prepaid)`, cat: 'contract' });
+      } else if (contract.terms.paymentTerms === 'net_30') {
+        // Schedule payment for 30 days later
+        bg._contractPayables = bg._contractPayables || [];
+        bg._contractPayables.push({
+          contractId: contract.id, sellerId: seller.id,
+          amount: buyerPays, sellerAmount: sellerReceives,
+          dueDay: day + 30, shipQty,
+        });
+        bg.log = bg.log || [];
+        bg.log.push({ msg: `Contract delivery: ${shipQty} tires (payment due in 30 days: $${buyerPays})`, cat: 'contract' });
+        sg.log = sg.log || [];
+        sg.log.push({ msg: `Contract shipped: ${shipQty} tires (payment in 30 days)`, cat: 'contract' });
+      }
+
+      // Update contract tracking
+      contract.deliveredQty = (contract.deliveredQty || 0) + shipQty;
+      contract.totalPaid = (contract.totalPaid || 0) + grossPayment;
+
+      // Clear staging
+      if (sg.factory.contractStaging) sg.factory.contractStaging[contract.id] = 0;
+      delete contract._pendingShipment;
+      delete contract._shipmentQty;
+
+      // Record delivery
+      if (!contract.deliveries) contract.deliveries = [];
+      contract.deliveries.push({ day, qty: shipQty, payment: grossPayment });
+
+      // Check completion
+      if (contract.deliveredQty >= contract.terms.qty) {
+        contract.status = 'completed';
+        // Clean up factory allocation
+        if (sg.factory.contractAllocations?.[contract.id]) {
+          const alloc = sg.factory.contractAllocations[contract.id];
+          sg.factory.totalAllocatedPercent = Math.max(0, (sg.factory.totalAllocatedPercent || 0) - alloc.percent);
+          delete sg.factory.contractAllocations[contract.id];
+          delete sg.factory.contractStaging?.[contract.id];
+        }
+        sg.log.push({ msg: `Contract completed! Delivered ${contract.deliveredQty} tires total`, cat: 'contract' });
+      }
+
+      // Sync buyer's contract copy
+      const bc = (bg.p2pContracts || []).find(c => c.id === contract.id);
+      if (bc) {
+        bc.deliveredQty = contract.deliveredQty;
+        bc.totalPaid = contract.totalPaid;
+        bc.status = contract.status;
+        bc.deliveries = contract.deliveries;
+      }
+
+      // Save both players
+      try {
+        await savePlayerState(buyer.id, bg);
+        await savePlayerState(seller.id, sg);
+        // Update DB record
+        if (updatePlayerContract) {
+          await updatePlayerContract(contract.id, {
+            deliveredQty: contract.deliveredQty,
+            totalRevenue: contract.totalPaid,
+            status: contract.status,
+            deliveries: contract.deliveries,
+            completedAt: contract.status === 'completed' ? new Date() : undefined,
+          });
+        }
+      } catch (e) {
+        console.error('[contracts] Fulfillment save error:', e.message);
+      }
+    }
+  }
+}
+
+/**
+ * Process contract payables that are due today (net terms).
+ */
+async function processContractPayments(players, day) {
+  for (const player of players) {
+    const g = player.game_state;
+    if (!g._contractPayables || g._contractPayables.length === 0) continue;
+
+    const due = g._contractPayables.filter(p => day >= p.dueDay);
+    const remaining = g._contractPayables.filter(p => day < p.dueDay);
+
+    for (const payment of due) {
+      // Deduct from buyer
+      g.cash -= payment.amount;
+
+      // Credit seller
+      try {
+        const seller = await getPlayer(payment.sellerId);
+        if (seller) {
+          seller.game_state.cash += payment.sellerAmount;
+          seller.game_state.log = seller.game_state.log || [];
+          seller.game_state.log.push({ msg: `Contract payment received: +$${payment.sellerAmount}`, cat: 'contract' });
+          await savePlayerState(payment.sellerId, seller.game_state);
+        }
+      } catch (e) {
+        console.error('[contracts] Payment credit error:', e.message);
+      }
+
+      g.log = g.log || [];
+      g.log.push({ msg: `Contract payment due: -$${payment.amount}`, cat: 'contract' });
+
+      // Late penalty: if buyer cash goes negative, apply 5% penalty
+      if (g.cash < 0) {
+        const penalty = Math.floor(Math.abs(g.cash) * 0.05);
+        g.cash -= penalty;
+        g.log.push({ msg: `Late payment penalty: -$${penalty}`, cat: 'contract' });
+      }
+    }
+
+    if (due.length > 0) {
+      g._contractPayables = remaining;
+      try {
+        await savePlayerState(player.id, g);
+      } catch (e) {
+        console.error('[contracts] Payable save error:', e.message);
+      }
+    }
   }
 }
 
@@ -995,6 +1169,20 @@ export async function runTick(clients) {
       } catch (playerErr) {
         console.error(`[Tick] Error processing player ${player.id}:`, playerErr.message);
       }
+    }
+
+    // ── P2P CONTRACT FULFILLMENT — process pending shipments ──
+    try {
+      await fulfillContractShipments(players, day);
+    } catch (err) {
+      console.error('Contract fulfillment error:', err);
+    }
+
+    // ── P2P CONTRACT PAYMENTS — process payables due today ──
+    try {
+      await processContractPayments(players, day);
+    } catch (err) {
+      console.error('Contract payment error:', err);
     }
 
     // Post bot chat messages accumulated during this tick

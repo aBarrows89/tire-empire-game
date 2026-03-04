@@ -93,6 +93,18 @@ export const ACTION_SCHEMAS = {
   upgradeSyntheticLab:      empty,
   sellRubberSurplus:        empty,
 
+  // ── P2P Factory Contracts ──
+  proposeContract:        z.object({ sellerId: id, tireType: str, qty: num, pricePerUnit: num, paymentTerms: optStr, durationDays: optNum, batchSize: optNum, message: optStr }),
+  counterContract:        z.object({ contractId: id, terms: z.object({}).passthrough(), message: optStr }),
+  acceptContract:         z.object({ contractId: id, message: optStr }),
+  denyContract:           z.object({ contractId: id, message: optStr }),
+  cancelContract:         z.object({ contractId: id, reason: optStr }),
+  pauseContract:          z.object({ contractId: id }),
+  resumeContract:         z.object({ contractId: id }),
+  setContractAllocation:  z.object({ contractId: id, percent: num }),
+  toggleContractAutoRun:  z.object({ contractId: id }),
+  buildAdditionalFactory: empty,
+
   // ── Shop Marketplace ──
   listShopForSale: z.object({ locationId: id, askingPrice: optNum }),
   delistShop:      z.object({ locationId: id }),

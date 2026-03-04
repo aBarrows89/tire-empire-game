@@ -57,6 +57,10 @@ export const getFile = (...args) => impl.getFile(...args);
 export const withPlayerLock = (...args) => impl.withPlayerLock ? impl.withPlayerLock(...args) : args[1]();
 export const savePlayerFinancials = (...args) => impl.savePlayerFinancials ? impl.savePlayerFinancials(...args) : null;
 export const savePlayerStats = (...args) => impl.savePlayerStats ? impl.savePlayerStats(...args) : null;
+export const getPlayerContract = (...args) => impl.getPlayerContract ? impl.getPlayerContract(...args) : null;
+export const createPlayerContract = (...args) => impl.createPlayerContract ? impl.createPlayerContract(...args) : null;
+export const updatePlayerContract = (...args) => impl.updatePlayerContract ? impl.updatePlayerContract(...args) : null;
+export const getPlayerContracts = (...args) => impl.getPlayerContracts ? impl.getPlayerContracts(...args) : [];
 
 // Cache management (only available with postgres backend)
 export { getCacheStats, invalidateAllPlayers, invalidateGame, invalidateLeaderboard } from './playerCache.js';

@@ -104,6 +104,10 @@ export function init(playerName = "Player", globalDay = 1) {
     // Fixed-price supplier contracts (Tier 3+)
     contracts: [],
     contractOffers: [],
+    // P2P factory contracts (Section 23)
+    p2pContracts: [],
+    _contractPayables: [],
+    _contractReceivables: [],
     // 3PL storage leasing
     storageListings: [],   // Listings this player has created (as owner)
     storageLeases: [],     // Leases this player has rented (as tenant)

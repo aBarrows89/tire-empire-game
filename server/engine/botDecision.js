@@ -40,6 +40,138 @@ function shouldAct(bot) {
 }
 
 /**
+ * Execute queued admin directives (one per tick).
+ * Called at top of runBotTick before personality-driven decisions.
+ */
+function executeBotDirectives(g) {
+  const cfg = g._botConfig;
+  if (!cfg?.overrides?.directives?.length) return;
+
+  const directive = cfg.overrides.directives.shift();
+  if (!directive) return;
+
+  // Log directive execution
+  if (!cfg.recentActions) cfg.recentActions = [];
+  cfg.recentActions.push({ type: directive.type, day: g.day, ts: Date.now() });
+  if (cfg.recentActions.length > 20) cfg.recentActions = cfg.recentActions.slice(-20);
+
+  const p = directive.params || {};
+
+  switch (directive.type) {
+    case 'dump_inventory': {
+      const discount = (p.discountPct || 50) / 100;
+      for (const [k, v] of Object.entries(g.prices || {})) {
+        g.prices[k] = Math.floor(v * (1 - discount));
+      }
+      break;
+    }
+    case 'sell_shop': {
+      if (g.locations?.length > 1) {
+        g.locations.pop();
+        g.cash += 50000;
+      }
+      break;
+    }
+    case 'go_bankrupt': {
+      g.cash = -100000;
+      g.reputation = Math.max(0, (g.reputation || 0) - 30);
+      break;
+    }
+    case 'buy_spree': {
+      const budget = p.budget || 50000;
+      const tireKeys = Object.keys(TIRES).filter(k => !TIRES[k].used);
+      let spent = 0;
+      while (spent < budget && g.cash > 5000) {
+        const k = tireKeys[Math.floor(Math.random() * tireKeys.length)];
+        const cost = (TIRES[k]?.bMax || 80) * 10;
+        if (g.cash < cost) break;
+        g.cash -= cost;
+        spent += cost;
+        if (!g.warehouseInventory) g.warehouseInventory = {};
+        g.warehouseInventory[k] = (g.warehouseInventory[k] || 0) + 10;
+      }
+      break;
+    }
+    case 'crash_stock': {
+      if (g.stockExchange?.portfolio) {
+        for (const [ticker, pos] of Object.entries(g.stockExchange.portfolio)) {
+          if (pos.qty > 0) {
+            // Queue a sell order at low price
+            g.stockExchange.openOrders = g.stockExchange.openOrders || [];
+            g.stockExchange.openOrders.push({
+              id: uid(), type: 'sell', ticker, qty: pos.qty,
+              price: Math.floor((pos.avgCost || 100) * 0.5),
+              placedDay: g.day,
+            });
+          }
+        }
+      }
+      break;
+    }
+    case 'ipo': {
+      if (g.stockExchange && !g.stockExchange.isPublic) {
+        g.stockExchange.isPublic = true;
+        g.stockExchange.ipoDay = g.day;
+        g.stockExchange.ticker = (g.companyName || 'BOT').slice(0, 4).toUpperCase();
+      }
+      break;
+    }
+    case 'hoard_tc': {
+      // Spend cash on TC (simulated)
+      const tcBuy = Math.min(5, Math.floor(g.cash / 50000));
+      if (tcBuy > 0) {
+        g.tireCoins = (g.tireCoins || 0) + tcBuy;
+        g.cash -= tcBuy * 50000;
+      }
+      break;
+    }
+    case 'chat': {
+      // Queue a chat message (handled by chat system)
+      if (p.message) {
+        _pendingBotChats.push({
+          id: uid(),
+          playerId: g.id,
+          playerName: g.companyName || g.name || 'Bot',
+          channel: 'global',
+          text: p.message,
+          timestamp: Date.now(),
+        });
+      }
+      break;
+    }
+    case 'set_cash': {
+      if (p.amount != null) g.cash = p.amount;
+      break;
+    }
+    case 'set_rep': {
+      if (p.amount != null) g.reputation = Math.max(0, Math.min(100, p.amount));
+      break;
+    }
+    case 'add_shop': {
+      const cities = Object.values(CITIES).flat ? CITIES : [];
+      if (Array.isArray(CITIES) && CITIES.length > 0) {
+        const city = CITIES[Math.floor(Math.random() * CITIES.length)];
+        g.locations = g.locations || [];
+        g.locations.push({
+          id: uid(), cityId: city.id, locStorage: 0, inventory: {},
+          name: city.name || 'Shop', marketing: null,
+        });
+        g.cash -= shopCost(city);
+      }
+      break;
+    }
+    case 'close_all_shops': {
+      const refund = (g.locations || []).length * 25000;
+      g.locations = [];
+      g.cash += refund;
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+/**
  * Run all bot decisions for one tick.
  * Called from tickLoop.js for each bot player.
  * Returns the modified game state.
@@ -48,11 +180,21 @@ export function runBotTick(g, shared, allPlayers) {
   if (!g._botConfig) return g;
 
   const cfg = g._botConfig;
+
+  // Skip if individually paused by admin
+  if (cfg.paused) {
+    g.day++;
+    return g;
+  }
+
   const intensity = cfg.intensity || 5;
   const level = INTENSITY_LEVELS[intensity] || INTENSITY_LEVELS[5];
   const personality = cfg.personality || 'conservative';
   const pWeights = PERSONALITIES[personality]?.weights || PERSONALITIES.conservative.weights;
   const t = intensity / 11;
+
+  // ═══ PRIORITY 0: ADMIN DIRECTIVES ═══
+  executeBotDirectives(g);
 
   // Check activity schedule
   if (!shouldAct(g)) {
@@ -80,6 +222,9 @@ export function runBotTick(g, shared, allPlayers) {
 
   // ═══ STOCK EXCHANGE ACTIVITY ═══
   runStockExchange(g, cfg, pWeights, t, intensity, allPlayers, shared);
+
+  // ═══ P2P CONTRACT DECISIONS ═══
+  botContractDecision(g, shared, allPlayers);
 
   // ═══ CHAT MESSAGES ═══
   runChat(g, cfg, pWeights, shared);
@@ -774,6 +919,170 @@ function runPassiveUpkeep(g, t) {
   // Round reputation
   g.reputation = Math.round(g.reputation * 100) / 100;
   if (g.cash < 0) g.cash = 0;
+}
+
+// ═══════════════════════════════════════
+// BOT CONTRACT AI — respond to / initiate P2P contracts
+// ═══════════════════════════════════════
+
+const CONTRACT_DM_TEMPLATES = {
+  conservative: {
+    open: "We'd like to discuss a supply arrangement for {tire}. We're looking for {qty} units.",
+    counter: "We appreciate your proposal. Would you consider ${price}/unit instead?",
+    accept: "Deal accepted. Looking forward to working together.",
+    deny: "We'll have to pass on this one for now. Thank you for the offer.",
+  },
+  aggressive: {
+    open: "Let's do business! Need {qty} {tire} ASAP. Best price wins.",
+    counter: "Gotta do better than that. ${price} max, take it or leave it.",
+    accept: "Done. Ship 'em out.",
+    deny: "Not interested. Too expensive.",
+  },
+  balanced: {
+    open: "Looking to source {qty} {tire}. Interested in a contract?",
+    counter: "How about we meet in the middle at ${price}?",
+    accept: "Contract confirmed. Good doing business.",
+    deny: "Thanks but we'll pass this time.",
+  },
+  adventurous: {
+    open: "Hey! Crazy idea - want to supply us {qty} {tire}? Could be huge!",
+    counter: "What if we tried ${price}? I think we can make this work!",
+    accept: "YES! Let's go! Contract signed!",
+    deny: "Nah, doesn't feel right this time. Maybe next round!",
+  },
+  opportunist: {
+    open: "I see you have capacity. {qty} {tire} - what's your best number?",
+    counter: "Market rate says ${price}. Fair for both sides.",
+    accept: "Agreed. Efficient terms for both parties.",
+    deny: "Margins don't work. Will revisit if prices change.",
+  },
+};
+
+/**
+ * Bot contract decision-making. Called during bot tick.
+ * Responds to pending proposals and occasionally initiates new ones.
+ */
+export function botContractDecision(g, shared, allPlayers) {
+  if (!g._botConfig) return;
+  const cfg = g._botConfig;
+  const personality = cfg.personality || 'conservative';
+  const intensity = cfg.intensity || 5;
+
+  // ── Respond to pending contract proposals (with human-like delay) ──
+  const pending = (g.p2pContracts || []).filter(c =>
+    (c.status === 'proposed' || c.status === 'countered') &&
+    c.proposedBy !== (c.buyerId === g.id ? 'buyer' : 'seller')
+  );
+
+  for (const contract of pending) {
+    // Wait 1-3 days before responding
+    const waitDays = 1 + Math.floor(Math.random() * 3);
+    if (!contract._botSeenDay) {
+      contract._botSeenDay = g.day;
+      continue;
+    }
+    if (g.day - contract._botSeenDay < waitDays) continue;
+
+    // Analyze the deal
+    const terms = contract.terms;
+    const productionCost = 50; // Rough estimate
+    const margin = terms.pricePerUnit - productionCost;
+    const marginPercent = margin / productionCost;
+
+    // Decision based on personality
+    let decision;
+    if (personality === 'aggressive' && marginPercent > 0.1) {
+      decision = 'accept';
+    } else if (personality === 'conservative' && marginPercent > 0.3) {
+      decision = 'accept';
+    } else if (personality === 'opportunist' && marginPercent > 0.15) {
+      decision = 'accept';
+    } else if (personality === 'balanced' && marginPercent > 0.2) {
+      decision = 'accept';
+    } else if (personality === 'adventurous' && Math.random() < 0.5) {
+      decision = 'accept';
+    } else if (contract.counterCount < 3 && marginPercent > 0) {
+      decision = 'counter';
+    } else {
+      decision = 'deny';
+    }
+
+    if (decision === 'accept') {
+      contract.status = 'active';
+      contract.activatedDay = g.day;
+      // Set up factory allocations if seller
+      if (contract.sellerId === g.id && g.factory) {
+        if (!g.factory.contractAllocations) g.factory.contractAllocations = {};
+        if (!g.factory.contractStaging) g.factory.contractStaging = {};
+        const allocPercent = Math.min(15, 85 - (g.factory.totalAllocatedPercent || 0));
+        if (allocPercent >= 5) {
+          g.factory.contractAllocations[contract.id] = {
+            contractId: contract.id, tireType: terms.tireType,
+            percent: allocPercent, autoRun: true, remainingQty: terms.qty,
+          };
+          g.factory.contractStaging[contract.id] = 0;
+          g.factory.totalAllocatedPercent = (g.factory.totalAllocatedPercent || 0) + allocPercent;
+        }
+      }
+    } else if (decision === 'counter') {
+      // Counter with slightly adjusted price
+      const adjustment = personality === 'aggressive' ? 0.9 : personality === 'conservative' ? 1.1 : 1.0;
+      contract.terms.pricePerUnit = Math.round(terms.pricePerUnit * adjustment);
+      contract.status = 'countered';
+      contract.proposedBy = contract.buyerId === g.id ? 'buyer' : 'seller';
+      contract.counterCount++;
+    } else {
+      contract.status = 'denied';
+    }
+    delete contract._botSeenDay;
+  }
+
+  // ── Initiate proposals to real players (~2% chance per tick) ──
+  if (g.hasFactory && g.factory && Math.random() < 0.02 * (intensity / 5)) {
+    const capacity = g.factory.dailyCapacity || 80;
+    const allocated = g.factory.totalAllocatedPercent || 0;
+    const spareCapacity = capacity * (85 - allocated) / 100;
+
+    if (spareCapacity > 10) {
+      const realPlayers = allPlayers.filter(p => !p.game_state._botConfig && !p.game_state.isAI && p.id !== g.id);
+      if (realPlayers.length > 0) {
+        const target = realPlayers[Math.floor(Math.random() * realPlayers.length)];
+        const producibleTires = Object.keys(TIRES).filter(k => !TIRES[k].used && k !== 'used_junk');
+        const tire = producibleTires[Math.floor(Math.random() * producibleTires.length)];
+        const qty = Math.floor(spareCapacity * 30 * 0.5); // Half of spare capacity for 30 days
+
+        if (qty >= 200) {
+          const newContract = {
+            id: uid(),
+            buyerId: target.id,
+            buyerName: target.game_state.companyName || target.game_state.name || 'Unknown',
+            sellerId: g.id,
+            sellerName: g.companyName || g.name || 'Unknown',
+            status: 'proposed',
+            proposedBy: 'seller',
+            terms: {
+              tireType: tire, qty,
+              pricePerUnit: Math.round((TIRES[tire]?.bMax || 80) * 0.85),
+              paymentTerms: 'on_delivery', durationDays: 90,
+              batchSize: Math.ceil(qty / 10),
+              deliveryFee: 2, commission: 0.02,
+            },
+            counterCount: 0,
+            createdDay: g.day,
+            expiresDay: g.day + 7,
+            deliveredQty: 0, stagedQty: 0, totalPaid: 0,
+          };
+
+          g.p2pContracts = g.p2pContracts || [];
+          g.p2pContracts.push(newContract);
+
+          // Also add to target's state (will be synced on next save)
+          target.game_state.p2pContracts = target.game_state.p2pContracts || [];
+          target.game_state.p2pContracts.push({ ...newContract });
+        }
+      }
+    }
+  }
 }
 
 // ═══════════════════════════════════════

@@ -225,8 +225,63 @@ export function simDay(g, shared = {}) {
       customerList: [...(s.factory.customerList || [])],
       orderHistory: [...(s.factory.orderHistory || [])],
     };
+    // Deep-clone contract allocations
+    if (s.factory.contractAllocations) {
+      s.factory.contractAllocations = { ...s.factory.contractAllocations };
+      for (const k of Object.keys(s.factory.contractAllocations)) {
+        s.factory.contractAllocations[k] = { ...s.factory.contractAllocations[k] };
+      }
+    }
+    if (s.factory.contractStaging) s.factory.contractStaging = { ...s.factory.contractStaging };
+
     const fStaff = s.factory.staff;
     const managerBoost = 1 + (fStaff.manager || 0) * 0.20;
+
+    // ── P2P CONTRACT PRODUCTION — runs before general queue ──
+    if (s.factory.contractAllocations && Object.keys(s.factory.contractAllocations).length > 0) {
+      const dailyCap = (FACTORY.levels.find(l => l.level === s.factory.level) || FACTORY.levels[0]).dailyCapacity + (fStaff.lineWorkers || 0) * 10;
+      let contractProduced = 0;
+
+      for (const [cid, alloc] of Object.entries(s.factory.contractAllocations)) {
+        if (!alloc.autoRun) continue;
+        if (alloc.remainingQty <= 0) continue;
+
+        // Find the matching active contract
+        const contract = (s.p2pContracts || []).find(c => c.id === cid && c.status === 'active');
+        if (!contract) continue;
+
+        const todayOutput = Math.floor(dailyCap * alloc.percent / 100);
+        if (todayOutput <= 0) continue;
+
+        // Check raw material cost
+        const productionCost = (FACTORY.productionCost[alloc.tireType] || 50) * todayOutput;
+        if (s.cash < productionCost && s.cash > -500000) {
+          // Produce even at a loss if cash > -500k
+        } else if (s.cash <= -500000) {
+          continue; // Too deep in debt
+        }
+
+        const actualOutput = Math.min(todayOutput, alloc.remainingQty);
+        s.cash -= (FACTORY.productionCost[alloc.tireType] || 50) * actualOutput;
+
+        // Add to staging area
+        if (!s.factory.contractStaging) s.factory.contractStaging = {};
+        s.factory.contractStaging[cid] = (s.factory.contractStaging[cid] || 0) + actualOutput;
+        alloc.remainingQty -= actualOutput;
+        contractProduced += actualOutput;
+
+        // Check if staged >= batchSize — mark for shipment
+        const batchSize = contract.terms?.batchSize || 100;
+        if (s.factory.contractStaging[cid] >= batchSize) {
+          contract._pendingShipment = true;
+          contract._shipmentQty = s.factory.contractStaging[cid];
+        }
+      }
+
+      // Recalculate total allocated percent
+      s.factory.totalAllocatedPercent = Object.values(s.factory.contractAllocations)
+        .reduce((sum, a) => sum + (a.percent || 0), 0);
+    }
 
     // ── RAW MATERIAL PRICE DRIFT (weekly) ──
     if (s.day % 7 === 0) {

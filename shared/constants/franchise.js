@@ -7,4 +7,11 @@ export const FRANCHISE = {
   royaltyRate: 0.05,            // 5% ongoing royalty on franchise revenue
   royaltyRateDecay: 0.005,      // Royalty drops 0.5% per franchise (min 2%) — volume discount
   templateMaxCount: 5,          // Expanded from 3 to 5 templates
+
+  // Brand restriction tiers for franchise agreements
+  brandRestrictions: {
+    none:      { royaltyMult: 1.00, minBrandPercent: 0,   label: 'No Restriction' },
+    preferred: { royaltyMult: 0.85, minBrandPercent: 60,  label: 'Preferred Brand' },
+    exclusive: { royaltyMult: 0.70, minBrandPercent: 100, label: 'Exclusive Brand' },
+  },
 };
