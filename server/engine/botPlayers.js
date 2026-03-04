@@ -358,9 +358,9 @@ export function createBots(count, options = {}) {
   const bots = [];
   for (let i = 0; i < count; i++) {
     // Vary intensity around the target if not fixed
-    let intensity = options.intensity || 5;
+    let intensity = options.intensity || 8;
     if (!options.fixedIntensity) {
-      intensity = Math.max(1, Math.min(11, intensity + Ri(-2, 3)));
+      intensity = Math.max(4, Math.min(11, intensity + Ri(-2, 3)));
     }
     bots.push(createBot({ ...options, intensity }));
   }

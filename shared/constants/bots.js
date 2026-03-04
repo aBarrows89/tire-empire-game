@@ -249,8 +249,8 @@ export const INTENSITY_LEVELS = {
 // Defines how often a bot acts per tick
 
 export const SCHEDULES = {
-  casual:   { minSkip: 3, maxSkip: 5 },  // Acts every 3-5 ticks
-  regular:  { minSkip: 1, maxSkip: 2 },  // Acts every 1-2 ticks
+  casual:   { minSkip: 1, maxSkip: 2 },  // Acts every 1-2 ticks
+  regular:  { minSkip: 0, maxSkip: 1 },  // Acts every 1-2 ticks (mostly every tick)
   hardcore: { minSkip: 0, maxSkip: 0 },  // Acts every tick
   whale:    { minSkip: 0, maxSkip: 0, multiAction: true }, // Every tick + multiple actions
 };

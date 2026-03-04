@@ -343,8 +343,12 @@ export async function createPlayer(id, name, gameState) {
      RETURNING *`,
     [id, name, JSON.stringify(gameState)]
   );
+  const row = rows[0];
+  if (row) {
+    row.game_state = parseJson(row.game_state);
+  }
   invalidatePlayer(id);
-  return rows[0];
+  return row;
 }
 
 export async function savePlayerState(id, gameState, expectedVersion = null) {
