@@ -90,7 +90,7 @@ function pullFromStock(s, tire, qty) {
 }
 
 export function simDay(g, shared = {}) {
-  let s = { ...g, day: g.day + 1, dayRev: 0, dayProfit: 0, daySold: 0, log: [], _events: [], dayRevByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0, services: 0, factoryWholesale: 0 }, daySoldByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0, factoryWholesale: 0 } };
+  let s = { ...g, day: g.day + 1, dayRev: 0, dayProfit: 0, daySold: 0, log: [], _events: [], dayRevByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0, services: 0, factoryWholesale: 0 }, daySoldByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0, factoryWholesale: 0 }, daySoldByType: {} };
 
   // Save previous day values for trend arrows
   s.prevDayRev = g.dayRev || 0;
@@ -368,6 +368,7 @@ export function simDay(g, shared = {}) {
       s.daySold += orderQty;
       s.dayRevByChannel.factoryWholesale = (s.dayRevByChannel.factoryWholesale || 0) + grossRev;
       s.daySoldByChannel.factoryWholesale = (s.daySoldByChannel.factoryWholesale || 0) + orderQty;
+      s.daySoldByType[chosenKey] = (s.daySoldByType[chosenKey] || 0) + orderQty;
 
       // Track
       customer.totalPurchased += orderQty;
@@ -706,6 +707,7 @@ export function simDay(g, shared = {}) {
         loc.dailyStats.profit += rev - cost;
         s.dayRevByChannel.shops += rev;
         s.daySoldByChannel.shops += qty;
+        s.daySoldByType[k] = (s.daySoldByType[k] || 0) + qty;
         if (!t.used) {
           newTiresSold += qty;
           locNewSold += qty;
@@ -853,6 +855,7 @@ export function simDay(g, shared = {}) {
         s.vanTotalSold = (s.vanTotalSold || 0) + qty;
         s.dayRevByChannel.van += qty * price;
         s.daySoldByChannel.van += qty;
+        s.daySoldByType[k] = (s.daySoldByType[k] || 0) + qty;
         sold += qty;
       }
       // Track van-only profitable days
@@ -905,6 +908,7 @@ export function simDay(g, shared = {}) {
         s.fleaMarketTotalSold = (s.fleaMarketTotalSold || 0) + sellQty;
         s.dayRevByChannel.flea += sellQty * price;
         s.daySoldByChannel.flea += sellQty;
+        s.daySoldByType[k] = (s.daySoldByType[k] || 0) + sellQty;
         standSold += sellQty;
       }
       if (standSold > 0) {
@@ -957,6 +961,7 @@ export function simDay(g, shared = {}) {
           s.carMeetTotalSold = (s.carMeetTotalSold || 0) + sellQty;
           s.dayRevByChannel.carMeets += sellQty * price;
           s.daySoldByChannel.carMeets += sellQty;
+          s.daySoldByType[k] = (s.daySoldByType[k] || 0) + sellQty;
           meetSold += sellQty;
         }
         if (meetSold > 0) {
@@ -1047,6 +1052,7 @@ export function simDay(g, shared = {}) {
       s.daySold += pulled;
       s.dayRevByChannel.wholesale += rev;
       s.daySoldByChannel.wholesale += pulled;
+      s.daySoldByType[tire] = (s.daySoldByType[tire] || 0) + pulled;
     }
     // Track monthly volume (rolling approximation: daily sales * 30)
     s.monthlyPurchaseVol = Math.round((s.monthlyPurchaseVol || 0) * 0.97 + monthlyVol * 4.3);
@@ -1093,6 +1099,7 @@ export function simDay(g, shared = {}) {
       s.cash += net;
       ecomRev += price;
       ecomSold++;
+      s.daySoldByType[k] = (s.daySoldByType[k] || 0) + 1;
     }
 
     s.ecomDailyOrders = orders;
@@ -1170,6 +1177,7 @@ export function simDay(g, shared = {}) {
       s.daySold += canDeliver;
       s.dayRevByChannel.gov += rev;
       s.daySoldByChannel.gov += canDeliver;
+      s.daySoldByType[gc.tire] = (s.daySoldByType[gc.tire] || 0) + canDeliver;
       gc.delivered += canDeliver;
     }
     gc.daysLeft = (gc.daysLeft || (gc.weeksLeft || 0) * 7) - 1;
@@ -1297,32 +1305,56 @@ export function simDay(g, shared = {}) {
     s.cash = Math.max(s.cash, -100000);
   }
 
-  // ── BANK DEPOSITS — daily interest ──
+  // ── BANK DEPOSITS — daily interest with tiered deposit bonus ──
   if (s.bankBalance > 0) {
-    const dailyRate = (s.bankRate || 0.042) / 360;
+    // Tiered deposit bonus: larger balances earn higher rates
+    let depositBonus = 0;
+    if (s.bankBalance >= 1000000) depositBonus = 0.015;      // $1M+ → +1.5%
+    else if (s.bankBalance >= 500000) depositBonus = 0.01;    // $500K+ → +1%
+    else if (s.bankBalance >= 100000) depositBonus = 0.005;   // $100K+ → +0.5%
+    const effectiveRate = Math.min(0.085, (s.bankRate || 0.042) + depositBonus);
+    const dailyRate = effectiveRate / 360;
     const premiumBankBonus = s.isPremium ? 1.10 : 1;
     const interest = Math.round(s.bankBalance * dailyRate * premiumBankBonus * 100) / 100;
     s.bankBalance += interest;
     s.bankInterestEarned = interest;
+    s.bankDepositBonus = depositBonus;
     s.bankTotalInterest = (s.bankTotalInterest || 0) + interest;
     if (interest >= 1) {
-      s.log.push({ msg: `\u{1F3E6} Bank paid $${Math.floor(interest)} interest${s.isPremium ? ' (PRO +10%)' : ''}`, cat: 'bank' });
+      const bonusLabel = depositBonus > 0 ? ` (+${(depositBonus * 100).toFixed(1)}% tier)` : '';
+      s.log.push({ msg: `\u{1F3E6} Bank paid $${Math.floor(interest)} interest${s.isPremium ? ' (PRO +10%)' : ''}${bonusLabel}`, cat: 'bank' });
     }
   } else {
     s.bankInterestEarned = 0;
+    s.bankDepositBonus = 0;
   }
-  // Fluctuate rate once per week (every 7 days)
+  // ── Dynamic interest rate system (AI-controlled, weekly adjustment) ──
+  // Total deposits drive rates: more deposits → higher savings rate, lower loan rate
+  // This mimics real banking: abundant capital rewards savers and encourages borrowing
   if (s.day % 7 === 0) {
     const rateSeasonMult = { Spring: 0.92, Summer: 0.88, Fall: 1.08, Winter: 1.12 }[season] || 1;
     const rateNoise = 1 + (Math.random() - 0.5) * 0.10;
-    const baseRate = 0.042 * rateSeasonMult * rateNoise;
+    const baseSavingsRate = 0.042 * rateSeasonMult * rateNoise;
+
     // TC scarcity bonus: less TC in circulation = higher rates (max +2% bonus)
     const tcScarcityBonus = shared.totalTC != null
       ? Math.min(0.02, Math.max(0, (1 - shared.totalTC / 50000) * 0.02))
       : 0;
-    s.bankRate = Math.round((baseRate + tcScarcityBonus) * 10000) / 10000;
+
+    // Deposit abundance factor: more total deposits → higher savings rate, lower loan rate
+    // At $0 total deposits: factor = 0, at $5M: factor ~0.5, at $20M+: factor ~1.0
+    const totalDep = shared.totalBankDeposits || 0;
+    const depositFactor = Math.min(1.0, totalDep / 20000000);
+
+    // Savings rate: base + TC bonus + deposit abundance bonus (up to +2%)
+    const depositAbundanceBonus = depositFactor * 0.02;
+    s.bankRate = Math.round((baseSavingsRate + tcScarcityBonus + depositAbundanceBonus) * 10000) / 10000;
     s.bankRate = Math.max(0.015, Math.min(0.085, s.bankRate));
     s.tcScarcityBonus = Math.round(tcScarcityBonus * 10000) / 10000;
+
+    // Loan rate multiplier: when deposits are high, loan rates drop (bank has capital to lend)
+    // Range: 1.0 (no deposits, full rate) to 0.7 (massive deposits, 30% discount on loan rates)
+    s.loanRateMult = Math.round((1.0 - depositFactor * 0.30) * 1000) / 1000;
   }
 
   // ── SUPPLIER FREE SAMPLES ──
@@ -1666,6 +1698,16 @@ export function simDay(g, shared = {}) {
     rep: Math.round(s.reputation * 10) / 10,
   });
   if (s.history.length > 30) s.history = s.history.slice(-30);
+
+  // Revenue history by channel for map/chart (last 60 days)
+  if (!s.revHistory) s.revHistory = [];
+  s.revHistory.push({ day: s.day, ...s.dayRevByChannel });
+  if (s.revHistory.length > 60) s.revHistory = s.revHistory.slice(-60);
+
+  // Tire sales history by type (last 30 days) — for sales reporting
+  if (!s.salesByType) s.salesByType = [];
+  s.salesByType.push({ day: s.day, ...s.daySoldByType });
+  if (s.salesByType.length > 30) s.salesByType = s.salesByType.slice(-30);
 
   return s;
 }

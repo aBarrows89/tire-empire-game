@@ -25,6 +25,9 @@ client/ios/DerivedData/
 # Credentials & secrets
 *.pem
 *.p12
+*.keystore
+*.jks
+keystore.properties
 google-services.json
 GoogleService-Info.plist
 firebase-service-account*.json

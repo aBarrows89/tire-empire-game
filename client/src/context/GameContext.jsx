@@ -43,6 +43,10 @@ function gameReducer(state, action) {
       return { ...state, offline: action.payload };
     case 'SET_ANNOUNCEMENT':
       return { ...state, announcement: action.payload };
+    case 'SET_WS_CONNECTED':
+      return { ...state, wsConnected: action.payload };
+    case 'ADD_DM':
+      return { ...state, lastDM: action.payload };
     case 'SET_TICK_DATA':
       return {
         ...state,
@@ -67,6 +71,7 @@ const initialState = {
   viewingProfile: null,
   chatMessages: [],
   offline: false,
+  wsConnected: false,
 };
 
 export function GameProvider({ children }) {
@@ -132,7 +137,15 @@ export function GameProvider({ children }) {
     dispatch({ type: 'SET_ANNOUNCEMENT', payload: msg });
   }, []);
 
-  const wsRef = useWebSocket(onTick, onChat, onChatDelete, onAnnouncement);
+  const onConnectionChange = useCallback((connected) => {
+    dispatch({ type: 'SET_WS_CONNECTED', payload: connected });
+  }, []);
+
+  const onDM = useCallback((msg) => {
+    dispatch({ type: 'ADD_DM', payload: msg });
+  }, []);
+
+  const wsRef = useWebSocket(onTick, onChat, onChatDelete, onAnnouncement, onConnectionChange, onDM);
 
   const sendChat = useCallback((text, channel = 'global') => {
     sendWsMessage(wsRef, { type: 'chat', text, channel });
@@ -155,7 +168,7 @@ export function GameProvider({ children }) {
   }, [refreshState]);
 
   return (
-    <GameContext.Provider value={{ state, dispatch, refreshState, sendChat }}>
+    <GameContext.Provider value={{ state, dispatch, refreshState, sendChat, wsRef }}>
       {children}
     </GameContext.Provider>
   );

@@ -26,7 +26,8 @@ function collectMatchingTips(g, stateGlobalEvents) {
   const inv = getInv(g);
   const cap = getCap(g);
   const tips = [];
-  const day = g.day || g.week || 1;
+  const playerDay = g.day || g.week || 1;
+  const day = (g.startDay || 1) + playerDay - 1;
   const cal = getCalendar(day);
   const locCount = (g.locations || []).length;
   const totalStaff = (g.staff?.techs || 0) + (g.staff?.sales || 0) + (g.staff?.managers || 0);

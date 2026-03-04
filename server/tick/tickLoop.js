@@ -15,6 +15,7 @@ import { P2P_FEES } from '../../shared/constants/marketplace.js';
 import { GLOBAL_EVENTS, GLOBAL_EVENT_CHANCE, GLOBAL_EVENT_MAX_CONCURRENT } from '../../shared/constants/globalEvents.js';
 import { MONET } from '../../shared/constants/monetization.js';
 import { broadcast } from './broadcast.js';
+import { checkAndSendPush } from '../notifications/sender.js';
 import { updateAIPrices } from '../engine/aiPriceWar.js';
 import { saveTournament } from '../db/queries.js';
 import { runExchangeTick } from '../engine/exchangeTick.js';
@@ -397,6 +398,8 @@ export async function runTick(clients) {
 
     // Calculate total TireCoins in circulation across all players
     const totalTC = players.reduce((sum, p) => sum + (p.game_state.tireCoins || 0), 0);
+    // Calculate total bank deposits across all players (drives interest rate dynamics)
+    const totalBankDeposits = players.reduce((sum, p) => sum + (p.game_state.bankBalance || 0), 0);
 
     // Build factory supplier list from all players with isDistributor
     const factorySuppliers = players
@@ -592,6 +595,27 @@ export async function runTick(clients) {
       if (game.economy.tcHistory.length > 52) game.economy.tcHistory.shift();
     }
 
+    // ── Dynamic Supplier Pricing ──
+    // Prices fluctuate ±15% based on demand (total purchase volume) and random market noise
+    if (!game.economy.supplierPricing) game.economy.supplierPricing = {};
+    const totalPurchaseVol = players.reduce((sum, p) => sum + (p.game_state.monthlyPurchaseVol || 0), 0);
+    const demandFactor = Math.min(1.0, totalPurchaseVol / 5000); // 0-1 scale
+    for (const tireKey of Object.keys(TIRES)) {
+      const prev = game.economy.supplierPricing[tireKey] || 1.0;
+      const noise = (Math.random() - 0.5) * 0.04; // ±2% random
+      const demandPull = demandFactor * 0.08; // High demand pushes prices up to +8%
+      // Global events can affect pricing
+      let eventMod = 0;
+      for (const ge of (game.economy.activeGlobalEvents || [])) {
+        const def = GLOBAL_EVENTS.find(d => d.id === ge.id);
+        if (def?.effects?.productionCostMult) eventMod += (def.effects.productionCostMult - 1) * 0.5;
+      }
+      const target = 1.0 + demandPull + noise + eventMod;
+      // Smooth toward target (don't jump too fast)
+      const next = prev + (target - prev) * 0.15;
+      game.economy.supplierPricing[tireKey] = Math.round(Math.max(0.85, Math.min(1.15, next)) * 1000) / 1000;
+    }
+
     const shared = {
       cities: CITIES,
       aiShops: game.ai_shops || [],
@@ -599,11 +623,13 @@ export async function runTick(clients) {
       playerPriceAvg,
       aiPriceAvg,
       totalTC,
+      totalBankDeposits,
       factorySuppliers,
       wholesaleSuppliers,
       globalEvents: game.economy.activeGlobalEvents || [],
       tcValue: game.economy.tcValue || 50000,
       tcMetrics: game.economy.tcMetrics || {},
+      supplierPricing: game.economy.supplierPricing || {},
     };
 
     const cal = getCalendar(day);
@@ -647,6 +673,8 @@ export async function runTick(clients) {
           newState.isPremium,
           newState.stockExchange?.ticker || null
         );
+        // Push notifications (non-blocking)
+        checkAndSendPush(player.id, newState, day).catch(() => {});
       } catch (playerErr) {
         console.error(`[Tick] Error processing player ${player.id}:`, playerErr.message);
       }
@@ -740,6 +768,24 @@ export async function runTick(clients) {
       game.economy.exchange = exchangeResult.exchangeState;
     } catch (err) {
       console.error('Exchange tick error:', err);
+    }
+
+    // Weekly cleanup: remove old chat messages (every 7 game days)
+    if (day % 7 === 0) {
+      try {
+        const { cleanOldChatMessages } = await import('../db/queries.js');
+        const cleaned = await cleanOldChatMessages(7);
+        if (cleaned > 0) console.log(`[tick] Cleaned ${cleaned} old chat messages`);
+      } catch {}
+    }
+
+    // Monthly cleanup: remove old analytics events (every 30 game days)
+    if (day % 30 === 0) {
+      try {
+        const { cleanOldAnalytics } = await import('../analytics/tracker.js');
+        const cleaned = await cleanOldAnalytics(90);
+        if (cleaned > 0) console.log(`[tick] Cleaned ${cleaned} old analytics events`);
+      } catch {}
     }
 
     // Update game day

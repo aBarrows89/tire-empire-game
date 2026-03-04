@@ -496,7 +496,7 @@ export default function DashboardPanel() {
           </div>
           <div className="text-xs text-dim mb-4">Top 20 cities by seasonal demand</div>
           {(() => {
-            const cal = getCalendar(g.day || 1);
+            const cal = getCalendar((g.startDay || 1) + (g.day || 1) - 1);
             const season = cal.season;
             const mainTireKeys = Object.keys(TIRES).filter(k => !TIRES[k].used);
             const ranked = CITIES.map(city => {
@@ -744,6 +744,59 @@ export default function DashboardPanel() {
         })}
         {inv === 0 && <div className="text-sm text-dim">No tires in stock. Source some!</div>}
       </div>
+
+      {/* Tire Sales Report — last 7 days */}
+      {(g.salesByType || []).length > 0 && (
+        <div className="card">
+          <div className="card-title">{'\u{1F4CA}'} Tire Sales Report (Last 7 Days)</div>
+          <div className="text-xs text-dim mb-4">Which tires are selling — and which aren't.</div>
+          {(() => {
+            const recent = (g.salesByType || []).slice(-7);
+            const totals = {};
+            for (const entry of recent) {
+              for (const [k, v] of Object.entries(entry)) {
+                if (k === 'day') continue;
+                totals[k] = (totals[k] || 0) + v;
+              }
+            }
+            // All tire types the player has in inventory or has sold
+            const allTypes = new Set([
+              ...Object.keys(totals),
+              ...Object.keys(g.warehouseInventory || {}),
+              ...(g.locations || []).flatMap(l => Object.keys(l.inventory || {})),
+            ]);
+            const rows = [...allTypes]
+              .map(k => ({ key: k, name: TIRES[k]?.n || k, sold: totals[k] || 0, inStock: (g.warehouseInventory?.[k] || 0) + (g.locations || []).reduce((a, l) => a + (l.inventory?.[k] || 0), 0) }))
+              .sort((a, b) => b.sold - a.sold);
+            if (rows.length === 0) return <div className="text-xs text-dim">No data yet.</div>;
+            const maxSold = Math.max(1, ...rows.map(r => r.sold));
+            return (
+              <div className="sales-report-table">
+                {rows.map(r => (
+                  <div key={r.key} className="sales-report-row">
+                    <div className="sales-report-name">{r.name}</div>
+                    <div className="sales-report-bar-wrap">
+                      <div
+                        className="sales-report-bar"
+                        style={{
+                          width: `${(r.sold / maxSold) * 100}%`,
+                          background: r.sold === 0 ? 'var(--red)' : r.sold < maxSold * 0.3 ? 'var(--gold)' : 'var(--green)',
+                          opacity: r.sold === 0 ? 0.3 : 0.8,
+                        }}
+                      />
+                    </div>
+                    <div className="sales-report-nums">
+                      <span className="font-bold">{r.sold}</span>
+                      <span className="text-dim"> sold</span>
+                      <span className="text-dim" style={{ marginLeft: 6 }}>{r.inStock} in stock</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {(g.log || []).length > 0 && (
         <div className="card">

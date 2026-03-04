@@ -43,6 +43,20 @@ export const getChatMutes = (...args) => impl.getChatMutes(...args);
 export const setChatMute = (...args) => impl.setChatMute(...args);
 export const removeChatMute = (...args) => impl.removeChatMute(...args);
 export const deleteChatMessage = (...args) => impl.deleteChatMessage(...args);
+export const cleanOldChatMessages = (...args) => impl.cleanOldChatMessages ? impl.cleanOldChatMessages(...args) : 0;
+export const addDM = (...args) => impl.addDM ? impl.addDM(...args) : null;
+export const getDMs = (...args) => impl.getDMs ? impl.getDMs(...args) : [];
+export const getRecentDMPartners = (...args) => impl.getRecentDMPartners ? impl.getRecentDMPartners(...args) : [];
+export const getUnreadDMCount = (...args) => impl.getUnreadDMCount ? impl.getUnreadDMCount(...args) : 0;
+export const markDMsRead = (...args) => impl.markDMsRead ? impl.markDMsRead(...args) : null;
+export const addChatReport = (...args) => impl.addChatReport ? impl.addChatReport(...args) : null;
+export const getChatReports = (...args) => impl.getChatReports ? impl.getChatReports(...args) : [];
+export const updateChatReport = (...args) => impl.updateChatReport ? impl.updateChatReport(...args) : null;
 export const saveFile = (...args) => impl.saveFile(...args);
 export const getFile = (...args) => impl.getFile(...args);
 export const withPlayerLock = (...args) => impl.withPlayerLock ? impl.withPlayerLock(...args) : args[1]();
+export const savePlayerFinancials = (...args) => impl.savePlayerFinancials ? impl.savePlayerFinancials(...args) : null;
+export const savePlayerStats = (...args) => impl.savePlayerStats ? impl.savePlayerStats(...args) : null;
+
+// Cache management (only available with postgres backend)
+export { getCacheStats, invalidateAllPlayers, invalidateGame, invalidateLeaderboard } from './playerCache.js';

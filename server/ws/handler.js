@@ -1,6 +1,31 @@
-import { getPlayer, addChatMessage, getChatMutes, removeChatMute } from '../db/queries.js';
+import { getPlayer, addChatMessage, getChatMutes, removeChatMute, addDM } from '../db/queries.js';
 import admin from 'firebase-admin';
 import { NODE_ENV } from '../config.js';
+
+const HEARTBEAT_INTERVAL_MS = 30000; // 30s between pings
+const HEARTBEAT_TIMEOUT_PINGS = 2;   // close after 2 missed pings
+const VALID_CHANNELS = ['global', 'trade', 'help'];
+const DM_RATE_LIMIT_MS = 5000; // 1 DM per 5 seconds per sender
+
+/**
+ * Start server-side heartbeat that detects stale WebSocket connections.
+ * Call once after creating the WebSocketServer.
+ */
+export function startHeartbeat(clients) {
+  setInterval(() => {
+    for (const ws of clients) {
+      if (ws._missedPings >= HEARTBEAT_TIMEOUT_PINGS) {
+        ws.terminate();
+        clients.delete(ws);
+        continue;
+      }
+      ws._missedPings = (ws._missedPings || 0) + 1;
+      if (ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'ping' }));
+      }
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+}
 
 /**
  * Handle a new WebSocket connection.
@@ -9,6 +34,8 @@ import { NODE_ENV } from '../config.js';
  */
 export function handleConnection(ws, clients) {
   clients.add(ws);
+  ws._missedPings = 0;
+  ws._lastDM = 0;
   console.log(`WS connected (${clients.size} total)`);
 
   ws.on('message', async (raw) => {
@@ -18,6 +45,10 @@ export function handleConnection(ws, clients) {
       switch (msg.type) {
         case 'ping':
           ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+          break;
+
+        case 'pong':
+          ws._missedPings = 0;
           break;
 
         case 'subscribe': {
@@ -71,10 +102,12 @@ export function handleConnection(ws, clients) {
           }
           const text = (msg.text || '').trim().slice(0, 200);
           if (!text) break;
+          const channel = VALID_CHANNELS.includes(msg.channel) ? msg.channel : 'global';
           const chatMsg = {
             id: `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             playerId: ws.playerId,
             playerName: player.game_state?.companyName || player.name || 'Unknown',
+            channel,
             text,
             timestamp: Date.now(),
           };
@@ -82,6 +115,54 @@ export function handleConnection(ws, clients) {
           const broadcast = JSON.stringify({ type: 'chat', message: chatMsg });
           for (const client of clients) {
             if (client.readyState === 1) client.send(broadcast);
+          }
+          break;
+        }
+
+        case 'dm': {
+          if (!ws.playerId) {
+            ws.send(JSON.stringify({ type: 'error', message: 'Not subscribed' }));
+            break;
+          }
+          // Rate limit DMs
+          if (Date.now() - ws._lastDM < DM_RATE_LIMIT_MS) {
+            ws.send(JSON.stringify({ type: 'error', message: 'Sending too fast. Wait a moment.' }));
+            break;
+          }
+          ws._lastDM = Date.now();
+          const targetId = msg.targetPlayerId;
+          if (!targetId || targetId === ws.playerId) break;
+          const text = (msg.text || '').trim().slice(0, 500);
+          if (!text) break;
+          const sender = await getPlayer(ws.playerId);
+          if (!sender) break;
+          // Check if blocked
+          const target = await getPlayer(targetId);
+          if (!target) {
+            ws.send(JSON.stringify({ type: 'error', message: 'Player not found' }));
+            break;
+          }
+          const blockedBy = target.game_state?.blockedPlayers || [];
+          if (blockedBy.some(b => b.id === ws.playerId)) {
+            ws.send(JSON.stringify({ type: 'error', message: 'This player has blocked you' }));
+            break;
+          }
+          const dmMsg = {
+            id: `dm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            fromId: ws.playerId,
+            fromName: sender.game_state?.companyName || sender.name || 'Unknown',
+            toId: targetId,
+            text,
+            timestamp: Date.now(),
+          };
+          await addDM(dmMsg);
+          // Deliver to sender (confirmation)
+          ws.send(JSON.stringify({ type: 'dm', message: dmMsg }));
+          // Deliver to target if online
+          for (const client of clients) {
+            if (client.playerId === targetId && client.readyState === 1) {
+              client.send(JSON.stringify({ type: 'dm', message: dmMsg }));
+            }
           }
           break;
         }
@@ -98,10 +179,12 @@ export function handleConnection(ws, clients) {
         }
 
         default:
-          ws.send(JSON.stringify({ type: 'error', message: `Unknown message type: ${msg.type}` }));
+          break; // Silently ignore unknown types
       }
     } catch (err) {
-      ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON' }));
+      try {
+        ws.send(JSON.stringify({ type: 'error', message: 'Invalid message' }));
+      } catch {}
     }
   });
 

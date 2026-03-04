@@ -33,6 +33,7 @@ import FactoryPanel from './components/panels/FactoryPanel.jsx';
 import EcommercePanel from './components/panels/EcommercePanel.jsx';
 import WholesalePanel from './components/panels/WholesalePanel.jsx';
 import ExchangePanel from './components/panels/ExchangePanel.jsx';
+import MapPanel from './components/panels/MapPanel.jsx';
 
 const PANELS = {
   dashboard: DashboardPanel,
@@ -53,6 +54,7 @@ const PANELS = {
   ecommerce: EcommercePanel,
   wholesale: WholesalePanel,
   exchange: ExchangePanel,
+  map: MapPanel,
 };
 
 function SplashScreen() {
@@ -71,7 +73,7 @@ function SplashScreen() {
 }
 
 function GameLayout() {
-  const { state, sendChat, refreshState } = useGame();
+  const { state, sendChat, refreshState, wsRef } = useGame();
   const [chatOpen, setChatOpen] = useState(false);
   const [toastAch, setToastAch] = useState(null);
   const [toastNotifs, setToastNotifs] = useState(null);
@@ -216,6 +218,7 @@ function GameLayout() {
         onClose={() => setChatOpen(false)}
         messages={state.chatMessages || []}
         onSend={sendChat}
+        wsRef={wsRef}
       />
     </>
   );

@@ -58,7 +58,7 @@ async function fetchWithRetry(url, opts = {}, retries = 2) {
       }
       return res; // Client errors (4xx) don't retry
     } catch (err) {
-      if (attempt === retries) throw err;
+      if (err.name === 'AbortError' || attempt === retries) throw err;
       await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
     }
   }
@@ -85,14 +85,19 @@ export async function registerPlayer(playerName, companyName) {
 // Client-side action queue — serialize requests to prevent race conditions
 let _actionInFlight = false;
 const _actionQueue = [];
+const ACTION_TIMEOUT_MS = 15000;
+const MAX_QUEUE_SIZE = 10;
 
 export async function postAction(action, params = {}) {
   if (!navigator.onLine) {
     await queueAction(action, params);
     return { ok: true, queued: true };
   }
-  // If an action is already in flight, queue this one
+  // If an action is already in flight, queue this one (with overflow protection)
   if (_actionInFlight) {
+    if (_actionQueue.length >= MAX_QUEUE_SIZE) {
+      return { ok: false, error: 'Too many pending actions. Please wait.' };
+    }
     return new Promise((resolve, reject) => {
       _actionQueue.push({ action, params, resolve, reject });
     });
@@ -104,12 +109,24 @@ async function _executeAction(action, params) {
   _actionInFlight = true;
   try {
     const headers = await getHeaders();
-    const res = await fetchWithRetry(`${API_BASE}/action`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ action, ...params }),
-    });
-    return await res.json();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), ACTION_TIMEOUT_MS);
+    try {
+      const res = await fetchWithRetry(`${API_BASE}/action`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ action, ...params }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      return await res.json();
+    } catch (err) {
+      clearTimeout(timeout);
+      if (err.name === 'AbortError') {
+        return { ok: false, error: 'Request timed out. Try again.' };
+      }
+      throw err;
+    }
   } finally {
     _actionInFlight = false;
     // Process next queued action
@@ -156,20 +173,29 @@ export async function tradeAction(action, tradeId) {
   return res.json();
 }
 
-export function useWebSocket(onTick, onChat, onChatDelete, onAnnouncement) {
+// Pending WS messages queued while disconnected
+const _pendingWsMessages = [];
+
+export function useWebSocket(onTick, onChat, onChatDelete, onAnnouncement, onConnectionChange, onDM) {
   const tickRef = useRef(onTick);
   const chatRef = useRef(onChat);
   const chatDeleteRef = useRef(onChatDelete);
   const announcementRef = useRef(onAnnouncement);
+  const connRef = useRef(onConnectionChange);
+  const dmRef = useRef(onDM);
   const wsRef = useRef(null);
   tickRef.current = onTick;
   chatRef.current = onChat;
   chatDeleteRef.current = onChatDelete;
   announcementRef.current = onAnnouncement;
+  connRef.current = onConnectionChange;
+  dmRef.current = onDM;
 
   useEffect(() => {
     let destroyed = false;
     let reconnectTimeout = null;
+    let backoffMs = 1000;
+    const MAX_BACKOFF = 30000;
 
     function connect() {
       if (destroyed) return;
@@ -184,6 +210,8 @@ export function useWebSocket(onTick, onChat, onChatDelete, onAnnouncement) {
       wsRef.current = ws;
 
       ws.onopen = async () => {
+        backoffMs = 1000; // Reset backoff on successful connection
+        if (connRef.current) connRef.current(true);
         // Send Firebase token for production auth, or UID for dev
         try {
           const token = await getIdToken();
@@ -196,23 +224,37 @@ export function useWebSocket(onTick, onChat, onChatDelete, onAnnouncement) {
         } catch {
           ws.send(JSON.stringify({ type: 'subscribe', playerId: getUid() || 'dev-player' }));
         }
+        // Flush pending messages queued while disconnected
+        while (_pendingWsMessages.length > 0) {
+          const pending = _pendingWsMessages.shift();
+          ws.send(JSON.stringify(pending));
+        }
       };
 
       ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
+          if (msg.type === 'ping') {
+            ws.send(JSON.stringify({ type: 'pong' }));
+            return;
+          }
           if (msg.type === 'tick') tickRef.current(msg);
           if (msg.type === 'chat' && chatRef.current) chatRef.current(msg.message);
           if (msg.type === 'chatDelete' && chatDeleteRef.current) chatDeleteRef.current(msg.messageId);
           if (msg.type === 'announcement' && announcementRef.current) announcementRef.current(msg);
+          if (msg.type === 'dm' && dmRef.current) dmRef.current(msg.message);
         } catch {}
       };
 
       ws.onerror = () => {};
       ws.onclose = () => {
         wsRef.current = null;
+        if (connRef.current) connRef.current(false);
         if (!destroyed) {
-          reconnectTimeout = setTimeout(connect, 3000);
+          // Exponential backoff with jitter
+          const jitter = backoffMs * (0.5 + Math.random());
+          reconnectTimeout = setTimeout(connect, jitter);
+          backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF);
         }
       };
     }
@@ -232,6 +274,9 @@ export function useWebSocket(onTick, onChat, onChatDelete, onAnnouncement) {
 export function sendWsMessage(wsRef, data) {
   if (wsRef.current?.readyState === 1) {
     wsRef.current.send(JSON.stringify(data));
+  } else if (data.type === 'chat' || data.type === 'dm') {
+    // Queue chat/DM messages for delivery on reconnect
+    _pendingWsMessages.push(data);
   }
 }
 

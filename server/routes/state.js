@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getPlayer, createPlayer, isCompanyNameTaken, getGame } from '../db/queries.js';
 import { init } from '../engine/init.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { trackEvent } from '../analytics/tracker.js';
 
 const router = Router();
 
@@ -33,6 +34,12 @@ router.get('/', authMiddleware, async (req, res) => {
       player = await createPlayer(req.playerId, state.name, state);
     }
 
+    trackEvent(req.playerId, 'session_start', { day: player.game_state?.day });
+    // Attach dynamic supplier pricing from game economy
+    const game = await getGame();
+    if (game?.economy?.supplierPricing) {
+      player.game_state._supplierPricing = game.economy.supplierPricing;
+    }
     res.json(player.game_state);
   } catch (err) {
     console.error('GET /api/state error:', err);

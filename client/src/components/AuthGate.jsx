@@ -1,5 +1,6 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { signInAnon, onAuthChange, hasFirebaseConfig } from '../services/firebase.js';
+import { registerPush } from '../services/pushNotifications.js';
 
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
@@ -20,6 +21,8 @@ export default function AuthGate({ children }) {
       if (firebaseUser) {
         setUser(firebaseUser);
         setLoading(false);
+        // Register for push notifications after auth
+        registerPush().catch(() => {});
       } else {
         // No user — sign in anonymously for zero-friction onboarding
         try {

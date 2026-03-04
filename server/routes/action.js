@@ -28,6 +28,7 @@ import { RAW_MATERIALS, FACTORY_DISCOUNT_TIERS_DEFAULT, RD_PROJECTS, CERTIFICATI
 import { getEffectiveProductionCost, getBrandTireKey } from '../../shared/helpers/factoryBrand.js';
 import { MANUFACTURERS } from '../../shared/constants/manufacturers.js';
 import { PAY } from '../../shared/constants/staff.js';
+import { trackEvent } from '../analytics/tracker.js';
 import { getNextUpgrade } from '../../shared/constants/shopStorage.js';
 import { getShopValuation, SHOP_BID, AI_BUYER_NAMES } from '../../shared/constants/shopSale.js';
 
@@ -199,7 +200,18 @@ router.post('/', authMiddleware, async (req, res) => {
         const sup = SUPPLIERS[supplierIndex];
         if (!sup) return res.status(400).json({ error: 'Invalid supplier' });
         if (qty < sup.min) return res.status(400).json({ error: `Minimum order is ${sup.min} tires` });
-        const orderCost = qty * t.bMin * (1 - sup.disc);
+        // Dynamic pricing: base cost × market multiplier × supplier discount
+        // Check if player has a contract for this tire (locks in pricing)
+        const contract = (g.supplierContracts || []).find(c => c.supplierIndex === supplierIndex && c.tire === tire && c.expiresDay > (g.day || 0));
+        let priceMult = 1.0;
+        if (contract) {
+          priceMult = contract.lockedMult; // Contract locks in the rate
+        } else {
+          // Use dynamic market pricing from game economy
+          const gameData = await getGame();
+          priceMult = gameData?.economy?.supplierPricing?.[tire] || 1.0;
+        }
+        const orderCost = Math.round(qty * t.bMin * priceMult * (1 - sup.disc));
         if (g.cash < orderCost) return res.status(400).json({ error: 'Not enough cash' });
         if (getInv(g) + qty > getCap(g)) return res.status(400).json({ error: 'Not enough storage' });
         g.cash -= orderCost;
@@ -236,20 +248,57 @@ router.post('/', authMiddleware, async (req, res) => {
         break;
       }
 
+      case 'signSupplierContract': {
+        // Lock in current supplier pricing for a tire type for 90 game days
+        // Requires supplier relationship level >= 3 (Key Account)
+        const { supplierIndex: scIdx, tire: scTire } = params;
+        const scSup = SUPPLIERS[scIdx];
+        if (!scSup) return res.status(400).json({ error: 'Invalid supplier' });
+        if (!TIRES[scTire]) return res.status(400).json({ error: 'Invalid tire type' });
+        const scRel = (g.supplierRelationships || {})[String(scIdx)];
+        if (!scRel || scRel.level < 3) return res.status(400).json({ error: 'Requires Key Account status (level 3+) with this supplier' });
+        // Check for existing contract on same supplier+tire
+        if (!g.supplierContracts) g.supplierContracts = [];
+        const existing = g.supplierContracts.find(c => c.supplierIndex === scIdx && c.tire === scTire && c.expiresDay > (g.day || 0));
+        if (existing) return res.status(400).json({ error: 'Contract already active for this tire with this supplier' });
+        // Contract fee: 5% of tire bMin × 500 (estimated annual volume)
+        const fee = Math.round(TIRES[scTire].bMin * 500 * 0.05);
+        if (g.cash < fee) return res.status(400).json({ error: `Need ${R(fee)} to sign contract` });
+        // Lock in current market price
+        const gameData = await getGame();
+        const currentMult = gameData?.economy?.supplierPricing?.[scTire] || 1.0;
+        g.cash -= fee;
+        g.supplierContracts.push({
+          id: uid(),
+          supplierIndex: scIdx,
+          supplierName: scSup.n,
+          tire: scTire,
+          tireName: TIRES[scTire].n,
+          lockedMult: currentMult,
+          signedDay: g.day || 0,
+          expiresDay: (g.day || 0) + 90,
+          fee,
+        });
+        g.log.push({ msg: `Signed 90-day pricing contract with ${scSup.n} for ${TIRES[scTire].n} (locked at ${Math.round(currentMult * 100)}% market rate)`, cat: 'supplier' });
+        break;
+      }
+
       case 'takeLoan': {
         const { index } = params;
         const loan = LOANS[index];
         if (!loan) return res.status(400).json({ error: 'Invalid loan' });
         if ((g.loans || []).length >= 3) return res.status(400).json({ error: 'Max 3 active loans' });
         if (loan.rr && g.reputation < loan.rr) return res.status(400).json({ error: 'Not enough reputation' });
+        // Dynamic loan rate: base rate adjusted by market conditions (loanRateMult set in simDay)
+        const effectiveRate = +(loan.r * (g.loanRateMult || 1)).toFixed(4);
         g.cash += loan.amt;
         g.loans.push({
           id: uid(),
           name: loan.n,
           amt: loan.amt,
-          r: loan.r,
-          remaining: loan.amt * (1 + loan.r),
-          weeklyPayment: (loan.amt * (1 + loan.r)) / (loan.t * 4),
+          r: effectiveRate,
+          remaining: loan.amt * (1 + effectiveRate),
+          weeklyPayment: (loan.amt * (1 + effectiveRate)) / (loan.t * 4),
         });
         break;
       }
@@ -281,6 +330,14 @@ router.post('/', authMiddleware, async (req, res) => {
 
       case 'tutorialDone': {
         g.tutorialDone = true;
+        trackEvent(req.playerId, 'tutorial_done', {});
+        break;
+      }
+
+      case 'registerPushToken': {
+        const { token } = params;
+        if (!token || typeof token !== 'string') return res.status(400).json({ error: 'Invalid token' });
+        g.fcmToken = token;
         break;
       }
 
@@ -1616,6 +1673,7 @@ router.post('/', authMiddleware, async (req, res) => {
     }
 
     await savePlayerState(req.playerId, g);
+    trackEvent(req.playerId, 'action_performed', { action });
     res.json({ ok: true, state: g });
     }); // end withPlayerLock
   } catch (err) {

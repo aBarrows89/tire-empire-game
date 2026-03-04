@@ -312,25 +312,31 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /* Tutorial Overlay */
-/* Spotlight tutorial overlay — game visible behind */
+/* ========== TUTORIAL OVERLAY (Animated) ========== */
 .tutorial-spotlight-backdrop {
   position: fixed; inset: 0; z-index: 150;
   background: rgba(0,0,0,0.65);
   display: flex; align-items: flex-end; justify-content: center;
   padding: 16px;
   padding-bottom: max(env(safe-area-inset-bottom, 16px), 72px);
+  animation: tutorialBackdropIn .3s ease-out;
+}
+@keyframes tutorialBackdropIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .tutorial-spotlight-card {
   width: 100%; max-width: 420px;
   background: var(--card);
   border: 2px solid var(--gold);
   border-radius: 16px; padding: 20px 18px; text-align: center;
-  animation: tutorialSlideUp .35s ease-out;
+  animation: tutorialSlideUp .4s cubic-bezier(.22,.68,.36,1.2);
   box-shadow: 0 -4px 30px rgba(255,213,79,0.15);
+  will-change: transform, opacity;
 }
 @keyframes tutorialSlideUp {
-  from { opacity: 0; transform: translateY(40px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(60px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .tutorial-progress-bar {
   width: 100%; height: 3px; background: var(--border);
@@ -338,19 +344,8 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .tutorial-progress-fill {
   height: 100%; background: var(--gold); border-radius: 2px;
-  transition: width .3s ease;
+  transition: width .4s ease;
 }
-/* Legacy full-screen (kept for reference) */
-.tutorial-overlay {
-  display: flex; align-items: center; justify-content: center;
-  min-height: 100vh; padding: 16px;
-}
-.tutorial-card {
-  width: 100%; max-width: 400px;
-  background: var(--card); border: 1px solid var(--border);
-  border-radius: 14px; padding: 24px 20px; text-align: center;
-}
-.tutorial-vinnie { font-size: 56px; margin-bottom: 4px; }
 .tutorial-step-count {
   font-size: 11px; color: var(--text-dim); margin-bottom: 8px;
 }
@@ -360,13 +355,303 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .tutorial-text {
   font-size: 13px; line-height: 1.6; color: var(--text);
-  margin-bottom: 16px;
+  margin-bottom: 16px; min-height: 50px; text-align: left;
+  cursor: pointer; user-select: none;
 }
 .tutorial-hint {
   font-size: 11px; color: var(--text-dim); margin-bottom: 12px;
 }
 .tutorial-actions {
   display: flex; flex-direction: column;
+}
+.tutorial-actions .btn:disabled {
+  opacity: 0.4; pointer-events: none;
+}
+.tutorial-btn-ready {
+  animation: tutorialBtnPop .3s ease-out;
+}
+@keyframes tutorialBtnPop {
+  0% { transform: scale(0.9); opacity: 0.5; }
+  60% { transform: scale(1.05); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Typewriter cursor blink */
+.typewriter-cursor {
+  display: inline-block;
+  color: var(--gold);
+  animation: cursorBlink .6s step-end infinite;
+  font-weight: 300; margin-left: 1px;
+}
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Fade-in for title and hint */
+.tutorial-fade-in {
+  animation: tutorialFadeIn .5s ease-out;
+}
+.tutorial-fade-in-delay {
+  animation: tutorialFadeIn .5s ease-out .2s both;
+}
+@keyframes tutorialFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Vinnie avatar wrapper in tutorial */
+.tutorial-vinnie-wrap {
+  display: flex; justify-content: center; margin-bottom: 8px;
+  animation: vinnieEnter .5s cubic-bezier(.22,.68,.36,1.2);
+}
+@keyframes vinnieEnter {
+  from { opacity: 0; transform: scale(0.5) translateY(20px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ========== VINNIE AVATAR (CSS-drawn) ========== */
+.vinnie-avatar {
+  position: relative; border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  will-change: transform;
+}
+.vinnie-avatar-bg {
+  position: absolute; inset: 0;
+  background: linear-gradient(135deg, #2a1f3d 0%, #1a1232 100%);
+  border-radius: 50%;
+  border: 2px solid var(--gold);
+}
+.vinnie-avatar-suit {
+  position: absolute; bottom: 0; left: 10%; right: 10%; height: 30%;
+  background: linear-gradient(180deg, #1a1a2e 0%, #0d0d1a 100%);
+  border-radius: 0 0 50% 50%;
+  z-index: 1;
+}
+.vinnie-avatar-suit::before {
+  content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 0; height: 0;
+  border-left: 8px solid transparent; border-right: 8px solid transparent;
+  border-top: 10px solid #333;
+}
+.vinnie-avatar-face {
+  position: absolute; top: 18%; left: 20%; right: 20%; bottom: 30%;
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; z-index: 2;
+}
+.vinnie-eyes {
+  display: flex; gap: 14px; margin-bottom: 4px;
+}
+.vinnie-eye {
+  width: 8px; height: 8px; background: #fff; border-radius: 50%;
+  position: relative;
+  transition: transform .3s ease;
+}
+.vinnie-eye::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 4px; height: 4px; background: #111; border-radius: 50%;
+}
+/* Brow modifiers */
+.vinnie-eye::before {
+  content: ''; position: absolute; top: -5px; left: -1px;
+  width: 10px; height: 3px; background: #888;
+  border-radius: 2px;
+  transition: transform .3s ease;
+}
+.brow-furrowed::before { transform: rotate(-8deg) translateY(1px); }
+.brow-raised::before { transform: translateY(-2px); }
+.brow-raised-r.vinnie-eye-r::before { transform: translateY(-3px) rotate(5deg); }
+
+.vinnie-stache {
+  width: 22px; height: 6px; margin-top: 2px;
+  background: #666; border-radius: 50%;
+  position: relative;
+}
+.vinnie-stache::before, .vinnie-stache::after {
+  content: ''; position: absolute; top: -1px;
+  width: 12px; height: 5px; background: #666; border-radius: 50%;
+}
+.vinnie-stache::before { left: -4px; transform: rotate(-10deg); }
+.vinnie-stache::after { right: -4px; transform: rotate(10deg); }
+
+.vinnie-mouth {
+  width: 12px; height: 4px; margin-top: 3px;
+  border-radius: 0 0 6px 6px;
+  transition: all .3s ease;
+}
+.vinnie-mouth-smirk { width: 10px; height: 3px; border-bottom: 2px solid #c88; border-radius: 0 0 0 8px; transform: rotate(-5deg); }
+.vinnie-mouth-point, .vinnie-mouth-thumbsup { background: #c88; width: 10px; height: 5px; border-radius: 0 0 6px 6px; }
+.vinnie-mouth-think { width: 8px; height: 8px; border: 2px solid #c88; background: transparent; border-radius: 50%; }
+.vinnie-mouth-shrug { width: 14px; height: 2px; background: #c88; border-radius: 1px; }
+.vinnie-mouth-serious { width: 14px; height: 2px; background: #c88; border-radius: 1px; }
+.vinnie-mouth-money, .vinnie-mouth-excited { background: #c88; width: 14px; height: 7px; border-radius: 0 0 8px 8px; }
+
+.vinnie-chain {
+  position: absolute; bottom: 28%; left: 50%; transform: translateX(-50%);
+  width: 6px; height: 6px; background: var(--gold); border-radius: 50%;
+  box-shadow: 0 0 4px rgba(255,213,79,0.6);
+  z-index: 3;
+}
+
+/* Bounce animation for energetic emotions */
+.vinnie-bounce {
+  animation: vinnieBounce .6s ease-in-out;
+}
+@keyframes vinnieBounce {
+  0%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
+  50% { transform: translateY(0); }
+  70% { transform: translateY(-3px); }
+}
+
+/* ========== TUTORIAL PULSE on BottomNav ========== */
+.tutorial-pulse {
+  position: relative;
+  z-index: 160;
+}
+.tutorial-pulse::after {
+  content: ''; position: absolute; inset: -4px;
+  border: 2px solid var(--gold);
+  border-radius: 10px;
+  animation: tutorialPulseRing 1.2s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes tutorialPulseRing {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+/* ========== MAP PANEL ========== */
+.map-blurred {
+  filter: blur(6px);
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.5;
+}
+.premium-lock-banner {
+  background: var(--surface);
+  border: 1px solid var(--gold);
+  border-radius: 10px;
+  padding: 14px;
+  text-align: center;
+  margin-bottom: 12px;
+}
+.premium-lock-banner span {
+  font-size: 14px; font-weight: 700; color: var(--gold);
+}
+.premium-lock-banner p {
+  font-size: 12px; color: var(--text-dim);
+  margin: 6px 0 10px;
+}
+.btn-gold {
+  background: var(--gold); color: #000; font-weight: 700;
+  border: none; border-radius: 8px; padding: 6px 16px; cursor: pointer;
+}
+.map-mode-toggle {
+  display: flex; gap: 6px; margin-bottom: 10px;
+}
+.map-mode-btn {
+  flex: 1; padding: 6px 4px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text-dim);
+  font-size: 11px; cursor: pointer;
+  transition: all .2s ease;
+}
+.map-mode-btn.active {
+  background: var(--card); border-color: var(--gold);
+  color: var(--gold); font-weight: 600;
+}
+.map-container {
+  background: var(--surface); border-radius: 10px;
+  padding: 8px; margin-bottom: 10px;
+  overflow-x: auto;
+}
+.us-map-svg { touch-action: manipulation; }
+.map-glow {
+  animation: mapGlow 2s ease-in-out infinite;
+}
+@keyframes mapGlow {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.8; }
+}
+.map-drilldown {
+  animation: tutorialFadeIn .3s ease-out;
+}
+.map-drilldown-title {
+  font-size: 16px; font-weight: 700; color: var(--gold);
+  margin-bottom: 8px;
+}
+.map-shop-list { display: flex; flex-direction: column; gap: 6px; }
+.map-shop-row {
+  display: flex; justify-content: space-between;
+  align-items: center; padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.map-shop-name { font-size: 13px; font-weight: 600; }
+.map-shop-stats {
+  display: flex; gap: 10px; font-size: 11px; color: var(--text-dim);
+}
+.map-drilldown-empty { text-align: center; padding: 8px 0; }
+.map-city-chips {
+  display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;
+  margin-top: 6px;
+}
+.map-city-chip {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 2px 8px;
+  font-size: 10px; color: var(--text-dim);
+}
+.map-summary-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 8px; text-align: center;
+}
+.map-summary-item { padding: 6px 0; }
+.map-summary-val {
+  font-size: 18px; font-weight: 700; color: var(--green);
+}
+.map-summary-label {
+  font-size: 10px; color: var(--text-dim); margin-top: 2px;
+}
+
+/* Sales Report */
+.sales-report-table { display: flex; flex-direction: column; gap: 4px; }
+.sales-report-row {
+  display: grid; grid-template-columns: 110px 1fr auto;
+  align-items: center; gap: 8px; padding: 3px 0;
+}
+.sales-report-name {
+  font-size: 11px; font-weight: 600; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.sales-report-bar-wrap {
+  height: 10px; background: var(--surface);
+  border-radius: 5px; overflow: hidden;
+}
+.sales-report-bar {
+  height: 100%; border-radius: 5px; min-width: 2px;
+  transition: width .3s ease;
+}
+.sales-report-nums { font-size: 10px; white-space: nowrap; }
+
+/* Revenue Chart */
+.rev-chart-wrap { overflow: hidden; }
+.rev-chart-svg { width: 100%; display: block; }
+.chart-empty {
+  text-align: center; padding: 20px; color: var(--text-dim);
+  font-size: 12px;
+}
+.rev-chart-legend {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  margin-top: 8px; padding: 0 4px;
+}
+.rev-legend-item {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 10px; color: var(--text-dim);
+}
+.rev-legend-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  flex-shrink: 0;
 }
 
 /* Vinnie Tip Banner */
@@ -1012,6 +1297,15 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /* Header premium star */
+.ws-status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 4px;
+  flex-shrink: 0;
+  transition: background 0.3s ease;
+}
 .premium-star {
   color: var(--gold);
   font-size: 10px;

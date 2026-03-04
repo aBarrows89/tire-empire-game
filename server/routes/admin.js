@@ -3,7 +3,7 @@ import { adminAuthMiddleware } from '../middleware/adminAuth.js';
 import {
   getPlayer, createPlayer, savePlayerState, getAllActivePlayers, getGame, saveGame,
   getChatMessages, deleteChatMessage, getChatMutes, setChatMute, removeChatMute,
-  removePlayer, saveFile, getFile,
+  removePlayer, saveFile, getFile, getChatReports, updateChatReport,
 } from '../db/queries.js';
 import { NODE_ENV, STORAGE_TYPE, ADMIN_UIDS } from '../config.js';
 import { getWealth } from '../../shared/helpers/wealth.js';
@@ -331,6 +331,26 @@ router.post('/chat/unmute', async (req, res) => {
     if (!playerId) return res.status(400).json({ error: 'Missing playerId' });
     await removeChatMute(playerId);
     await auditLog(req, 'unmute', playerId, {});
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Chat Reports ──
+router.get('/chat/reports', async (req, res) => {
+  try {
+    const status = req.query.status || 'pending';
+    const reports = await getChatReports(status, 100);
+    res.json(reports);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/chat/reports/:id/resolve', async (req, res) => {
+  try {
+    await updateChatReport(req.params.id, { status: 'resolved' });
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

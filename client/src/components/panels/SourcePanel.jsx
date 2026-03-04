@@ -20,7 +20,8 @@ export default function SourcePanel() {
   const inv = getInv(g);
   const cap = getCap(g);
   const freeSpace = cap - inv;
-  const day = g.day || g.week || 1;
+  const playerDay = g.day || g.week || 1;
+  const day = (g.startDay || 1) + playerDay - 1;
   const cal = getCalendar(day);
 
   const buy = async (sourceId) => {

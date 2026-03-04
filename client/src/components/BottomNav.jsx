@@ -24,6 +24,7 @@ const SECONDARY_TABS = [
   { id: 'ecommerce', icon: '\u{1F4BB}', label: 'E-Com' },
   { id: 'wholesale', icon: '\u{1F69B}', label: 'Wholesale' },
   { id: 'exchange', icon: '\u{1F4C8}', label: 'Exchange' },
+  { id: 'map', icon: '\u{1F5FA}', label: 'Map' },
   { id: 'achievements', icon: '\u{1F3C5}', label: 'Awards' },
   { id: 'profile', icon: '\u{1F464}', label: 'Profile' },
   { id: 'log', icon: '\u{1F4CB}', label: 'Log' },
@@ -67,15 +68,26 @@ function getUnlockedTabs(g) {
   // Exchange: show if has brokerage or meets requirements
   if (g.stockExchange?.hasBrokerage || (g.reputation >= 10 && (g.locations || []).length >= 1)) unlocked.add('exchange');
 
+  // Map: available once you have any shop
+  if ((g.locations || []).length > 0) unlocked.add('map');
+
   return unlocked;
 }
 
 export default function BottomNav() {
   const { state, dispatch } = useGame();
   const [showMore, setShowMore] = useState(false);
+  const [tutorialTarget, setTutorialTarget] = useState(null);
   const g = state.game;
   const seenMsgCount = useRef(0);
   const [unreadChat, setUnreadChat] = useState(0);
+
+  // Listen for tutorial highlight events
+  useEffect(() => {
+    const handler = (e) => setTutorialTarget(e.detail || null);
+    window.addEventListener('tutorialHighlight', handler);
+    return () => window.removeEventListener('tutorialHighlight', handler);
+  }, []);
 
   // Track unread chat messages
   const msgCount = (state.chatMessages || []).length;
@@ -112,8 +124,9 @@ export default function BottomNav() {
               return (
                 <button
                   key={tab.id}
-                  className={`more-grid-btn${!isUnlocked ? ' locked' : ''}${state.activePanel === tab.id ? ' active' : ''}`}
+                  className={`more-grid-btn${!isUnlocked ? ' locked' : ''}${state.activePanel === tab.id ? ' active' : ''}${tutorialTarget === tab.id ? ' tutorial-pulse' : ''}`}
                   onClick={() => selectTab(tab.id)}
+                  data-tutorial-target={tab.id}
                 >
                   <span className="more-grid-icon">{tab.icon}</span>
                   {!isUnlocked && <span className="lock-badge">{'\u{1F512}'}</span>}
@@ -146,15 +159,16 @@ export default function BottomNav() {
         {primaryVisible.map(tab => (
           <button
             key={tab.id}
-            className={`nav-btn ${state.activePanel === tab.id && !activeInSecondary ? 'active' : ''}`}
+            className={`nav-btn ${state.activePanel === tab.id && !activeInSecondary ? 'active' : ''}${tutorialTarget === tab.id ? ' tutorial-pulse' : ''}`}
             onClick={() => { selectTab(tab.id); }}
+            data-tutorial-target={tab.id}
           >
             <span className="nav-icon">{tab.icon}</span>
             {tab.label}
           </button>
         ))}
         <button
-          className={`nav-btn ${showMore || activeInSecondary ? 'active' : ''}`}
+          className={`nav-btn ${showMore || activeInSecondary ? 'active' : ''}${tutorialTarget && SECONDARY_TABS.some(t => t.id === tutorialTarget) && !showMore ? ' tutorial-pulse' : ''}`}
           onClick={() => setShowMore(!showMore)}
           style={{ position: 'relative' }}
         >

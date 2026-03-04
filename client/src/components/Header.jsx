@@ -46,6 +46,11 @@ export default function Header() {
       </div>
       {g.companyName && (
         <div className="stat" style={{ marginLeft: 'auto' }}>
+          <span
+            className="ws-status-dot"
+            style={{ background: state.wsConnected ? 'var(--green)' : 'var(--red)' }}
+            title={state.wsConnected ? 'Connected' : 'Reconnecting...'}
+          />
           {g.isPremium && <span className="premium-star">{'\u2B50'}</span>}
           <span className={`stat-label text-xs${(g.cosmetics || []).includes('gold_name') ? ' gold-name' : ''}`}>{g.companyName}</span>
         </div>

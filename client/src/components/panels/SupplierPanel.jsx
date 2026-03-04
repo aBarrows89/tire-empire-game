@@ -208,17 +208,60 @@ export default function SupplierPanel() {
                   {(() => {
                     const ot = TIRES[orderTire];
                     if (!ot) return null;
-                    const perTire = Math.round(ot.bMin * (1 - sup.disc) * 100) / 100;
+                    const mktMult = (g._supplierPricing || {})[orderTire] || 1.0;
+                    // Check for active contract
+                    const contract = (g.supplierContracts || []).find(c => c.supplierIndex === index && c.tire === orderTire && c.expiresDay > (g.day || 0));
+                    const effectiveMult = contract ? contract.lockedMult : mktMult;
+                    const perTire = Math.round(ot.bMin * effectiveMult * (1 - sup.disc) * 100) / 100;
                     const relDisc = currentTier.discBonus || 0;
                     const effectivePerTire = Math.round(perTire * (1 - relDisc) * 100) / 100;
                     const total = Math.round(effectivePerTire * orderQty);
+                    const mktPctStr = Math.round(mktMult * 100);
                     return (
                       <div className="text-xs text-dim" style={{ marginTop: 4 }}>
-                        ${effectivePerTire}/tire {relDisc > 0 ? `(incl. ${(relDisc*100).toFixed(0)}% loyalty)` : ''} = <span className="font-bold">${fmt(total)} total</span>
+                        <span style={{ color: mktMult > 1.02 ? 'var(--red)' : mktMult < 0.98 ? 'var(--green)' : 'var(--text-dim)' }}>
+                          Market: {mktPctStr}%
+                        </span>
+                        {contract && <span className="text-green" style={{ marginLeft: 6 }}>CONTRACT {Math.round(contract.lockedMult * 100)}%</span>}
+                        {' '}{'\u00B7'}{' '}
+                        ${effectivePerTire}/tire {relDisc > 0 ? `(+${(relDisc*100).toFixed(0)}% loyalty)` : ''} = <span className="font-bold">${fmt(total)} total</span>
                       </div>
                     );
                   })()}
                 </div>
+
+                {/* Contract Section */}
+                {currentTier.level >= 3 && (
+                  <div style={{ marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
+                    <div className="text-xs font-bold mb-4">{'\u{1F4DD}'} Pricing Contracts</div>
+                    {(() => {
+                      const activeContracts = (g.supplierContracts || []).filter(c => c.supplierIndex === index && c.expiresDay > (g.day || 0));
+                      return (
+                        <>
+                          {activeContracts.length > 0 && activeContracts.map(c => (
+                            <div key={c.id} className="row-between text-xs mb-4" style={{ padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
+                              <span>{c.tireName} @ {Math.round(c.lockedMult * 100)}%</span>
+                              <span className="text-dim">{c.expiresDay - (g.day || 0)} days left</span>
+                            </div>
+                          ))}
+                          <div className="text-xs text-dim mb-4">Lock in current prices for 90 days on any tire.</div>
+                          <button
+                            className="btn btn-sm btn-outline"
+                            disabled={busy === `sc${index}`}
+                            onClick={async () => {
+                              setBusy(`sc${index}`);
+                              await postAction('signSupplierContract', { supplierIndex: index, tire: orderTire });
+                              refreshState();
+                              setBusy(null);
+                            }}
+                          >
+                            Sign Contract for {TIRES[orderTire]?.n || orderTire}
+                          </button>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
 
                 {/* Auto-Order Section */}
                 <div style={{ marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
