@@ -25,8 +25,9 @@
       <button class="tab" data-tab="chat">Chat</button>
       <button class="tab" data-tab="economy">Economy</button>
       <button class="tab" data-tab="events">Events</button>
-      <button class="tab" data-tab="server">Server</button>
-      <button class="tab" data-tab="audit">Audit Log</button>
+      <button class="tab" data-tab="marketing">Marketing</button>
+      <button class="tab" data-tab="retention">Retention</button>
+      <button class="tab" data-tab="operations">Operations</button>
       <button class="tab" data-tab="settings">Settings</button>
     </nav>
 
@@ -87,21 +88,44 @@
 
       <!-- Economy Tab -->
       <section id="tab-economy" class="tab-content">
-        <div class="stat-grid" id="economy-stats"></div>
-        <h3 style="margin:12px 0 8px">Commodity Indices</h3>
-        <div class="controls-row" id="commodity-controls"></div>
-        <div class="controls-row" style="margin-top:12px">
-          <div class="index-control">
-            <label>TC Value ($)</label>
-            <input type="number" id="tc-value-input" min="1000" step="1000" style="width:100px">
-            <button class="btn btn-blue btn-sm" onclick="setTcValue()">Set</button>
-          </div>
+        <div class="sub-tabs" id="economy-sub-tabs">
+          <button class="sub-tab active" data-sub="economy-overview">Overview</button>
+          <button class="sub-tab" data-sub="economy-bots">Bots</button>
+          <button class="sub-tab" data-sub="economy-simulator">Simulator</button>
+          <button class="sub-tab" data-sub="economy-schedule">Events</button>
+          <button class="sub-tab" data-sub="economy-watch">Market Watch</button>
         </div>
-        <h3 style="margin:16px 0 8px">Top 10 by Wealth</h3>
-        <table>
-          <thead><tr><th>#</th><th>Company</th><th>Wealth</th><th>Cash</th><th>Rep</th><th>Shops</th></tr></thead>
-          <tbody id="top10-tbody"></tbody>
-        </table>
+
+        <div id="economy-overview" class="sub-content active">
+          <div class="stat-grid" id="economy-stats"></div>
+          <h3 style="margin:12px 0 8px">Commodity Indices</h3>
+          <div class="controls-row" id="commodity-controls"></div>
+          <div class="controls-row" style="margin-top:12px">
+            <div class="index-control">
+              <label>TC Value ($)</label>
+              <input type="number" id="tc-value-input" min="1000" step="1000" style="width:100px">
+              <button class="btn btn-blue btn-sm" onclick="setTcValue()">Set</button>
+            </div>
+          </div>
+          <h3 style="margin:16px 0 8px">Top 10 by Wealth</h3>
+          <table>
+            <thead><tr><th>#</th><th>Company</th><th>Wealth</th><th>Cash</th><th>Rep</th><th>Shops</th></tr></thead>
+            <tbody id="top10-tbody"></tbody>
+          </table>
+        </div>
+
+        <div id="economy-bots" class="sub-content">
+          <div id="bot-controls"></div>
+        </div>
+        <div id="economy-simulator" class="sub-content">
+          <div id="sim-controls"></div>
+        </div>
+        <div id="economy-schedule" class="sub-content">
+          <div id="schedule-controls"></div>
+        </div>
+        <div id="economy-watch" class="sub-content">
+          <div id="watch-alerts"></div>
+        </div>
       </section>
 
       <!-- Events Tab -->
@@ -116,41 +140,100 @@
         </div>
       </section>
 
-      <!-- Server Tab -->
-      <section id="tab-server" class="tab-content">
-        <div class="stat-grid" id="server-stats"></div>
-        <h3 style="margin:16px 0 8px">Tick Control</h3>
-        <div class="controls-row">
-          <div class="index-control">
-            <label>Tick Speed (ms)</label>
-            <input type="number" id="tick-speed-input" min="1000" max="120000" step="1000" style="width:100px">
-            <button class="btn btn-blue btn-sm" onclick="changeTickSpeed()">Set</button>
-          </div>
-          <button class="btn btn-red btn-sm" id="pause-btn" onclick="pauseTick()">Pause</button>
-          <button class="btn btn-green btn-sm" id="resume-btn" onclick="resumeTick()">Resume</button>
+      <!-- Marketing Tab -->
+      <section id="tab-marketing" class="tab-content">
+        <div class="sub-tabs" id="marketing-sub-tabs">
+          <button class="sub-tab active" data-sub="mkt-reddit">Reddit Scout</button>
+          <button class="sub-tab" data-sub="mkt-content">Content</button>
+          <button class="sub-tab" data-sub="mkt-referrals">Referrals</button>
         </div>
-        <h3 style="margin:16px 0 8px">Broadcast Announcement</h3>
-        <div class="broadcast-form">
-          <textarea id="broadcast-msg" placeholder="Message to all players..." rows="2"></textarea>
-          <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
-            <select id="broadcast-severity">
-              <option value="info">Info</option>
-              <option value="warning">Warning</option>
-              <option value="critical">Critical</option>
-            </select>
-            <button class="btn btn-blue btn-sm" onclick="sendBroadcast()">Send to All</button>
-            <span id="broadcast-result" style="color:#4caf50;font-size:12px"></span>
-          </div>
+        <div id="mkt-reddit" class="sub-content active">
+          <div id="reddit-content"></div>
+        </div>
+        <div id="mkt-content" class="sub-content">
+          <div id="social-content"></div>
+        </div>
+        <div id="mkt-referrals" class="sub-content">
+          <div id="referral-content"></div>
         </div>
       </section>
 
-      <!-- Audit Log Tab -->
-      <section id="tab-audit" class="tab-content">
-        <button class="btn btn-outline btn-sm" onclick="loadAuditLog()" style="margin-bottom:8px">Refresh</button>
-        <table>
-          <thead><tr><th>Time</th><th>Admin</th><th>Action</th><th>Target</th><th>Details</th></tr></thead>
-          <tbody id="audit-tbody"></tbody>
-        </table>
+      <!-- Retention Tab -->
+      <section id="tab-retention" class="tab-content">
+        <div class="sub-tabs" id="retention-sub-tabs">
+          <button class="sub-tab active" data-sub="ret-churn">Churn Risk</button>
+          <button class="sub-tab" data-sub="ret-journey">Journey</button>
+          <button class="sub-tab" data-sub="ret-push">Push Manager</button>
+        </div>
+        <div id="ret-churn" class="sub-content active">
+          <div id="churn-content"></div>
+        </div>
+        <div id="ret-journey" class="sub-content">
+          <div id="journey-content"></div>
+        </div>
+        <div id="ret-push" class="sub-content">
+          <div id="push-content"></div>
+        </div>
+      </section>
+
+      <!-- Operations Tab (absorbs Server + Audit) -->
+      <section id="tab-operations" class="tab-content">
+        <div class="sub-tabs" id="ops-sub-tabs">
+          <button class="sub-tab active" data-sub="ops-system">System</button>
+          <button class="sub-tab" data-sub="ops-audit">Audit</button>
+          <button class="sub-tab" data-sub="ops-announce">Announce</button>
+          <button class="sub-tab" data-sub="ops-health">Health</button>
+          <button class="sub-tab" data-sub="ops-abtests">A/B Tests</button>
+          <button class="sub-tab" data-sub="ops-revenue">Revenue</button>
+        </div>
+
+        <div id="ops-system" class="sub-content active">
+          <div class="stat-grid" id="server-stats"></div>
+          <h3 style="margin:16px 0 8px">Tick Control</h3>
+          <div class="controls-row">
+            <div class="index-control">
+              <label>Tick Speed (ms)</label>
+              <input type="number" id="tick-speed-input" min="1000" max="120000" step="1000" style="width:100px">
+              <button class="btn btn-blue btn-sm" onclick="changeTickSpeed()">Set</button>
+            </div>
+            <button class="btn btn-red btn-sm" id="pause-btn" onclick="pauseTick()">Pause</button>
+            <button class="btn btn-green btn-sm" id="resume-btn" onclick="resumeTick()">Resume</button>
+          </div>
+          <h3 style="margin:16px 0 8px">Broadcast Announcement</h3>
+          <div class="broadcast-form">
+            <textarea id="broadcast-msg" placeholder="Message to all players..." rows="2"></textarea>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+              <select id="broadcast-severity">
+                <option value="info">Info</option>
+                <option value="warning">Warning</option>
+                <option value="critical">Critical</option>
+              </select>
+              <button class="btn btn-blue btn-sm" onclick="sendBroadcast()">Send to All</button>
+              <span id="broadcast-result" style="color:#4caf50;font-size:12px"></span>
+            </div>
+          </div>
+        </div>
+
+        <div id="ops-audit" class="sub-content">
+          <button class="btn btn-outline btn-sm" onclick="loadAuditLog()" style="margin-bottom:8px">Refresh</button>
+          <table>
+            <thead><tr><th>Time</th><th>Admin</th><th>Action</th><th>Target</th><th>Details</th></tr></thead>
+            <tbody id="audit-tbody"></tbody>
+          </table>
+        </div>
+
+        <div id="ops-announce" class="sub-content">
+          <div id="announce-content"></div>
+        </div>
+        <div id="ops-health" class="sub-content">
+          <div id="health-content"></div>
+        </div>
+        <div id="ops-abtests" class="sub-content">
+          <div id="abtest-content"></div>
+        </div>
+        <div id="ops-revenue" class="sub-content">
+          <div id="revenue-content"></div>
+        </div>
       </section>
 
       <!-- Settings Tab -->
@@ -201,5 +284,8 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="admin.js"></script>
+  <script src="operations.js"></script>
+  <script src="retention.js"></script>
+  <script src="marketing.js"></script>
 </body>
 </html>

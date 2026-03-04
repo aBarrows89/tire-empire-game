@@ -171,6 +171,109 @@ async function ensureSchema() {
       CREATE INDEX IF NOT EXISTS idx_trades_players ON direct_trades(sender_id, receiver_id);
       CREATE INDEX IF NOT EXISTS idx_shop_sales_status ON shop_sale_listings(status);
       CREATE INDEX IF NOT EXISTS idx_shop_sales_seller ON shop_sale_listings(seller_id);
+
+      -- Admin tools tables
+      CREATE TABLE IF NOT EXISTS announcements (
+        id            TEXT PRIMARY KEY,
+        message       TEXT NOT NULL,
+        style         TEXT NOT NULL DEFAULT 'info',
+        active        BOOLEAN DEFAULT true,
+        expires_at    TIMESTAMPTZ,
+        created_by    TEXT,
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS ab_tests (
+        id            TEXT PRIMARY KEY,
+        name          TEXT,
+        constant_key  TEXT,
+        control_value TEXT,
+        variant_value TEXT,
+        metric        TEXT,
+        active        BOOLEAN DEFAULT false,
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS ab_test_assignments (
+        player_id     TEXT NOT NULL,
+        test_id       TEXT NOT NULL REFERENCES ab_tests(id) ON DELETE CASCADE,
+        group_name    TEXT NOT NULL,
+        PRIMARY KEY (player_id, test_id)
+      );
+      CREATE TABLE IF NOT EXISTS revenue_events (
+        id            SERIAL PRIMARY KEY,
+        player_id     TEXT,
+        event_type    TEXT NOT NULL,
+        revenue_cents INTEGER DEFAULT 0,
+        platform      TEXT,
+        metadata      JSONB DEFAULT '{}',
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS scheduled_events (
+        id            TEXT PRIMARY KEY,
+        event_id      TEXT NOT NULL,
+        trigger_day   INTEGER NOT NULL,
+        duration      INTEGER,
+        status        TEXT DEFAULT 'scheduled',
+        created_by    TEXT,
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS player_milestones (
+        player_id     TEXT NOT NULL,
+        milestone_id  TEXT NOT NULL,
+        reached_day   INTEGER NOT NULL,
+        reached_at    TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (player_id, milestone_id)
+      );
+      CREATE TABLE IF NOT EXISTS push_templates (
+        id            TEXT PRIMARY KEY,
+        name          TEXT NOT NULL,
+        title         TEXT NOT NULL,
+        body          TEXT NOT NULL,
+        segment       TEXT DEFAULT 'all',
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS push_history (
+        id            SERIAL PRIMARY KEY,
+        template_id   TEXT,
+        player_id     TEXT,
+        title         TEXT NOT NULL,
+        body          TEXT NOT NULL,
+        sent_at       TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS reddit_threads (
+        id            TEXT PRIMARY KEY,
+        subreddit     TEXT NOT NULL,
+        title         TEXT,
+        body          TEXT,
+        author        TEXT,
+        url           TEXT NOT NULL,
+        score         INTEGER DEFAULT 0,
+        matched_keywords TEXT[],
+        relevance     REAL DEFAULT 0,
+        status        TEXT DEFAULT 'new',
+        notes         TEXT,
+        reviewed_at   TIMESTAMPTZ,
+        engaged_at    TIMESTAMPTZ,
+        fetched_at    TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS referral_codes (
+        code          TEXT PRIMARY KEY,
+        channel       TEXT NOT NULL,
+        campaign      TEXT,
+        active        BOOLEAN DEFAULT true,
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS referral_events (
+        id            SERIAL PRIMARY KEY,
+        code          TEXT,
+        player_id     TEXT,
+        event_type    TEXT NOT NULL,
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_reddit_status ON reddit_threads(status);
+      CREATE INDEX IF NOT EXISTS idx_reddit_fetched ON reddit_threads(fetched_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_referral_code ON referral_events(code);
+      CREATE INDEX IF NOT EXISTS idx_revenue_time ON revenue_events(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_scheduled_day ON scheduled_events(trigger_day);
       INSERT INTO games (id) VALUES ('default') ON CONFLICT DO NOTHING;
     `);
     // Migration: add version column if missing (existing DBs)

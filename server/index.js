@@ -4,7 +4,7 @@ import { createServer } from 'http';
 import rateLimit from 'express-rate-limit';
 import { WebSocketServer } from 'ws';
 import { PORT, CORS_ORIGIN, NODE_ENV, FIREBASE_PROJECT_ID, FIREBASE_API_KEY } from './config.js';
-import { startTickLoop, stopTickLoop, setTickSpeed, getTickSpeed, isTickRunning } from './tick/tickLoop.js';
+import { startTickLoop, stopTickLoop, setTickSpeed, getTickSpeed, isTickRunning, getTickStats } from './tick/tickLoop.js';
 import { handleConnection, startHeartbeat } from './ws/handler.js';
 import { getAllActivePlayers, addShopSaleListing, getShopSaleListings } from './db/queries.js';
 import { CITIES } from '../shared/constants/cities.js';
@@ -26,6 +26,10 @@ import wholesaleRouter from './routes/wholesale.js';
 import exchangeRouter from './routes/exchange.js';
 import adminRouter from './routes/admin.js';
 import analyticsRouter from './routes/analytics.js';
+import adminOperationsRouter from './routes/admin/operations.js';
+import adminRetentionRouter from './routes/admin/retention.js';
+import adminMarketingRouter from './routes/admin/marketing.js';
+import adminEconomyToolsRouter from './routes/admin/economy.js';
 import { startAnalytics } from './analytics/tracker.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -75,6 +79,10 @@ app.use('/api/wholesale', wholesaleRouter);
 app.use('/api/exchange', exchangeRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/admin/analytics', analyticsRouter);
+app.use('/api/admin/operations', adminOperationsRouter);
+app.use('/api/admin/retention', adminRetentionRouter);
+app.use('/api/admin/marketing', adminMarketingRouter);
+app.use('/api/admin/economy', adminEconomyToolsRouter);
 
 // ── Admin Dashboard (static HTML) ──
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -120,7 +128,9 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server });
 const clients = new Set();
 app.locals.wsClients = clients;
-app.locals.tickLoop = { setTickSpeed, stopTickLoop, startTickLoop, getTickSpeed, isTickRunning };
+app.locals.tickLoop = { setTickSpeed, stopTickLoop, startTickLoop, getTickSpeed, isTickRunning, getTickStats };
+app.locals.tickStats = null; // Lazy — populated by getter
+Object.defineProperty(app.locals, 'tickStats', { get: () => getTickStats() });
 
 wss.on('connection', (ws) => handleConnection(ws, clients));
 startHeartbeat(clients);

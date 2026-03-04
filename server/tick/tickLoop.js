@@ -374,7 +374,20 @@ async function resolveAuctions(currentDay) {
  * Run one tick: advance all active players by one day.
  * @param {Set} clients - WebSocket client set for broadcasting
  */
+// Tick timing stats (rolling last 100 ticks)
+const _tickTimings = [];
+export function getTickStats() {
+  if (_tickTimings.length === 0) return { lastMs: 0, avgMs: 0, p95Ms: 0 };
+  const sorted = [..._tickTimings].sort((a, b) => a - b);
+  return {
+    lastMs: _tickTimings[_tickTimings.length - 1],
+    avgMs: Math.round(_tickTimings.reduce((a, b) => a + b, 0) / _tickTimings.length),
+    p95Ms: sorted[Math.floor(sorted.length * 0.95)] || sorted[sorted.length - 1],
+  };
+}
+
 export async function runTick(clients) {
+  const _tickStart = Date.now();
   try {
     const game = await getGame();
     if (!game) return;
@@ -734,6 +747,8 @@ export async function runTick(clients) {
     for (const player of players) {
       const state = player.game_state;
       if (isBotPlayer(state)) {
+        // Skip bot simulation if paused by admin
+        if (game.economy?.botsPaused) continue;
         // Lightweight bot simulation (legacy isAI + stealth _botConfig)
         try {
           const newState = simAIPlayerDay(state);
@@ -926,6 +941,10 @@ export async function runTick(clients) {
     }
   } catch (err) {
     console.error('Tick error:', err);
+  } finally {
+    const elapsed = Date.now() - _tickStart;
+    _tickTimings.push(elapsed);
+    if (_tickTimings.length > 100) _tickTimings.shift();
   }
 }
 

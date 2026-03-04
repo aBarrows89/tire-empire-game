@@ -116,14 +116,50 @@ document.getElementById('admin-tabs').addEventListener('click', e => {
   if (id === 'chat') { loadChat(); loadMutes(); }
   if (id === 'economy') loadEconomy();
   if (id === 'events') loadEvents();
-  if (id === 'server') loadServerStats();
-  if (id === 'audit') loadAuditLog();
+  if (id === 'operations') { loadServerStats(); loadAuditLog(); if (typeof loadOperations === 'function') loadOperations(); }
+  if (id === 'marketing') { if (typeof loadMarketing === 'function') loadMarketing(); }
+  if (id === 'retention') { if (typeof loadRetention === 'function') loadRetention(); }
   if (id === 'settings') loadSettings();
 
   clearInterval(serverStatsInterval);
-  if (id === 'server') {
+  if (id === 'operations') {
     serverStatsInterval = setInterval(loadServerStats, 10000);
   }
+});
+
+// ═══════════════════════════════════════
+// SUB-TAB SWITCHING (delegated)
+// ═══════════════════════════════════════
+
+document.addEventListener('click', e => {
+  const subTab = e.target.closest('.sub-tab');
+  if (!subTab) return;
+  const container = subTab.closest('.tab-content');
+  if (!container) return;
+  container.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+  container.querySelectorAll('.sub-content').forEach(c => c.classList.remove('active'));
+  subTab.classList.add('active');
+  const target = document.getElementById(subTab.dataset.sub);
+  if (target) target.classList.add('active');
+
+  // Trigger sub-tab load functions
+  const sub = subTab.dataset.sub;
+  if (sub === 'economy-bots' && typeof loadBots === 'function') loadBots();
+  if (sub === 'economy-simulator' && typeof loadSimulator === 'function') loadSimulator();
+  if (sub === 'economy-schedule' && typeof loadSchedule === 'function') loadSchedule();
+  if (sub === 'economy-watch' && typeof loadMarketWatch === 'function') loadMarketWatch();
+  if (sub === 'ops-health' && typeof loadDbHealth === 'function') loadDbHealth();
+  if (sub === 'ops-announce' && typeof loadAnnouncements === 'function') loadAnnouncements();
+  if (sub === 'ops-abtests' && typeof loadAbTests === 'function') loadAbTests();
+  if (sub === 'ops-revenue' && typeof loadRevenue === 'function') loadRevenue();
+  if (sub === 'ops-audit') loadAuditLog();
+  if (sub === 'ops-system') loadServerStats();
+  if (sub === 'mkt-reddit' && typeof loadRedditScout === 'function') loadRedditScout();
+  if (sub === 'mkt-content' && typeof loadSocialContent === 'function') loadSocialContent();
+  if (sub === 'mkt-referrals' && typeof loadReferrals === 'function') loadReferrals();
+  if (sub === 'ret-churn' && typeof loadChurnRisk === 'function') loadChurnRisk();
+  if (sub === 'ret-journey' && typeof loadJourneys === 'function') loadJourneys();
+  if (sub === 'ret-push' && typeof loadPushManager === 'function') loadPushManager();
 });
 
 // ═══════════════════════════════════════
