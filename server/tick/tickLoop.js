@@ -1259,7 +1259,54 @@ export async function runTick(clients) {
         applyAutoSource(state);
         if (state.hasAutoRestock || state.isPremium) applyAutoSupplier(state);
         const newState = simDay(state, shared);
-        await savePlayerState(player.id, newState);
+
+        // ── Merge-save: re-read latest DB state so mid-tick player actions
+        // (deposit, withdraw, loan repay, takeLoan, buy stock, etc.) are not overwritten.
+        // We apply the economic DELTAS from simDay onto the freshest DB state.
+        try {
+          const fresh = await getPlayer(player.id);
+          if (fresh && fresh.version > (player.version || 0)) {
+            const fs = fresh.game_state;
+            // Compute deltas that simDay produced (costs, revenue, loan payments, interest)
+            const cashDelta = newState.cash - state.cash;
+            const bankDelta = (newState.bankBalance || 0) - (state.bankBalance || 0);
+
+            // For loans: simDay reduced remaining on existing loans.
+            // Fresh state may have new loans added or existing ones repaid by the player.
+            // Strategy: start from fresh loans, apply the same payment reductions simDay made
+            const freshLoans = (fs.loans || []).map(fl => {
+              const simLoan = (newState.loans || []).find(sl => sl.id === fl.id);
+              if (simLoan) {
+                // Apply the payment reduction: remaining went down by this much in simDay
+                const originalLoan = (state.loans || []).find(ol => ol.id === fl.id);
+                const reduction = originalLoan ? (originalLoan.remaining - simLoan.remaining) : 0;
+                return { ...fl, remaining: Math.max(0, fl.remaining - reduction) };
+              }
+              // New loan taken by player during tick — keep it untouched
+              return fl;
+            }).filter(l => l.remaining > 0);
+            // Also include any new loans simDay created (shouldn't happen but be safe)
+            for (const sl of (newState.loans || [])) {
+              if (!freshLoans.find(fl => fl.id === sl.id)) freshLoans.push(sl);
+            }
+
+            const merged = {
+              ...newState,
+              cash: (fs.cash || 0) + cashDelta,
+              bankBalance: (fs.bankBalance || 0) + bankDelta,
+              loans: freshLoans,
+              log: [...(fs.log || []).slice(-30), ...(newState.log || [])],
+            };
+            await savePlayerState(player.id, merged);
+            Object.assign(newState, merged);
+            console.log(`[Tick] Merge-save for ${player.id}: cash delta ${cashDelta >= 0 ? '+' : ''}${Math.round(cashDelta)}, bank delta ${bankDelta >= 0 ? '+' : ''}${Math.round(bankDelta)}`);
+          } else {
+            await savePlayerState(player.id, newState);
+          }
+        } catch (_mergeErr) {
+          console.error('[Tick] Merge-save error, falling back:', _mergeErr.message);
+          await savePlayerState(player.id, newState);
+        }
 
         // ── Franchise royalty cross-player transfers ──
         if (newState._franchisePayments?.length > 0) {

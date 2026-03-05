@@ -128,6 +128,7 @@ export function simDay(g, shared = {}) {
   // Deep-clone mutable nested objects
   s.locations = s.locations.map(l => ({ ...l, inventory: { ...(l.inventory || {}) } }));
   s.warehouseInventory = { ...(s.warehouseInventory || {}) };
+  s.loans = (s.loans || []).map(l => ({ ...l })); // deep-clone so mutations don't affect caller's reference
 
   // Migration: ensure per-location inventory is populated
   const globalInv = Object.values(s.inventory).reduce((a, b) => a + b, 0);
