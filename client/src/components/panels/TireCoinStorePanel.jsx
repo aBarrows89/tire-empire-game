@@ -49,26 +49,40 @@ function StoreSection({ title, icon, children, defaultOpen = false }) {
 
 function StoreItem({ name, cost, description, onBuy, busy, disabled, disabledReason, tc }) {
   const canAfford = (tc || 0) >= cost;
+  const isUnavailable = disabled || busy;
   return (
     <div style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
       <div className="row-between">
-        <div>
+        <div style={{ flex: 1, minWidth: 0, paddingRight: 8 }}>
           <div className="font-bold text-sm">{name}</div>
           <div className="text-xs text-dim" style={{ marginTop: 2 }}>{description}</div>
-          {disabled && disabledReason && <div className="text-xs" style={{ color: 'var(--yellow)', marginTop: 2 }}>{disabledReason}</div>}
+          {disabled && disabledReason && (
+            <div className="text-xs" style={{ color: 'var(--yellow)', marginTop: 2 }}>{disabledReason}</div>
+          )}
         </div>
         <button
           className="btn btn-sm"
           style={{
-            background: canAfford && !disabled ? 'var(--gold)' : 'rgba(255,255,255,0.1)',
-            color: canAfford && !disabled ? '#000' : 'var(--text-dim)',
+            background: canAfford && !isUnavailable ? 'var(--gold)' : 'rgba(255,255,255,0.08)',
+            color: canAfford && !isUnavailable ? '#000' : 'rgba(255,255,255,0.3)',
             minWidth: 70,
-            opacity: disabled ? 0.5 : 1,
+            opacity: isUnavailable ? 0.45 : canAfford ? 1 : 0.6,
+            cursor: isUnavailable ? 'not-allowed' : canAfford ? 'pointer' : 'default',
+            transition: 'opacity 0.2s, background 0.2s',
+            pointerEvents: isUnavailable ? 'none' : undefined,
           }}
           onClick={onBuy}
           disabled={!canAfford || busy || disabled}
         >
-          {busy ? '...' : <><TireCoin size={14}/> {cost}</>}
+          {busy ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ display: 'inline-block', width: 10, height: 10, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'rgba(255,255,255,0.7)', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
+            </span>
+          ) : disabled ? (
+            <span style={{ fontSize: 11 }}>🔒</span>
+          ) : (
+            <><TireCoin size={14}/> {cost}</>
+          )}
         </button>
       </div>
     </div>
@@ -169,17 +183,26 @@ export default function TireCoinStorePanel() {
     });
   }, [refreshState]);
 
+  const [recentlyBought, setRecentlyBought] = useState(new Set());
+
   const doAction = async (action, params = {}) => {
     setBusy(action);
+    setRecentlyBought(prev => new Set([...prev, action]));
     try {
-      await postAction(action, params);
-      hapticsMedium();
+      const res = await postAction(action, params);
+      if (res?.ok !== false) hapticsMedium();
       await refreshState();
     } catch (e) {
       // Error handled by postAction toast
+      setRecentlyBought(prev => { const n = new Set(prev); n.delete(action); return n; });
     }
     setBusy(null);
+    // Keep greyed out for 2s after refresh to let React re-render with new game state
+    setTimeout(() => setRecentlyBought(prev => { const n = new Set(prev); n.delete(action); return n; }), 2000);
   };
+
+  // Helper: is this action recently bought or busy?
+  const isLocked = (action) => busy === action || recentlyBought.has(action);
 
   const handlePurchase = async (tierId) => {
     setBusy('purchasing');
@@ -249,7 +272,7 @@ export default function TireCoinStorePanel() {
           cost={TC_RUSH.retreading.cost}
           description="Complete all pending retreads instantly"
           onBuy={() => doAction('rushRetread')}
-          busy={busy === 'rushRetread'}
+          busy={isLocked('rushRetread')}
           disabled={!(g.retreadQueue || []).some(r => r.completionDay > g.day)}
           disabledReason="No retreads in progress"
           tc={tc}
@@ -259,7 +282,7 @@ export default function TireCoinStorePanel() {
           cost={TC_RUSH.shopConstruction.cost}
           description="Finish shop construction instantly"
           onBuy={() => doAction('rushShopConstruction')}
-          busy={busy === 'rushShopConstruction'}
+          busy={isLocked('rushShopConstruction')}
           disabled={!g._pendingShop}
           disabledReason="No shop under construction"
           tc={tc}
@@ -269,7 +292,7 @@ export default function TireCoinStorePanel() {
           cost={TC_RUSH.factoryBatch.costPerDay * 3}
           description={`Skip up to 50% of production time (${TC_RUSH.factoryBatch.costPerDay} TC/day skipped)`}
           onBuy={() => doAction('rushFactoryBatch')}
-          busy={busy === 'rushFactoryBatch'}
+          busy={isLocked('rushFactoryBatch')}
           disabled={!g.hasFactory || !(g.factory?.productionQueue || []).some(q => q.completionDay > g.day)}
           disabledReason={!g.hasFactory ? 'No factory' : 'No production in progress'}
           tc={tc}
@@ -279,7 +302,7 @@ export default function TireCoinStorePanel() {
           cost={TC_RUSH.rdProject.costPerDay * 5}
           description={`Skip up to 30% of R&D time (${TC_RUSH.rdProject.costPerDay} TC/day skipped)`}
           onBuy={() => doAction('rushRDProject')}
-          busy={busy === 'rushRDProject'}
+          busy={isLocked('rushRDProject')}
           disabled={!g.factory?.rdProjects?.some(p => !p.earned && p.completionDay > g.day)}
           disabledReason="No R&D in progress"
           tc={tc}
@@ -293,7 +316,7 @@ export default function TireCoinStorePanel() {
           cost={TC_SUPPLIER_ACCESS.premiumSupplierUnlock.cost}
           description={`Reduce supplier rep requirement by ${TC_SUPPLIER_ACCESS.premiumSupplierUnlock.repDiscount} (${TC_SUPPLIER_ACCESS.premiumSupplierUnlock.maxUses - (g._supplierUnlockUses || 0)} uses left)`}
           onBuy={() => doAction('buySupplierAccess')}
-          busy={busy === 'buySupplierAccess'}
+          busy={isLocked('buySupplierAccess')}
           disabled={(g._supplierUnlockUses || 0) >= TC_SUPPLIER_ACCESS.premiumSupplierUnlock.maxUses}
           disabledReason="All uses spent"
           tc={tc}
@@ -303,7 +326,7 @@ export default function TireCoinStorePanel() {
           cost={TC_SUPPLIER_ACCESS.priorityRestocking.cost}
           description="First dibs on supply during crunches for 7 days"
           onBuy={() => doAction('buyPriorityRestock')}
-          busy={busy === 'buyPriorityRestock'}
+          busy={isLocked('buyPriorityRestock')}
           disabled={g._priorityRestock && g.day < g._priorityRestock.expiresDay}
           disabledReason={g._priorityRestock ? `Active (${g._priorityRestock.expiresDay - g.day} days left)` : null}
           tc={tc}
@@ -317,7 +340,7 @@ export default function TireCoinStorePanel() {
           cost={TC_INTEL.cityDemandHeatmap.cost}
           description={`See real-time demand across all cities (${TC_INTEL.cityDemandHeatmap.duration} days)`}
           onBuy={() => doAction('buyDemandHeatmap')}
-          busy={busy === 'buyDemandHeatmap'}
+          busy={isLocked('buyDemandHeatmap')}
           disabled={g.demandHeatmap && g.day < g.demandHeatmap.expiresDay}
           disabledReason={g.demandHeatmap ? `Active (${g.demandHeatmap.expiresDay - g.day} days left)` : null}
           tc={tc}
@@ -327,7 +350,7 @@ export default function TireCoinStorePanel() {
           cost={TC_INTEL.competitorPricing.cost}
           description={`See exact pricing of all shops in your cities (${TC_INTEL.competitorPricing.duration} days)`}
           onBuy={() => doAction('buyCompetitorPricing')}
-          busy={busy === 'buyCompetitorPricing'}
+          busy={isLocked('buyCompetitorPricing')}
           disabled={g.competitorPricing && g.day < g.competitorPricing.expiresDay}
           disabledReason={g.competitorPricing ? `Active (${g.competitorPricing.expiresDay - g.day} days left)` : null}
           tc={tc}
@@ -337,7 +360,7 @@ export default function TireCoinStorePanel() {
           cost={TC_INTEL.supplierForecast.cost}
           description={`Predicted supplier prices for 30 days (75% accurate)`}
           onBuy={() => doAction('buySupplierForecast')}
-          busy={busy === 'buySupplierForecast'}
+          busy={isLocked('buySupplierForecast')}
           disabled={g.supplierForecast && g.day < g.supplierForecast.expiresDay}
           disabledReason={g.supplierForecast ? `Active (${g.supplierForecast.expiresDay - g.day} days left)` : null}
           tc={tc}
@@ -347,7 +370,7 @@ export default function TireCoinStorePanel() {
           cost={TC_INTEL.stockInsider.cost}
           description="Vinnie's market direction tip (75% reliable)"
           onBuy={() => doAction('buyStockInsider')}
-          busy={busy === 'buyStockInsider'}
+          busy={isLocked('buyStockInsider')}
           disabled={g.stockInsiderTip && g.day < g.stockInsiderTip.expiresDay}
           disabledReason={g.stockInsiderTip ? `Tip active: market trending ${g.stockInsiderTip.tip}` : null}
           tc={tc}
@@ -357,7 +380,7 @@ export default function TireCoinStorePanel() {
           cost={MONET.marketIntelCost || 100}
           description={`${MONET.marketIntelDuration || 7}-day city demand analysis`}
           onBuy={() => doAction('buyMarketIntel')}
-          busy={busy === 'buyMarketIntel'}
+          busy={isLocked('buyMarketIntel')}
           disabled={g.marketIntel && g.day < g.marketIntel.expiresDay}
           disabledReason={g.marketIntel ? `Active (${g.marketIntel.expiresDay - g.day} days left)` : null}
           tc={tc}
@@ -371,7 +394,7 @@ export default function TireCoinStorePanel() {
           cost={TC_FINANCIAL.loanRateReduction.cost}
           description={`Permanently reduce loan rates by ${TC_FINANCIAL.loanRateReduction.rateReduction * 100}% (${TC_FINANCIAL.loanRateReduction.maxReductions - (g._loanRateReductions || 0)} left)`}
           onBuy={() => doAction('buyLoanRateReduction')}
-          busy={busy === 'buyLoanRateReduction'}
+          busy={isLocked('buyLoanRateReduction')}
           disabled={(g._loanRateReductions || 0) >= TC_FINANCIAL.loanRateReduction.maxReductions}
           disabledReason="Max reductions reached"
           tc={tc}
@@ -381,7 +404,7 @@ export default function TireCoinStorePanel() {
           cost={TC_FINANCIAL.creditLine.cost}
           description={`$${(TC_FINANCIAL.creditLine.cashAmount/1000)}K cash, ${TC_FINANCIAL.creditLine.interestRate*100}% interest, ${TC_FINANCIAL.creditLine.repaymentDays} days`}
           onBuy={() => doAction('buyCreditLine')}
-          busy={busy === 'buyCreditLine'}
+          busy={isLocked('buyCreditLine')}
           disabled={g._activeCreditLine && g._activeCreditLine.remaining > 0}
           disabledReason="Already have active credit line"
           tc={tc}
@@ -391,7 +414,7 @@ export default function TireCoinStorePanel() {
           cost={TC_FINANCIAL.insuranceUpgrade.cost}
           description={`+${Math.round(TC_FINANCIAL.insuranceUpgrade.coverageBoost * 100)}% coverage for ${TC_FINANCIAL.insuranceUpgrade.duration} days`}
           onBuy={() => doAction('buyInsuranceUpgrade')}
-          busy={busy === 'buyInsuranceUpgrade'}
+          busy={isLocked('buyInsuranceUpgrade')}
           disabled={g._insuranceBoost && g.day < g._insuranceBoost.expiresDay}
           disabledReason={g._insuranceBoost ? `Active (${g._insuranceBoost.expiresDay - g.day} days left)` : null}
           tc={tc}
@@ -405,7 +428,7 @@ export default function TireCoinStorePanel() {
           cost={75}
           description="+50% customer traffic for 7 days"
           onBuy={() => doAction('buyMarketingBlitz')}
-          busy={busy === 'buyMarketingBlitz'}
+          busy={isLocked('buyMarketingBlitz')}
           disabled={g.marketingBlitz && g.day < g.marketingBlitz.expiresDay}
           disabledReason={g.marketingBlitz ? `Active (${g.marketingBlitz.expiresDay - g.day} days left)` : null}
           tc={tc}
@@ -415,7 +438,7 @@ export default function TireCoinStorePanel() {
           cost={150}
           description="+5 reputation for 14 days"
           onBuy={() => doAction('buyRepBoost')}
-          busy={busy === 'buyRepBoost'}
+          busy={isLocked('buyRepBoost')}
           disabled={g.repBoost && g.day < g.repBoost.expiresDay}
           disabledReason={g.repBoost ? `Active (${g.repBoost.expiresDay - g.day} days left)` : null}
           tc={tc}
@@ -437,7 +460,7 @@ export default function TireCoinStorePanel() {
                 cost={TC_OPERATIONS.eliteHire.cost}
                 description="1.5x productivity tech"
                 onBuy={() => doAction('hireElite', { locationId: loc.id, role: 'techs' })}
-                busy={busy === 'hireElite'}
+                busy={isLocked('hireElite')}
                 disabled={loc._eliteStaff?.techs}
                 disabledReason="Already hired"
                 tc={tc}
@@ -447,7 +470,7 @@ export default function TireCoinStorePanel() {
                 cost={TC_OPERATIONS.eliteHire.cost}
                 description="1.5x productivity salesperson"
                 onBuy={() => doAction('hireElite', { locationId: loc.id, role: 'sales' })}
-                busy={busy === 'hireElite'}
+                busy={isLocked('hireElite')}
                 disabled={loc._eliteStaff?.sales}
                 disabledReason="Already hired"
                 tc={tc}
@@ -457,7 +480,7 @@ export default function TireCoinStorePanel() {
                 cost={TC_OPERATIONS.trainingProgram.cost}
                 description={`Permanent +${Math.round(TC_OPERATIONS.trainingProgram.boost * 100)}% productivity (${TC_OPERATIONS.trainingProgram.duration} days)`}
                 onBuy={() => doAction('buyTrainingProgram', { locationId: loc.id })}
-                busy={busy === 'buyTrainingProgram'}
+                busy={isLocked('buyTrainingProgram')}
                 disabled={loc._trainingComplete || loc._trainingInProgress}
                 disabledReason={loc._trainingComplete ? 'Training complete' : loc._trainingInProgress ? 'In progress' : null}
                 tc={tc}
@@ -479,7 +502,7 @@ export default function TireCoinStorePanel() {
             cost={item.cost}
             description={item.desc}
             onBuy={() => doAction('buyCosmetic', { cosmeticId: item.id })}
-            busy={busy === 'buyCosmetic'}
+            busy={isLocked('buyCosmetic')}
             disabled={(g.cosmetics || []).includes(item.id)}
             disabledReason="Owned"
             tc={tc}
@@ -498,7 +521,7 @@ export default function TireCoinStorePanel() {
               cost={upg.tcCost}
               description={`+${upg.addCap} TC capacity`}
               onBuy={() => doAction('upgradeTcStorage')}
-              busy={busy === 'upgradeTcStorage'}
+              busy={isLocked('upgradeTcStorage')}
               disabled={owned || (g.tcStorageLevel || 0) !== upg.level - 1}
               disabledReason={owned ? 'Owned' : 'Unlock previous level first'}
               tc={tc}
