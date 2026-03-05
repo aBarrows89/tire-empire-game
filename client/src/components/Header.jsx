@@ -14,6 +14,18 @@ export default function Header() {
   const worldDay = (g.startDay || 1) + playerDay - 1;
   const cal = getCalendar(worldDay);
 
+  // Days remaining in current season (seasons are 3 months = 90 days)
+  const SEASON_MONTHS = { Winter: [11,0,1], Spring: [2,3,4], Summer: [5,6,7], Fall: [8,9,10] };
+  const seasonMonths = SEASON_MONTHS[cal.season] || [];
+  const lastSeasonMonth = Math.max(...seasonMonths);
+  const daysLeftInMonth = 30 - cal.dayOfMonth;
+  const monthsToSeasonEnd = lastSeasonMonth >= cal.monthIndex
+    ? lastSeasonMonth - cal.monthIndex
+    : (12 - cal.monthIndex) + lastSeasonMonth;
+  const daysLeftInSeason = daysLeftInMonth + monthsToSeasonEnd * 30;
+
+  const isWeekend = cal.dayOfWeek === 0 || cal.dayOfWeek === 6;
+
   return (
     <div className="header">
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -26,10 +38,13 @@ export default function Header() {
             style={{ background: state.wsConnected ? 'var(--green)' : 'var(--red)', width: 6, height: 6, borderRadius: '50%', flexShrink: 0 }}
           />
         </div>
-        <div style={{ fontSize: 10, color: 'var(--text-dim)', display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span>Day {playerDay}</span>
-          <span style={{ background: SC[cal.season], padding: '1px 6px', borderRadius: 6, fontSize: 9, fontWeight: 700, color: '#111' }}>
-            {cal.season}
+        <div style={{ fontSize: 10, color: 'var(--text-dim)', display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600, color: isWeekend ? 'var(--gold)' : 'var(--text-dim)' }}>
+            {cal.dayName.slice(0,3)}
+          </span>
+          <span>{cal.monthName.slice(0,3)} {cal.dayOfMonth}, Y{cal.year}</span>
+          <span style={{ background: SC[cal.season], padding: '1px 5px', borderRadius: 6, fontSize: 9, fontWeight: 700, color: '#111' }}>
+            {cal.season} · {daysLeftInSeason}d
           </span>
         </div>
       </div>
