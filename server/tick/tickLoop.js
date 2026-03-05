@@ -1272,8 +1272,17 @@ export async function runTick(clients) {
     // Post bot chat messages accumulated during this tick
     try {
       const botChats = getPendingBotChats();
+      if (botChats.length > 0) {
+        console.log(`[Tick] Posting ${botChats.length} bot chat messages`);
+      }
       for (const msg of botChats) {
-        await addChatMessage(msg);
+        try {
+          if (msg && msg.text && msg.playerId) {
+            await addChatMessage(msg);
+          }
+        } catch (singleChatErr) {
+          console.error(`[Tick] Failed to post bot chat from ${msg?.playerName}:`, singleChatErr.message);
+        }
       }
     } catch (chatErr) {
       console.error('[Tick] Bot chat error:', chatErr.message);
