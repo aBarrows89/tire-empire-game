@@ -3,7 +3,7 @@ import { getPlayer, createPlayer, isCompanyNameTaken, getGame } from '../db/quer
 import { init } from '../engine/init.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { trackEvent } from '../analytics/tracker.js';
-import { pool } from '../db/pgStore.js';
+import { pool } from '../db/pool.js';
 
 const router = Router();
 
