@@ -8,19 +8,33 @@ const GameContext = createContext();
 
 function gameReducer(state, action) {
   switch (action.type) {
-    case 'SET_STATE':
+    case 'SET_STATE': {
+      const g = action.payload;
+      // Calendar day = game day + startDay offset (same formula used throughout simDay)
+      const calDay = (g.day || 0) + (g.startDay || 1) - 1;
+      const newEntries = (g.log || []).map(l => {
+        const entry = typeof l === 'string' ? { msg: l, cat: 'other' } : l;
+        // Only stamp entries that don't already have a day (preserves action-log days)
+        return entry.day ? entry : { ...entry, day: calDay };
+      });
+      // Merge: new tick entries first, then existing history — deduplicate by msg+day
+      const existing = state.logHistory || [];
+      const merged = [...newEntries, ...existing];
+      // Deduplicate consecutive identical messages (same msg same day)
+      const seen = new Set();
+      const deduped = merged.filter(e => {
+        const key = `${e.day}|${e.msg}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
       return {
         ...state,
-        game: action.payload,
+        game: g,
         loading: false,
-        logHistory: [
-          ...(action.payload.log || []).map(l => {
-            const entry = typeof l === 'string' ? { msg: l, cat: 'other' } : l;
-            return { day: action.payload.day || action.payload.week, ...entry };
-          }),
-          ...(state.logHistory || []),
-        ].slice(0, 200),
+        logHistory: deduped.slice(0, 500),
       };
+    }
     case 'ADD_CHAT': {
       const existing = state.chatMessages || [];
       if (action.payload.id && existing.some(m => m.id === action.payload.id)) return state;

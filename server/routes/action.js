@@ -97,6 +97,12 @@ router.post('/', authMiddleware, async (req, res) => {
       }
 
       g = result;
+      // Stamp any unstamped log entries with the correct calendar day
+      const calDay = (g.day || 0) + (g.startDay || 1) - 1;
+      g.log = (g.log || []).map(l => {
+        if (typeof l === 'string') return { msg: l, cat: 'other', day: calDay };
+        return l.day ? l : { ...l, day: calDay };
+      });
       await savePlayerState(req.playerId, g, playerVersion);
       trackEvent(req.playerId, 'action_performed', { action });
       res.json({ ok: true, state: g });

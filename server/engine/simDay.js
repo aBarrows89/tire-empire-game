@@ -95,7 +95,7 @@ function pullFromStock(s, tire, qty) {
 }
 
 export function simDay(g, shared = {}) {
-  let s = { ...g, day: g.day + 1, dayRev: 0, dayProfit: 0, daySold: 0, log: [], _events: [], dayRevByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0, services: 0, factoryWholesale: 0 }, daySoldByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0, factoryWholesale: 0 }, daySoldByType: {} };
+  let s = { ...g, day: g.day + 1, dayRev: 0, dayProfit: 0, daySold: 0, log: [...(g.log || [])], _events: [], dayRevByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0, services: 0, factoryWholesale: 0 }, daySoldByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0, factoryWholesale: 0 }, daySoldByType: {} };
 
   // Save previous day values for trend arrows
   s.prevDayRev = g.dayRev || 0;
@@ -1451,7 +1451,8 @@ export function simDay(g, shared = {}) {
   s.cash -= payroll;
 
   // Warehouse staff payroll
-  s.cash -= getWhPayroll(s) / 30 * wageMult;
+  const whPayroll = getWhPayroll(s) / 30 * wageMult;
+  s.cash -= whPayroll;
 
   // Corp staff payroll
   const corpPayroll = Object.entries(s.corpStaff || {}).reduce(
@@ -1464,6 +1465,17 @@ export function simDay(g, shared = {}) {
     (a, [role, hired]) => a + (hired ? (ECOM_STAFF[role]?.salary || 0) : 0), 0
   ) / 30 * wageMult;
   s.cash -= ecomPayroll;
+
+  // Log daily cost summary (only if significant to avoid noise)
+  const totalPayroll = payroll + whPayroll + corpPayroll + ecomPayroll;
+  if (totalPayroll > 0) {
+    const parts = [];
+    if (payroll > 0) parts.push(`staff $${Math.round(payroll)}`);
+    if (whPayroll > 0) parts.push(`warehouse $${Math.round(whPayroll)}`);
+    if (corpPayroll > 0) parts.push(`corp $${Math.round(corpPayroll)}`);
+    if (ecomPayroll > 0) parts.push(`ecom $${Math.round(ecomPayroll)}`);
+    s.log.push({ msg: `💼 Payroll: $${Math.round(totalPayroll)} (${parts.join(', ')})`, cat: 'cost', day: s.day + (s.startDay || 1) - 1 });
+  }
 
   // ── Franchise royalties + monthly fees ──
   // Processed daily (royalty % of today's shop revenue + monthly fee prorated)
@@ -1521,7 +1533,11 @@ export function simDay(g, shared = {}) {
 
   // E-com hosting
   if (s.hasEcom) {
-    s.cash -= (ECOM_HOSTING_BASE + (s.ecomDailyOrders || 0) * ECOM_HOSTING_SCALE / 200) / 30;
+    const ecomHosting = (ECOM_HOSTING_BASE + (s.ecomDailyOrders || 0) * ECOM_HOSTING_SCALE / 200) / 30;
+    s.cash -= ecomHosting;
+    if (ecomHosting > 0) {
+      s.log.push({ msg: `🌐 E-com hosting: $${Math.round(ecomHosting)}/day`, cat: 'cost', day: s.day + (s.startDay || 1) - 1 });
+    }
   }
 
   // Track ecom investment + revenue toward tier progression
@@ -1537,6 +1553,9 @@ export function simDay(g, shared = {}) {
   const rawStorageRent = s.storage.reduce((a, st) => a + (STORAGE[st.type]?.mo || 0), 0) / 30;
   const storageRent = s.isPremium ? rawStorageRent * 0.5 : rawStorageRent;
   s.cash -= storageRent;
+  if (storageRent > 0) {
+    s.log.push({ msg: `📦 Storage rent: $${Math.round(storageRent)}/day${s.isPremium ? ' (PRO 50% off)' : ''}`, cat: 'cost', day: s.day + (s.startDay || 1) - 1 });
+  }
 
   // Shop rent (variable by city cost, 6d: inflation affects rent)
   // 16e: First shop gets 25% rent discount for first 90 days
@@ -1547,6 +1566,9 @@ export function simDay(g, shared = {}) {
     return a + shopRent(city);
   }, 0) / 30 * wageMult * (firstShopDiscountActive ? 0.75 : 1);
   s.cash -= totalShopRent;
+  if (totalShopRent > 0) {
+    s.log.push({ msg: `🏠 Rent: $${Math.round(totalShopRent)}/day (${s.locations.length} shop${s.locations.length !== 1 ? 's' : ''}${firstShopDiscountActive ? ' — 25% new-shop discount' : ''})`, cat: 'cost', day: s.day + (s.startDay || 1) - 1 });
+  }
 
   // Distribution monthly: base network fee + per-DC operating cost
   if (s.hasDist) {
@@ -1573,7 +1595,9 @@ export function simDay(g, shared = {}) {
     const volatilityMult = 1 + Math.max(0, (avgCommodity - 1.05)) * 2; // +2% insurance per 1% commodity above 1.05
     const eventCount = (shared.globalEvents || []).length;
     const eventMult = 1 + eventCount * 0.10; // +10% per active global event
-    s.cash -= baseInsurance * volatilityMult * eventMult;
+    const insuranceCost = baseInsurance * volatilityMult * eventMult;
+    s.cash -= insuranceCost;
+    s.log.push({ msg: `🛡️ Insurance: $${Math.round(insuranceCost)}/day (${INSURANCE[s.insurance].name || s.insurance}${volatilityMult > 1.01 ? ` — commodity surcharge ${Math.round((volatilityMult-1)*100)}%` : ''})`, cat: 'cost', day: s.day + (s.startDay || 1) - 1 });
   }
 
   // Loan payments (daily = weekly / 7)
