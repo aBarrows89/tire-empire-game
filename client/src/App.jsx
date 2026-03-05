@@ -137,7 +137,20 @@ function GameLayout() {
   }, [adState]);
 
   if (state.loading || !splashDone) return <SplashScreen />;
-  if (state.error) return <div className="loading">Error: {state.error}</div>;
+  if (state.error) return (
+    <div className="loading" style={{ flexDirection: 'column', gap: 12, padding: 24, textAlign: 'center' }}>
+      <div style={{ fontSize: 32 }}>🔧</div>
+      <div style={{ fontWeight: 700 }}>Connection Error</div>
+      <div style={{ fontSize: 13, opacity: 0.7, maxWidth: 300 }}>{state.error}</div>
+      <button
+        className="btn"
+        style={{ marginTop: 8 }}
+        onClick={() => window.location.reload()}
+      >
+        Retry
+      </button>
+    </div>
+  );
 
   // Show welcome screen if no company name set
   if (!g.companyName) return <WelcomeScreen />;

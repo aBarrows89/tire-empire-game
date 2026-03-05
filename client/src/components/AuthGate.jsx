@@ -16,12 +16,20 @@ export default function AuthGate({ children }) {
       return;
     }
 
+    // Hard timeout: if Firebase hasn't responded in 8s, unblock the app anyway
+    // The server will return 401 and the error screen will show, which is better
+    // than being stuck on "Loading Tire Empire..." forever
+    const timeout = setTimeout(() => {
+      console.warn('[AuthGate] Firebase auth timed out after 8s — unblocking');
+      setLoading(false);
+    }, 8000);
+
     const unsub = onAuthChange(async (firebaseUser) => {
       console.log('[AuthGate] onAuthChange:', firebaseUser ? `uid=${firebaseUser.uid}` : 'null');
       if (firebaseUser) {
+        clearTimeout(timeout);
         setUser(firebaseUser);
         setLoading(false);
-        // Register for push notifications after auth
         registerPush().catch(() => {});
       } else {
         // No user — sign in anonymously for zero-friction onboarding
@@ -32,17 +40,24 @@ export default function AuthGate({ children }) {
           // onAuthChange will fire again with the new user
         } catch (err) {
           console.error('[AuthGate] Anonymous sign-in failed:', err);
+          clearTimeout(timeout);
           setLoading(false);
         }
       }
     });
-    return unsub;
+
+    return () => {
+      clearTimeout(timeout);
+      unsub();
+    };
   }, []);
 
   if (loading) {
     return <div className="loading">Loading Tire Empire...</div>;
   }
 
+  // If Firebase timed out or failed and we have no user, still render children
+  // but they'll hit 401s — GameContext will show the error screen
   return (
     <AuthContext.Provider value={user}>
       {children}
