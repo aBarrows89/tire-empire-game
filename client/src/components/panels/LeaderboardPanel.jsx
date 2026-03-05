@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
+import { getLeaderboard } from '../../api/client.js';
 import { fmt } from '@shared/helpers/format.js';
 import { UICard, ProgressRing, Tag } from '../ui/ui.jsx';
 
@@ -9,19 +10,23 @@ export default function LeaderboardPanel() {
   const [leaders, setLeaders] = useState([]);
 
   useEffect(() => {
-    const fetchLeaderboard = async () => {
+    const fetchData = async () => {
       try {
-        const apiBase = import.meta.env.VITE_API_URL || '';
-        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-        const res = await fetch(`${apiBase}/api/leaderboard`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        const data = await res.json();
-        if (Array.isArray(data)) setLeaders(data);
-        else if (data.leaderboard) setLeaders(data.leaderboard);
+        const data = await getLeaderboard();
+        const rows = Array.isArray(data) ? data : data.leaderboard || [];
+        setLeaders(rows.map(r => ({
+          id: r.player_id || r.playerId || r.id,
+          name: r.name || r.companyName || 'Unknown',
+          wealth: Number(r.wealth) || 0,
+          reputation: r.reputation || 0,
+          locations: r.locations || r.shopCount || 0,
+          day: r.week || r.day || 0,
+          isPremium: r.isPremium || false,
+          ticker: r.ticker || null,
+        })));
       } catch {}
     };
-    fetchLeaderboard();
+    fetchData();
   }, [g.day]);
 
   const myId = g.id;
@@ -44,10 +49,10 @@ export default function LeaderboardPanel() {
           <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-dim)', fontSize: 12 }}>Loading...</div>
         )}
         {leaders.map((p, i) => {
-          const isYou = p.playerId === myId || p.id === myId;
+          const isYou = p.id === myId;
           const rank = i + 1;
           return (
-            <div key={p.playerId || p.id || i} style={{
+            <div key={p.id || i} style={{
               display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0',
               borderBottom: i < leaders.length - 1 ? '1px solid var(--border)' : 'none',
               background: isYou ? 'rgba(79,195,247,0.04)' : 'transparent',
@@ -71,14 +76,14 @@ export default function LeaderboardPanel() {
                   color: isYou ? 'var(--accent)' : 'var(--text)',
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}>
-                  {p.companyName || p.name || 'Unknown'}
+                  {p.name}
                   {isYou && <span style={{ fontSize: 9, marginLeft: 4, color: 'var(--accent)' }}>(YOU)</span>}
                   {p.isPremium && <span style={{ fontSize: 10, marginLeft: 4 }}>{'\u2B50'}</span>}
                 </div>
                 <div style={{ display: 'flex', gap: 8, fontSize: 10, color: 'var(--text-dim)', marginTop: 2 }}>
                   <span>{'\u2B50'} {(p.reputation || 0).toFixed(0)}</span>
-                  <span>{'\u{1F3EA}'} {p.locations || p.shopCount || 0}</span>
-                  <span>Day {p.day || 0}</span>
+                  <span>{'\u{1F3EA}'} {p.locations}</span>
+                  <span>Day {p.day}</span>
                   {p.ticker && <span style={{ color: 'var(--green)' }}>{'\u{1F4C8}'} ${p.ticker}</span>}
                 </div>
               </div>
