@@ -305,26 +305,29 @@ export default function ExchangePanel() {
         <div>
           {overview && (
             <>
-              <div className="card-row" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-                <div className="card" style={{ flex: 1, minWidth: 80, textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>TESX Index</div>
-                  <div style={{ fontSize: 18, fontWeight: 700 }}>{fmt(overview.indices?.TESX)}</div>
-                </div>
-                <div className="card" style={{ flex: 1, minWidth: 80, textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>Sentiment</div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: overview.sentiment >= 1 ? 'var(--green)' : 'var(--red)' }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                <UICard style={{ flex: 1, minWidth: 80, textAlign: 'center', padding: 10 }}>
+                  <div style={{ fontSize: 9, color: 'var(--text-dim)', letterSpacing: 0.5 }}>TESX INDEX</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--accent)' }}>{fmt(overview.indices?.TESX)}</div>
+                </UICard>
+                <UICard style={{ flex: 1, minWidth: 80, textAlign: 'center', padding: 10 }}>
+                  <div style={{ fontSize: 9, color: 'var(--text-dim)', letterSpacing: 0.5 }}>SENTIMENT</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: (overview.sentiment || 1) >= 1 ? 'var(--green)' : 'var(--red)' }}>
                     {((overview.sentiment || 1) * 100).toFixed(0)}%
                   </div>
-                </div>
-                <div className="card" style={{ flex: 1, minWidth: 80, textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>Volume</div>
-                  <div style={{ fontSize: 18, fontWeight: 700 }}>{(overview.dayVolume || 0).toLocaleString()}</div>
-                </div>
+                </UICard>
+                <UICard style={{ flex: 1, minWidth: 80, textAlign: 'center', padding: 10 }}>
+                  <div style={{ fontSize: 9, color: 'var(--text-dim)', letterSpacing: 0.5 }}>VOLUME</div>
+                  <div style={{ fontSize: 20, fontWeight: 800 }}>{(overview.dayVolume || 0).toLocaleString()}</div>
+                </UICard>
               </div>
               {overview.crashActive && (
-                <div className="card" style={{ background: 'var(--red-dim)', color: 'var(--red)', padding: 8, marginBottom: 8, textAlign: 'center' }}>
-                  &#x26A0; MARKET CRASH IN PROGRESS &#x26A0;
-                </div>
+                <UICard glow="var(--red)" style={{ textAlign: 'center', padding: 10, background: 'rgba(239,83,80,0.08)' }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--red)' }}>
+                    \u26A0\uFE0F MARKET CRASH IN PROGRESS \u26A0\uFE0F
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>Prices are volatile — trade with caution</div>
+                </UICard>
               )}
             </>
           )}
@@ -440,31 +443,31 @@ export default function ExchangePanel() {
               }).map(s => {
                 const riskColor = { 'Very Low': 'var(--green)', 'Low': '#4a9', 'Moderate': 'var(--yellow)', 'High': 'var(--orange)', 'Very High': 'var(--red)' }[s.riskRating] || 'var(--text-dim)';
                 return (
-                  <div key={s.ticker} className="card" style={{ padding: '8px 12px', marginBottom: 4, cursor: 'pointer' }}
-                    onClick={() => { selectStock(s.ticker); setTab(2); }}>
+                  <UICard key={s.ticker} onClick={() => { selectStock(s.ticker); setTab(2); }}
+                    style={{ padding: '10px 12px', marginBottom: 6, cursor: 'pointer' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <span style={{ fontWeight: 700 }}>${s.ticker}</span>
-                        <span style={{ color: 'var(--text-dim)', marginLeft: 8, fontSize: 12 }}>{s.companyName}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--accent)' }}>${s.ticker}</span>
+                          <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>{s.companyName}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                          <Tag color={riskColor} bg={riskColor + '18'}>{s.riskRating}</Tag>
+                          {s.dividendYield > 0 && <Tag color="var(--green)" bg="rgba(76,175,80,0.1)">Div {(s.dividendYield * 100).toFixed(1)}%</Tag>}
+                          <Tag>{s.locations} shops</Tag>
+                        </div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontWeight: 700 }}>{fmt(s.price)}</div>
-                        <div style={{ fontSize: 11, color: s.change >= 0 ? 'var(--green)' : 'var(--red)' }}>{pct(s.change)}</div>
+                        <div style={{ fontSize: 18, fontWeight: 700 }}>${fmt(s.price)}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+                          <MiniSparkline data={s.priceHistory || [s.price * 0.95, s.price * 0.97, s.price * 0.99, s.price]} color={s.change >= 0 ? 'var(--green)' : 'var(--red)'} width={50} height={16}/>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: s.change >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                            {s.change >= 0 ? '\u25B2' : '\u25BC'}{Math.abs(s.change || 0).toFixed(1)}%
+                          </span>
+                        </div>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 4, fontSize: 10 }}>
-                      <span style={{ color: riskColor, border: '1px solid', borderRadius: 4, padding: '1px 4px' }}>{s.riskRating}</span>
-                      {s.dividendYield > 0 && (
-                        <span style={{ color: 'var(--green)' }}>Yield: {(s.dividendYield * 100).toFixed(1)}%</span>
-                      )}
-                      {s.weeklyGrowth !== 0 && (
-                        <span style={{ color: s.weeklyGrowth > 0 ? 'var(--green)' : 'var(--red)' }}>
-                          {s.weeklyGrowth > 0 ? '\u2191' : '\u2193'}{Math.abs(s.weeklyGrowth * 100).toFixed(0)}% wk
-                        </span>
-                      )}
-                      <span style={{ color: 'var(--text-dim)' }}>{s.locations} shops</span>
-                    </div>
-                  </div>
+                  </UICard>
                 );
               })}
             </div>
@@ -477,34 +480,34 @@ export default function ExchangePanel() {
         <div>
           {portfolio ? (
             <>
-              <div className="card" style={{ padding: 12, marginBottom: 8 }}>
+              <UICard style={{ padding: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>Portfolio Value</div>
-                    <div style={{ fontSize: 22, fontWeight: 700 }}>{fmt(portfolio.totalValue)}</div>
+                    <div style={{ fontSize: 9, color: 'var(--text-dim)', letterSpacing: 1, textTransform: 'uppercase' }}>PORTFOLIO VALUE</div>
+                    <div style={{ fontSize: 26, fontWeight: 800 }}>${fmt(portfolio.totalValue)}</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>Total P&L</div>
-                    <div style={{ fontSize: 22, fontWeight: 700, color: portfolio.totalPnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                      {portfolio.totalPnl >= 0 ? '+' : ''}{fmt(portfolio.totalPnl)}
+                    <div style={{ fontSize: 9, color: 'var(--text-dim)', letterSpacing: 1, textTransform: 'uppercase' }}>TOTAL P&L</div>
+                    <div style={{ fontSize: 26, fontWeight: 800, color: portfolio.totalPnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                      {portfolio.totalPnl >= 0 ? '+' : ''}${fmt(portfolio.totalPnl)}
                     </div>
                   </div>
                 </div>
-              </div>
+              </UICard>
 
-              <div className="card-row" style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-                <div className="card" style={{ flex: 1, textAlign: 'center', padding: 8 }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-dim)' }}>Dividends</div>
-                  <div style={{ fontWeight: 700, color: 'var(--green)' }}>{fmt(portfolio.dividendIncome)}</div>
-                </div>
-                <div className="card" style={{ flex: 1, textAlign: 'center', padding: 8 }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-dim)' }}>Taxes Paid</div>
-                  <div style={{ fontWeight: 700, color: 'var(--red)' }}>{fmt(portfolio.taxesPaid)}</div>
-                </div>
-                <div className="card" style={{ flex: 1, textAlign: 'center', padding: 8 }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-dim)' }}>Margin</div>
-                  <div style={{ fontWeight: 700 }}>{fmt(portfolio.marginDebt)}</div>
-                </div>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+                <UICard style={{ flex: 1, textAlign: 'center', padding: 8 }}>
+                  <div style={{ fontSize: 9, color: 'var(--text-dim)', letterSpacing: 0.5 }}>DIVIDENDS</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--green)' }}>${fmt(portfolio.dividendIncome)}</div>
+                </UICard>
+                <UICard style={{ flex: 1, textAlign: 'center', padding: 8 }}>
+                  <div style={{ fontSize: 9, color: 'var(--text-dim)', letterSpacing: 0.5 }}>TAXES</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--red)' }}>${fmt(portfolio.taxesPaid)}</div>
+                </UICard>
+                <UICard style={{ flex: 1, textAlign: 'center', padding: 8 }}>
+                  <div style={{ fontSize: 9, color: 'var(--text-dim)', letterSpacing: 0.5 }}>MARGIN</div>
+                  <div style={{ fontSize: 15, fontWeight: 700 }}>${fmt(portfolio.marginDebt)}</div>
+                </UICard>
               </div>
 
               <h4 style={{ margin: '0 0 6px' }}>Positions</h4>
@@ -514,38 +517,39 @@ export default function ExchangePanel() {
                 </div>
               ) : (
                 portfolio.positions.map(p => (
-                  <div key={p.ticker} className="card" style={{ padding: '8px 12px', marginBottom: 4, cursor: 'pointer' }}
-                    onClick={() => { selectStock(p.ticker); setTab(2); }}>
+                  <UICard key={p.ticker} onClick={() => { selectStock(p.ticker); setTab(2); }}
+                    style={{ padding: '10px 12px', marginBottom: 6, cursor: 'pointer' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <span style={{ fontWeight: 700 }}>${p.ticker}</span>
-                        <span style={{ color: 'var(--text-dim)', marginLeft: 6, fontSize: 12 }}>{p.qty} shares @ {fmt(p.avgPrice)}</span>
+                        <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--accent)' }}>${p.ticker}</span>
+                        <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 2 }}>{p.qty} shares @ ${fmt(p.avgPrice)}</div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div>{fmt(p.currentPrice)}</div>
-                        <div style={{ fontSize: 11, color: p.pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                          {p.pnl >= 0 ? '+' : ''}{fmt(p.pnl)}
+                        <div style={{ fontSize: 16, fontWeight: 700 }}>${fmt(p.currentPrice)}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+                          <MiniSparkline data={p.priceHistory || []} color={p.pnl >= 0 ? 'var(--green)' : 'var(--red)'} width={50} height={16}/>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: p.pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                            {p.pnl >= 0 ? '+' : ''}${fmt(p.pnl)}
+                          </span>
                         </div>
                       </div>
                     </div>
-                    {p.priceHistory && p.priceHistory.length > 2 && (
-                      <PriceChart data={p.priceHistory} width={280} height={40} />
-                    )}
-                    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                      <button className="btn btn-small btn-green" style={{ flex: 1 }}
+                    {/* Sparkline now inline above */}
+                    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                      <button style={{ flex: 1, padding: '6px 10px', borderRadius: 8, border: 'none', background: 'var(--green)', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
                         onClick={(e) => { e.stopPropagation(); selectStock(p.ticker); setTab(2); setOrderForm({ side: 'buy', type: 'market', qty: '', limitPrice: '' }); }}>
                         Buy More
                       </button>
-                      <button className="btn btn-small btn-red" style={{ flex: 1 }}
+                      <button style={{ flex: 1, padding: '6px 10px', borderRadius: 8, border: 'none', background: 'var(--red)', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
                         onClick={(e) => { e.stopPropagation(); selectStock(p.ticker); setTab(2); setOrderForm({ side: 'sell', type: 'market', qty: String(p.qty), limitPrice: '' }); }}>
                         Sell
                       </button>
-                      <button className="btn btn-small" style={{ flex: 1 }}
+                      <button style={{ flex: 1, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'none', color: 'var(--accent)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
                         onClick={(e) => { e.stopPropagation(); selectStock(p.ticker); setTab(2); }}>
                         Details
                       </button>
                     </div>
-                  </div>
+                  </UICard>
                 ))
               )}
 
