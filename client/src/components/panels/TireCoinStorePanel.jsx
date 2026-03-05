@@ -4,6 +4,7 @@ import { MONET } from '@shared/constants/monetization.js';
 import { TC_RUSH, TC_SUPPLIER_ACCESS, TC_INTEL, TC_FINANCIAL, TC_OPERATIONS } from '@shared/constants/tcUtility.js';
 import { postAction } from '../../api/client.js';
 import { hapticsMedium } from '../../api/haptics.js';
+import { TireCoin, ProgressBar, UICard } from '../ui/ui.jsx';
 import { initPurchases, purchaseProduct, getProductPricing, isIAPAvailable } from '../../api/purchases.js';
 
 function TCBalance({ g }) {
@@ -16,19 +17,20 @@ function TCBalance({ g }) {
   const pct = cap > 0 ? Math.round(((g.tireCoins || 0) / cap) * 100) : 0;
 
   return (
-    <div className="card" style={{ borderLeft: '3px solid var(--gold)' }}>
-      <div className="row-between mb-4">
-        <span className="text-sm text-dim">TireCoins</span>
-        <span className="font-bold text-gold" style={{ fontSize: 20 }}>🪙 {g.tireCoins || 0}</span>
+    <UICard style={{ textAlign: 'center', background: 'linear-gradient(135deg, var(--surface), var(--card))' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <TireCoin size={36}/>
+        <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--gold)' }}>{g.tireCoins || 0}</div>
       </div>
-      <div className="progress-bar mb-4">
-        <div className="progress-fill" style={{ width: `${Math.min(100, pct)}%`, background: pct >= 90 ? 'var(--red)' : 'var(--gold)' }} />
+      <div style={{ fontSize: 10, color: 'var(--text-dim)', marginBottom: 8 }}>TireCoin Balance</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, marginBottom: 4 }}>
+        <span style={{ color: 'var(--text-dim)' }}>Storage</span>
+        <span style={{ color: pct >= 90 ? 'var(--red)' : 'var(--text-dim)' }}>
+          {g.tireCoins || 0} / {cap} {pct >= 90 ? '⚠️' : ''}
+        </span>
       </div>
-      <div className="row-between">
-        <span className="text-xs text-dim">Storage: {g.tireCoins || 0} / {cap}</span>
-        {pct >= 90 && <span className="text-xs" style={{ color: 'var(--red)' }}>⚠️ Almost full!</span>}
-      </div>
-    </div>
+      <ProgressBar pct={pct} color={pct >= 90 ? 'var(--red)' : 'var(--gold)'}/>
+    </UICard>
   );
 }
 
@@ -66,7 +68,7 @@ function StoreItem({ name, cost, description, onBuy, busy, disabled, disabledRea
           onClick={onBuy}
           disabled={!canAfford || busy || disabled}
         >
-          {busy ? '...' : `${cost} TC`}
+          {busy ? '...' : <><TireCoin size={14}/> {cost}</>}
         </button>
       </div>
     </div>
@@ -100,7 +102,7 @@ function PurchaseTier({ tier, g, onBuy, busy, pricing }) {
       <div className="row-between">
         <div>
           <div className="font-bold">{tier.label}</div>
-          <div className="text-gold font-bold" style={{ fontSize: 18 }}>🪙 {displayTC} TC</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><TireCoin size={22}/><span className="text-gold font-bold" style={{ fontSize: 18 }}>{displayTC}</span></div>
           {bonusLabel && <div className="text-xs" style={{ color: isFirst ? 'var(--green)' : 'var(--gold)' }}>{bonusLabel}</div>}
         </div>
         <button
