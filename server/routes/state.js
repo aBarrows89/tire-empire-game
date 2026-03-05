@@ -36,25 +36,34 @@ router.get('/', authMiddleware, async (req, res) => {
     }
 
     trackEvent(req.playerId, 'session_start', { day: player.game_state?.day });
-    // Attach dynamic supplier pricing from game economy
-    const game = await getGame();
-    if (game?.economy?.supplierPricing) {
-      player.game_state._supplierPricing = game.economy.supplierPricing;
-    }
-    if (game?.economy?.supplierPrices) {
-      player.game_state._supplierPrices = game.economy.supplierPrices;
-    }
-    if (game?.economy?.commodities) {
-      player.game_state._commodities = game.economy.commodities;
-    }
-    if (game?.economy?.bankRate != null) {
-      player.game_state._bankRate = game.economy.bankRate;
-      player.game_state._loanRateMult = game.economy.loanRateMult;
-      player.game_state._rateHistory = game.economy.rateHistory;
-      player.game_state._bankState = game.economy.bankState;
-    }
-    if (game?.economy?.inflationIndex != null) {
-      player.game_state._inflationIndex = game.economy.inflationIndex;
+    // Attach dynamic economy data — use a timeout so a slow/large economy
+    // never blocks the player from loading their state
+    try {
+      const game = await Promise.race([
+        getGame(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('getGame timeout')), 4000)),
+      ]);
+      if (game?.economy?.supplierPricing) {
+        player.game_state._supplierPricing = game.economy.supplierPricing;
+      }
+      if (game?.economy?.supplierPrices) {
+        player.game_state._supplierPrices = game.economy.supplierPrices;
+      }
+      if (game?.economy?.commodities) {
+        player.game_state._commodities = game.economy.commodities;
+      }
+      if (game?.economy?.bankRate != null) {
+        player.game_state._bankRate = game.economy.bankRate;
+        player.game_state._loanRateMult = game.economy.loanRateMult;
+        player.game_state._rateHistory = game.economy.rateHistory;
+        player.game_state._bankState = game.economy.bankState;
+      }
+      if (game?.economy?.inflationIndex != null) {
+        player.game_state._inflationIndex = game.economy.inflationIndex;
+      }
+    } catch (econErr) {
+      // Non-fatal — player still gets their state, economy data arrives on next tick
+      console.warn('GET /api/state: economy attach skipped:', econErr.message);
     }
     res.json(player.game_state);
   } catch (err) {

@@ -56,7 +56,7 @@ function gameReducer(state, action) {
     case 'SET_LOADING':
       return { ...state, loading: action.payload };
     case 'SET_ERROR':
-      return { ...state, error: action.payload };
+      return { ...state, error: action.payload, loading: false };
     case 'SET_OFFLINE':
       return { ...state, offline: action.payload };
     case 'SET_ANNOUNCEMENT':
