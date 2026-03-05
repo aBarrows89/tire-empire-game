@@ -35,6 +35,7 @@ import WholesalePanel from './components/panels/WholesalePanel.jsx';
 import ExchangePanel from './components/panels/ExchangePanel.jsx';
 import MapPanel from './components/panels/MapPanel.jsx';
 import FranchisePanel from './components/panels/FranchisePanel.jsx';
+import ReportsPanel from './components/panels/ReportsPanel.jsx';
 import TireCoinStorePanel from './components/panels/TireCoinStorePanel.jsx';
 
 const PANELS = {
@@ -58,6 +59,7 @@ const PANELS = {
   exchange: ExchangePanel,
   map: MapPanel,
   franchise: FranchisePanel,
+  reports: ReportsPanel,
   store: TireCoinStorePanel,
 };
 
