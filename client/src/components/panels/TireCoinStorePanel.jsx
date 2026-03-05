@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { MONET } from '@shared/constants/monetization.js';
 import { TC_RUSH, TC_SUPPLIER_ACCESS, TC_INTEL, TC_FINANCIAL, TC_OPERATIONS } from '@shared/constants/tcUtility.js';
 import { postAction } from '../../api/client.js';
 import { hapticsMedium } from '../../api/haptics.js';
+import { initPurchases, purchaseProduct, getProductPricing, isIAPAvailable } from '../../api/purchases.js';
 
 function TCBalance({ g }) {
   const baseCap = MONET.tcStorage?.baseCap || 500;
@@ -72,10 +73,12 @@ function StoreItem({ name, cost, description, onBuy, busy, disabled, disabledRea
   );
 }
 
-function PurchaseTier({ tier, g, onBuy, busy }) {
+function PurchaseTier({ tier, g, onBuy, busy, pricing }) {
   const isFirst = !g._firstTcPurchase;
   const displayTC = isFirst ? tier.tc * 2 : g.isPremium ? Math.floor(tier.tc * 1.2) : tier.tc;
   const bonusLabel = isFirst ? '2X FIRST PURCHASE!' : g.isPremium ? '+20% PRO Bonus' : tier.bonus > 0 ? `+${tier.bonus} bonus` : null;
+  const localPrice = pricing?.[tier.id]?.price || `$${tier.price}`;
+  const canBuy = pricing?.[tier.id]?.canPurchase !== false;
 
   return (
     <div
@@ -102,13 +105,22 @@ function PurchaseTier({ tier, g, onBuy, busy }) {
         </div>
         <button
           className="btn"
-          style={{ background: 'var(--green)', color: '#fff', fontWeight: 'bold', minWidth: 80 }}
+          style={{
+            background: canBuy ? 'var(--green)' : 'rgba(255,255,255,0.1)',
+            color: canBuy ? '#fff' : 'var(--text-dim)',
+            fontWeight: 'bold', minWidth: 80,
+          }}
           onClick={() => onBuy(tier.id)}
-          disabled={busy}
+          disabled={busy || !canBuy}
         >
-          ${tier.price}
+          {busy ? '...' : localPrice}
         </button>
       </div>
+      {!canBuy && (
+        <div className="text-xs" style={{ color: 'var(--yellow)', marginTop: 4 }}>
+          Download the Tire Empire app to purchase TireCoins
+        </div>
+      )}
     </div>
   );
 }
@@ -117,6 +129,43 @@ export default function TireCoinStorePanel() {
   const { state, refreshState } = useGame();
   const g = state.game;
   const [busy, setBusy] = useState(null);
+  const [pricing, setPricing] = useState({});
+  const [purchaseMsg, setPurchaseMsg] = useState(null);
+
+  // Initialize IAP on mount
+  useEffect(() => {
+    const handlePurchaseComplete = async ({ tierId, receipt, platform, transactionId }) => {
+      // Purchase verified by app store — now grant TC on server
+      setBusy('granting');
+      try {
+        const apiBase = import.meta.env.VITE_API_URL || '';
+        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+        const resp = await fetch(`${apiBase}/api/iap/grant`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ tierId, transactionId, platform }),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          setPurchaseMsg(`✅ ${tierId.includes('premium') ? 'PRO activated!' : 'TireCoins added!'}`);
+          await refreshState();
+        } else {
+          setPurchaseMsg(`❌ ${data.error || data.message || 'Grant failed'}`);
+        }
+      } catch (e) {
+        setPurchaseMsg(`❌ Error: ${e.message}`);
+      }
+      setBusy(null);
+      setTimeout(() => setPurchaseMsg(null), 5000);
+    };
+
+    initPurchases(handlePurchaseComplete).then(() => {
+      setPricing(getProductPricing());
+    });
+  }, [refreshState]);
 
   const doAction = async (action, params = {}) => {
     setBusy(action);
@@ -130,6 +179,32 @@ export default function TireCoinStorePanel() {
     setBusy(null);
   };
 
+  const handlePurchase = async (tierId) => {
+    setBusy('purchasing');
+    const result = await purchaseProduct(tierId);
+    if (!result.success) {
+      if (result.reason === 'web') {
+        setPurchaseMsg('📱 ' + result.message);
+        setTimeout(() => setPurchaseMsg(null), 5000);
+      } else {
+        setPurchaseMsg(`❌ ${result.message}`);
+        setTimeout(() => setPurchaseMsg(null), 5000);
+      }
+      setBusy(null);
+    }
+    // If success, the onPurchaseComplete callback handles the rest
+  };
+
+  const handlePremiumPurchase = async (tierId) => {
+    setBusy('purchasing');
+    const result = await purchaseProduct(tierId);
+    if (!result.success) {
+      setPurchaseMsg(result.reason === 'web' ? '📱 ' + result.message : `❌ ${result.message}`);
+      setTimeout(() => setPurchaseMsg(null), 5000);
+      setBusy(null);
+    }
+  };
+
   const tc = g.tireCoins || 0;
   const purchaseTiers = MONET.tcPurchase?.tiers || [];
 
@@ -139,13 +214,23 @@ export default function TireCoinStorePanel() {
 
       {/* ── BUY TC ── */}
       <StoreSection title="Buy TireCoins" icon="💰" defaultOpen={true}>
+        {purchaseMsg && (
+          <div style={{
+            padding: 8, borderRadius: 6, marginBottom: 8, textAlign: 'center',
+            background: purchaseMsg.startsWith('✅') ? 'rgba(0,200,100,0.1)' : purchaseMsg.startsWith('📱') ? 'rgba(255,200,0,0.1)' : 'rgba(255,0,0,0.1)',
+            border: `1px solid ${purchaseMsg.startsWith('✅') ? 'var(--green)' : purchaseMsg.startsWith('📱') ? 'var(--gold)' : 'var(--red)'}`,
+          }}>
+            <span className="text-sm">{purchaseMsg}</span>
+          </div>
+        )}
         {purchaseTiers.map(tier => (
           <PurchaseTier
             key={tier.id}
             tier={tier}
             g={g}
-            onBuy={(tierId) => doAction('purchaseTC', { tierId })}
-            busy={busy === 'purchaseTC'}
+            onBuy={handlePurchase}
+            busy={busy === 'purchasing' || busy === 'granting'}
+            pricing={pricing}
           />
         ))}
         {!g.isPremium && (
@@ -427,19 +512,30 @@ export default function TireCoinStorePanel() {
           <div className="text-sm" style={{ marginBottom: 8 }}>
             +1500 TC storage, 100 TC/month, auto-restock, 2% marketplace fees, 20% bonus on TC purchases, and more.
           </div>
-          <div className="row-between">
-            <div>
-              <div className="font-bold">$4.99/mo</div>
-              <div className="text-xs text-dim">or $29.99/yr (save 50%)</div>
-            </div>
+          <div style={{ display: 'flex', gap: 8 }}>
             <button
               className="btn"
-              style={{ background: 'var(--gold)', color: '#000', fontWeight: 'bold' }}
-              onClick={() => doAction('activatePremium')}
+              style={{ flex: 1, background: 'var(--gold)', color: '#000', fontWeight: 'bold' }}
+              onClick={() => handlePremiumPurchase('premium_monthly')}
+              disabled={busy === 'purchasing' || busy === 'granting'}
             >
-              Upgrade
+              {pricing?.premium_monthly?.price || '$4.99'}/mo
+            </button>
+            <button
+              className="btn"
+              style={{ flex: 1, background: 'var(--gold)', color: '#000', fontWeight: 'bold', position: 'relative' }}
+              onClick={() => handlePremiumPurchase('premium_yearly')}
+              disabled={busy === 'purchasing' || busy === 'granting'}
+            >
+              {pricing?.premium_yearly?.price || '$29.99'}/yr
+              <span style={{ position: 'absolute', top: -8, right: -4, background: 'var(--green)', color: '#fff', fontSize: 9, padding: '1px 4px', borderRadius: 4 }}>SAVE 50%</span>
             </button>
           </div>
+          {isIAPAvailable() ? null : (
+            <div className="text-xs text-dim" style={{ marginTop: 8, textAlign: 'center' }}>
+              📱 Download the app to subscribe
+            </div>
+          )}
         </div>
       )}
     </>
