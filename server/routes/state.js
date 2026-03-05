@@ -151,8 +151,19 @@ router.post('/register', authMiddleware, async (req, res) => {
       player = await createPlayer(req.playerId, playerName, state);
     } else {
       const oldState = player.game_state;
-      // If player had no company name, this is a fresh registration — reset their state
-      if (!oldState.companyName) {
+      const { savePlayerState } = await import('../db/queries.js');
+
+      // SAFETY: Never wipe an existing player's state based on companyName alone.
+      // A player is "truly new" only if they have no meaningful progress (no cash above
+      // starting amount, no reputation, no locations). This prevents a partial-load race
+      // condition from wiping a veteran player's state.
+      const hasProgress = (oldState.reputation || 0) > 0
+        || (oldState.cash || 0) > 500
+        || (oldState.locations || []).length > 0
+        || (oldState.day || 0) > 5;
+
+      if (!oldState.companyName && !hasProgress) {
+        // Genuinely new player — initialize fresh state
         const game = await getGame();
         const globalDay = game?.day || game?.week || 1;
         const fresh = init(playerName, globalDay);
@@ -161,16 +172,12 @@ router.post('/register', authMiddleware, async (req, res) => {
         fresh.tutorialStep = oldState.tutorialStep || 0;
         fresh.tutorialDone = oldState.tutorialDone || false;
         applyReferralPerks(fresh, referralPerks, globalDay);
-        const { savePlayerState } = await import('../db/queries.js');
-        await savePlayerState(req.playerId, fresh);
+        await savePlayerState(req.playerId, fresh, player.version);
         player.game_state = fresh;
       } else {
-        // Update existing player's names (no referral perks for name changes)
-        const g = { ...oldState };
-        g.name = playerName;
-        g.companyName = companyName;
-        const { savePlayerState } = await import('../db/queries.js');
-        await savePlayerState(req.playerId, g);
+        // Existing player — only update name fields, preserve everything else
+        const g = { ...oldState, name: playerName, companyName };
+        await savePlayerState(req.playerId, g, player.version);
         player.game_state = g;
       }
     }

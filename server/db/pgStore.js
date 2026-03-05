@@ -438,13 +438,20 @@ export async function savePlayerState(id, gameState, expectedVersion = null) {
   } else {
     // Non-versioned save (tick loop, migrations, etc.)
     // Guard: never regress the player day (prevents stale tick overwrites during deploy overlap)
+    // EXCEPTION: if newDay is 0 or undefined (e.g. registration/admin), skip the guard
     const newDay = gameState.day || 0;
-    const { rowCount } = await pool.query(
-      `UPDATE players SET game_state = $2::jsonb, updated_at = NOW(), version = version + 1
-       WHERE id = $1 AND COALESCE((game_state->>'day')::int, 0) <= $3`,
-      [id, JSON.stringify(gameState), newDay]
-    );
-    if (rowCount === 0) {
+    let query, params;
+    if (newDay > 0) {
+      query = `UPDATE players SET game_state = $2::jsonb, updated_at = NOW(), version = version + 1
+               WHERE id = $1 AND COALESCE((game_state->>'day')::int, 0) <= $3`;
+      params = [id, JSON.stringify(gameState), newDay];
+    } else {
+      // No day guard for day-0 states (fresh registrations, admin resets)
+      query = `UPDATE players SET game_state = $2::jsonb, updated_at = NOW(), version = version + 1 WHERE id = $1`;
+      params = [id, JSON.stringify(gameState)];
+    }
+    const { rowCount } = await pool.query(query, params);
+    if (rowCount === 0 && newDay > 0) {
       console.warn(`[pgStore] savePlayerState skipped for ${id}: DB day > ${newDay} (stale save)`);
     }
   }
