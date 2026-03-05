@@ -41,7 +41,6 @@ import { getTireSeasonMult } from '../../shared/constants/tireSeasonal.js';
 import { FLEA_MARKETS, FLEA_DAILY_OPERATING, FLEA_PRICE_MULT } from '../../shared/constants/fleaMarkets.js';
 import { CAR_MEETS, CAR_MEET_SUMMER_START, CAR_MEET_SUMMER_END, CAR_MEET_PREMIUM_TIRES } from '../../shared/constants/carMeets.js';
 import { getCalendar } from '../../shared/helpers/calendar.js';
-import { CITIES } from '../../shared/constants/cities.js';
 import { getShopValuation, SHOP_BID, AI_BUYER_NAMES } from '../../shared/constants/shopSale.js';
 import { uid } from '../../shared/helpers/random.js';
 import { MONET } from '../../shared/constants/monetization.js';
