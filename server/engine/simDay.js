@@ -1208,6 +1208,7 @@ export function simDay(g, shared = {}) {
       s.daySold += pulled;
       s.dayRevByChannel.wholesale += rev;
       s.daySoldByChannel.wholesale += pulled;
+      s.totalWholesaleRevenue = (s.totalWholesaleRevenue || 0) + rev;
       s.daySoldByType[tire] = (s.daySoldByType[tire] || 0) + pulled;
     }
     // Track monthly volume (rolling approximation: daily sales * 30)
@@ -1274,6 +1275,7 @@ export function simDay(g, shared = {}) {
     s.daySold += ecomSold;
     s.dayRevByChannel.ecom += ecomRev;
     s.daySoldByChannel.ecom += ecomSold;
+    s.totalEcomRevenue = (s.totalEcomRevenue || 0) + ecomRev;
 
     const returnRate = Math.max(.02, ECOM_BASE_RETURN_RATE -
       ((s.ecomUpgrades || []).includes("fitmentDb") ? ECOM_UPGRADES.fitmentDb.returnReduce * ECOM_BASE_RETURN_RATE : 0));

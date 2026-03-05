@@ -23,17 +23,19 @@ export const ECOM_UPGRADES = {
   liveChat: { cost: 15000, monthly: 1000, name: "Live Chat System", desc: "Real-time customer support \u2014 reduces cart abandonment", convBoost: .04, req: { csRep: true } },
 };
 
+// Tiers based on total invested in ecom upgrades + staff
+// Rebalanced: "Competitive" at ~$200K invested (was $1M)
 export const ECOM_TIERS = [
   { min: 0, label: "Invisible", marketShare: .0005, desc: "Page 10+ \u2014 nobody finds you" },
-  { min: 10000, label: "Crawling", marketShare: .001, desc: "Page 8-10 \u2014 barely indexed" },
-  { min: 25000, label: "Startup", marketShare: .003, desc: "Page 5-8 for niche terms" },
-  { min: 60000, label: "Emerging", marketShare: .006, desc: "Page 2-3 for some searches" },
-  { min: 120000, label: "Rising", marketShare: .010, desc: "Page 1-2 for long-tail keywords" },
-  { min: 250000, label: "Growing", marketShare: .018, desc: "First page for long-tail keywords" },
-  { min: 500000, label: "Established", marketShare: .030, desc: "First page for major terms" },
-  { min: 1000000, label: "Competitive", marketShare: .050, desc: "Top 5 for most tire searches" },
-  { min: 2500000, label: "Major Player", marketShare: .080, desc: "Top 3 \u2014 competing with the big sites" },
-  { min: 6000000, label: "Dominant", marketShare: .12, desc: "Household name in online tires" },
+  { min: 5000, label: "Crawling", marketShare: .001, desc: "Page 8-10 \u2014 barely indexed" },
+  { min: 15000, label: "Startup", marketShare: .003, desc: "Page 5-8 for niche terms" },
+  { min: 35000, label: "Emerging", marketShare: .006, desc: "Page 2-3 for some searches" },
+  { min: 75000, label: "Rising", marketShare: .010, desc: "Page 1-2 for long-tail keywords" },
+  { min: 120000, label: "Growing", marketShare: .018, desc: "First page for long-tail keywords" },
+  { min: 200000, label: "Established", marketShare: .030, desc: "First page for major terms" },
+  { min: 350000, label: "Competitive", marketShare: .050, desc: "Top 5 for most tire searches" },
+  { min: 600000, label: "Major Player", marketShare: .080, desc: "Top 3 \u2014 competing with the big sites" },
+  { min: 1000000, label: "Dominant", marketShare: .12, desc: "Household name in online tires" },
 ];
 
 export const ECOM_PAYMENT_FEE = .028;
