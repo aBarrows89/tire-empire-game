@@ -92,13 +92,22 @@ export async function registerPlayer(playerName, companyName, referralCode) {
   const headers = await getHeaders();
   const body = { playerName, companyName };
   if (referralCode) body.referralCode = referralCode;
-  const res = await fetchWithRetry(`${API_BASE}/state/register`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`POST /api/state/register failed: ${res.status}`);
-  return res.json();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/state/register`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error(`POST /api/state/register failed: ${res.status}`);
+    return res.json();
+  } catch (err) {
+    clearTimeout(timeout);
+    throw err;
+  }
 }
 
 // Client-side action queue — serialize requests to prevent race conditions

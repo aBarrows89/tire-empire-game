@@ -28,7 +28,7 @@ router.get('/', authMiddleware, async (req, res) => {
 
     if (!player) {
       // Auto-create new player with default state
-      const game = await getGame();
+      const game = await getGameSafe();
       const globalDay = game?.day || game?.week || 1;
       const state = init('Player', globalDay);
       state.id = req.playerId;
@@ -96,6 +96,18 @@ router.get('/check-referral/:code', async (req, res) => {
   }
 });
 
+// Helper: getGame with a hard timeout so large economy JSON never blocks player routes
+async function getGameSafe(timeoutMs = 3000) {
+  try {
+    return await Promise.race([
+      getGame(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('getGame timeout')), timeoutMs)),
+    ]);
+  } catch {
+    return null; // Non-fatal — day will be 1, player gets corrected on first tick
+  }
+}
+
 // POST /api/state/register — set player and company name
 router.post('/register', authMiddleware, async (req, res) => {
   try {
@@ -142,7 +154,7 @@ router.post('/register', authMiddleware, async (req, res) => {
     let player = await getPlayer(req.playerId);
 
     if (!player) {
-      const game = await getGame();
+      const game = await getGameSafe();
       const globalDay = game?.day || game?.week || 1;
       const state = init(playerName, globalDay);
       state.id = req.playerId;
@@ -164,7 +176,7 @@ router.post('/register', authMiddleware, async (req, res) => {
 
       if (!oldState.companyName && !hasProgress) {
         // Genuinely new player — initialize fresh state
-        const game = await getGame();
+        const game = await getGameSafe();
         const globalDay = game?.day || game?.week || 1;
         const fresh = init(playerName, globalDay);
         fresh.id = oldState.id || req.playerId;

@@ -61,7 +61,10 @@ export default function WelcomeScreen() {
         cacheGameState(gameState);
       }
     } catch (err) {
-      setError(err.message);
+      const msg = err.name === 'AbortError'
+        ? 'Request timed out — server may be slow. Try again.'
+        : err.message;
+      setError(msg);
       setBusy(false);
     }
   };
