@@ -223,6 +223,13 @@ export function runBotTick(g, shared, allPlayers) {
   // ═══ PRIORITY 3: INTENSITY-SCALED OPTIMIZATION (unlock wholesale, ecom, factory, etc.) ═══
   runOptimizations(g, cfg, pWeights, t, intensity, level, shared);
 
+  // ═══ FRANCHISE & GOV CONTRACTS (high-level mechanics) ═══
+  runFranchise(g, cfg, pWeights, t, intensity);
+  runGovContracts(g, cfg, t, intensity);
+  runEarlyGameHustle(g, cfg, t, intensity);
+  runTCSpending(g, cfg, t, intensity);
+  runWholesaleBuying(g, cfg, t, intensity, allPlayers, shared);
+
   // ═══ PRIORITY 4: HUMAN NOISE (MISTAKES) ═══
   if (Math.random() < level.mistakeRate) {
     runMistake(g, cfg, intensity);
@@ -259,22 +266,62 @@ export function runBotTick(g, shared, allPlayers) {
 // ═══════════════════════════════════════
 
 function runSurvival(g, cfg, t) {
-  // Withdraw from bank if cash is critically low
-  if (g.cash < 2000 && g.bankBalance > 5000) {
-    const withdraw = Math.min(g.bankBalance, Math.floor(R(10000, 50000)));
+  const intensity = cfg.intensity || 5;
+
+  // ── STAGE 1: Use bank savings if cash is low ──
+  if (g.cash < 10000 && (g.bankBalance || 0) > 1000) {
+    const withdraw = Math.min(g.bankBalance, Math.max(20000, g.bankBalance * 0.5));
     g.bankBalance -= withdraw;
     g.cash += withdraw;
   }
 
-  // If near bankruptcy with shops, panic mode
-  if (g.cash < 500 && (g.locations || []).length > 0) {
-    // Try to close weakest shop
-    if (g.locations.length > 1) {
-      const weakest = g.locations.reduce((min, loc) =>
-        (loc.dailyStats?.rev || 0) < (min.dailyStats?.rev || 0) ? loc : min
-      );
-      g.locations = g.locations.filter(l => l.id !== weakest.id);
-      g.cash += Math.floor(shopCost(CITIES.find(c => c.id === weakest.cityId) || {}) * 0.3); // Fire sale
+  // ── STAGE 2: Take emergency loan if cash critical and no bank savings ──
+  if (g.cash < 3000 && (g.bankBalance || 0) < 1000 && (g.loans || []).length < 3 && intensity >= 3) {
+    const loanAmt = Math.floor(R(30000, 80000));
+    if (!g.loans) g.loans = [];
+    g.loans.push({
+      amount: loanAmt, remaining: loanAmt,
+      rate: 0.08 + R(0, 0.04), weeklyPayment: Math.ceil(loanAmt / 52),
+      takenDay: g.day, type: 'emergency',
+    });
+    g.cash += loanAmt;
+  }
+
+  // ── STAGE 3: Close weakest shop if still sinking ──
+  if (g.cash < 500 && (g.locations || []).length > 1) {
+    const weakest = g.locations.reduce((min, loc) =>
+      (loc.dailyStats?.rev || 0) < (min.dailyStats?.rev || 0) ? loc : min
+    );
+    g.locations = g.locations.filter(l => l.id !== weakest.id);
+    g.cash += Math.floor(shopCost(CITIES.find(c => c.id === weakest.cityId) || {}) * 0.3);
+  }
+
+  // ── STAGE 4: Dump excess inventory at discount if desperate ──
+  if (g.cash < 0 && intensity >= 2) {
+    const whTotal = Object.values(g.warehouseInventory || {}).reduce((a, b) => a + b, 0);
+    if (whTotal > 20) {
+      // Fire sale warehouse inventory
+      const sellQty = Math.min(whTotal, Math.floor(whTotal * 0.3));
+      let sold = 0;
+      for (const [k, qty] of Object.entries(g.warehouseInventory || {})) {
+        if (sold >= sellQty) break;
+        const toSell = Math.min(qty, sellQty - sold);
+        g.warehouseInventory[k] -= toSell;
+        g.cash += toSell * Math.floor((TIRES[k]?.def || 80) * 0.4); // 40% of market
+        sold += toSell;
+      }
+    }
+  }
+
+  // ── STAGE 5: Sell stock portfolio if truly desperate ──
+  if (g.cash < -20000 && g.stockExchange?.portfolio) {
+    const portfolio = g.stockExchange.portfolio;
+    for (const [playerId, shares] of Object.entries(portfolio)) {
+      if (shares > 0) {
+        // Mark for exchange to liquidate
+        g._aiTradeIntent = { action: 'sell', sellPct: 1.0, urgent: true };
+        break;
+      }
     }
   }
 }
@@ -1243,6 +1290,256 @@ const CONTRACT_DM_TEMPLATES = {
  * Bot contract decision-making. Called during bot tick.
  * Responds to pending proposals and occasionally initiates new ones.
  */
+// ═══════════════════════════════════════
+// FRANCHISE — empire builders at high intensity franchise their brand
+// ═══════════════════════════════════════
+
+function runFranchise(g, cfg, pw, t, intensity) {
+  if (intensity < 7 || !g.hasFranchise && intensity < 8) return;
+  const personality = cfg.personality || 'conservative';
+
+  // Unlock franchise if eligible
+  if (!g.hasFranchise && g.reputation >= 40 && (g.locations || []).length >= 3 && g.cash > 600000) {
+    if ((personality === 'empire_builder' || personality === 'regional_king') && Math.random() < 0.03) {
+      g.hasFranchise = true;
+      g.franchiseTemplates = [];
+      g.cash -= 500000;
+    }
+    return;
+  }
+
+  if (!g.hasFranchise) return;
+
+  // Create franchise template if none exist
+  if ((g.franchiseTemplates || []).length === 0 && g.locations.length > 0 && Math.random() < 0.05) {
+    const srcLoc = g.locations.reduce((best, loc) =>
+      (loc.loyalty || 0) > (best.loyalty || 0) ? loc : best
+    );
+    g.franchiseTemplates = g.franchiseTemplates || [];
+    g.franchiseTemplates.push({
+      id: uid(),
+      name: (g.companyName || 'Brand') + ' Standard',
+      prices: { ...g.prices },
+      marketing: srcLoc.marketing || null,
+    });
+  }
+
+  // Open franchise locations
+  if ((g.franchiseTemplates || []).length > 0 && Math.random() < 0.02 * t) {
+    const template = g.franchiseTemplates[0];
+    const usedCities = new Set((g.locations || []).map(l => l.cityId));
+    const available = CITIES.filter(c => !usedCities.has(c.id));
+    if (available.length === 0) return;
+
+    const city = available[Math.floor(Math.random() * available.length)];
+    const existingFranchises = (g.locations || []).filter(l => l.isFranchise).length;
+    const fee = Math.round(25000 * Math.pow(1.5, existingFranchises));
+    const shopBase = 137500 * (city.cost || 1);
+    const totalCost = shopBase + fee;
+
+    if (g.cash > totalCost * 1.5) {
+      g.cash -= totalCost;
+      g.locations.push({
+        cityId: city.id, id: uid(), locStorage: 0, inventory: {},
+        loyalty: 0, marketing: template.marketing,
+        isFranchise: true, templateId: template.id, openedDay: g.day,
+        staff: { techs: 1, sales: 1, managers: 0 },
+      });
+    }
+  }
+}
+
+// ═══════════════════════════════════════
+// GOVERNMENT CONTRACTS — mid-game revenue source
+// ═══════════════════════════════════════
+
+function runGovContracts(g, cfg, t, intensity) {
+  if (intensity < 4 || g.reputation < 20 || (g.locations || []).length < 1) return;
+  if ((g.govContracts || []).length >= 3) return; // Max active
+
+  // ~3% chance per tick to bid on a contract
+  if (Math.random() > 0.03) return;
+
+  // Pick a random gov contract type
+  const types = ['municipal_fleet', 'school_district', 'emergency_vehicles'];
+  const type = types[Math.floor(Math.random() * types.length)];
+  const tireKeys = Object.keys(TIRES).filter(k => !TIRES[k].used);
+  const tireKey = tireKeys[Math.floor(Math.random() * tireKeys.length)];
+  const tire = TIRES[tireKey];
+
+  const qty = Ri(50, 200);
+  const durationDays = Ri(21, 56); // 3-8 weeks
+  const price = Math.round((tire?.def || 80) * R(1.1, 1.3)); // Slightly above market
+
+  if (!g.govContracts) g.govContracts = [];
+  g.govContracts.push({
+    id: uid(), contractType: type, name: `${type.replace(/_/g, ' ')} contract`,
+    tireKey, qty, delivered: 0, pricePerTire: price,
+    startDay: g.day, endDay: g.day + durationDays,
+  });
+}
+
+// ═══════════════════════════════════════
+// EARLY GAME HUSTLE — van sales, flea markets (low intensity/rep bots)
+// ═══════════════════════════════════════
+
+function runEarlyGameHustle(g, cfg, t, intensity) {
+  // Only for early-game bots or low intensity
+  if ((g.locations || []).length > 2 || g.reputation > 30) return;
+
+  // Van sales — very early game
+  if (!g.locations || g.locations.length === 0) {
+    if (Math.random() < 0.15) {
+      const vanRev = Math.floor(R(100, 400) * (1 + t * 0.5));
+      const vanSold = Ri(2, 6);
+      g.cash += vanRev;
+      g.dayRev = (g.dayRev || 0) + vanRev;
+      g.totalRev = (g.totalRev || 0) + vanRev;
+      g.vanTotalSold = (g.vanTotalSold || 0) + vanSold;
+      g.vanOnlyDays = (g.vanOnlyDays || 0) + 1;
+    }
+  }
+
+  // Flea market sales
+  if (Math.random() < 0.08 && g.cash > 500) {
+    const fleaRev = Math.floor(R(150, 600));
+    const fleaSold = Ri(3, 10);
+    g.cash += fleaRev;
+    g.dayRev = (g.dayRev || 0) + fleaRev;
+    g.totalRev = (g.totalRev || 0) + fleaRev;
+    g.fleaMarketTotalSold = (g.fleaMarketTotalSold || 0) + fleaSold;
+    g.totalSold = (g.totalSold || 0) + fleaSold;
+  }
+}
+
+// ═══════════════════════════════════════
+// TC SPENDING — bots use TireCoins on boosts and intel
+// ═══════════════════════════════════════
+
+function runTCSpending(g, cfg, t, intensity) {
+  const tc = g.tireCoins || 0;
+  if (tc < 25 || intensity < 4) return;
+
+  // Marketing blitz — high-value TC spend for competitive bots
+  if (tc >= 75 && intensity >= 6 && !g.marketingBlitz && Math.random() < 0.01) {
+    g.tireCoins -= 75;
+    g.marketingBlitz = { purchasedDay: g.day, expiresDay: g.day + 7 };
+  }
+
+  // Market intel — intelligence-driven bots buy info
+  if (tc >= 100 && intensity >= 5 && !g.marketIntel && Math.random() < 0.008) {
+    g.tireCoins -= 100;
+    g.marketIntel = { purchasedDay: g.day, expiresDay: g.day + 7 };
+  }
+
+  // Rep boost for bots close to an unlock threshold
+  if (tc >= 150 && intensity >= 5 && !g.repBoost) {
+    const nearThreshold = (g.reputation >= 23 && g.reputation < 25) ||
+                          (g.reputation >= 28 && g.reputation < 30) ||
+                          (g.reputation >= 73 && g.reputation < 75);
+    if (nearThreshold && Math.random() < 0.05) {
+      g.tireCoins -= 150;
+      g.repBoost = { purchasedDay: g.day, expiresDay: g.day + 14, amount: 5 };
+    }
+  }
+
+  // TC storage upgrade if at capacity
+  if (tc >= 100) {
+    const currentLevel = g.tcStorageLevel || 0;
+    const upgradeCosts = [100, 250, 500, 1000, 2000];
+    if (currentLevel < upgradeCosts.length && tc >= upgradeCosts[currentLevel] && Math.random() < 0.02) {
+      g.tireCoins -= upgradeCosts[currentLevel];
+      g.tcStorageLevel = currentLevel + 1;
+    }
+  }
+}
+
+// ═══════════════════════════════════════
+// WHOLESALE BUYING FROM OTHER PLAYERS — real P2P commerce
+// ═══════════════════════════════════════
+
+function runWholesaleBuying(g, cfg, t, intensity, allPlayers, shared) {
+  // Only mid-game+ bots buy wholesale
+  if (intensity < 5 || g.reputation < 25 || (g.locations || []).length < 2) return;
+  if (Math.random() > 0.03) return; // ~3% chance per tick
+
+  // Find players with wholesale or factory distribution
+  const suppliers = (allPlayers || []).filter(p => {
+    if (p.id === g.id) return false;
+    const ps = p.game_state;
+    if (!ps) return false;
+    // Has wholesale OR factory with distribution
+    return (ps.hasWholesale && Object.keys(ps.wholesalePrices || {}).length > 0) ||
+           (ps.hasFactory && ps.factory?.isDistributor && Object.keys(ps.factory?.wholesalePrices || {}).length > 0);
+  });
+
+  if (suppliers.length === 0) return;
+
+  // Pick a supplier
+  const supplier = suppliers[Math.floor(Math.random() * suppliers.length)];
+  const ss = supplier.game_state;
+
+  // Pick a tire type the supplier offers
+  const availablePrices = { ...(ss.wholesalePrices || {}), ...(ss.factory?.wholesalePrices || {}) };
+  const tireTypes = Object.keys(availablePrices).filter(k => TIRES[k]);
+  if (tireTypes.length === 0) return;
+
+  const tireType = tireTypes[Math.floor(Math.random() * tireTypes.length)];
+  const unitPrice = availablePrices[tireType];
+  if (!unitPrice || unitPrice <= 0) return;
+
+  // Determine order quantity
+  const qty = Ri(10, 40 + Math.floor(intensity * 5));
+  const totalCost = qty * unitPrice + qty * 6; // 6 = P2P delivery fee
+  if (g.cash < totalCost * 1.5) return; // Need 1.5x buffer
+
+  // Check supplier has stock
+  let supplierStock = 0;
+  for (const [k, v] of Object.entries(ss.warehouseInventory || {})) {
+    if (k === tireType || k === `brand_${tireType}`) supplierStock += v;
+  }
+  if (supplierStock < qty) return;
+
+  // Execute the trade directly (mimics what the wholesale route does)
+  // Deduct from supplier
+  let remaining = qty;
+  const sourceKey = (ss.warehouseInventory?.[`brand_${tireType}`] || 0) >= qty ? `brand_${tireType}` : tireType;
+  if (ss.warehouseInventory?.[sourceKey] >= remaining) {
+    ss.warehouseInventory[sourceKey] -= remaining;
+    remaining = 0;
+  }
+
+  if (remaining > 0) return; // Couldn't fill
+
+  // Add to buyer warehouse
+  if (!g.warehouseInventory) g.warehouseInventory = {};
+  g.warehouseInventory[tireType] = (g.warehouseInventory[tireType] || 0) + qty;
+
+  // Cash transfer
+  const commission = Math.floor(qty * unitPrice * 0.03);
+  g.cash -= totalCost;
+  ss.cash += (qty * unitPrice - commission);
+
+  // Track on both sides
+  if (!g.wholesaleOrdersPlaced) g.wholesaleOrdersPlaced = [];
+  g.wholesaleOrdersPlaced.unshift({
+    tireType, qty, unitPrice, day: g.day,
+    supplierId: supplier.id, supplierName: ss.companyName || 'Unknown',
+  });
+  if (g.wholesaleOrdersPlaced.length > 30) g.wholesaleOrdersPlaced.length = 30;
+
+  if (!ss.wholesaleOrdersReceived) ss.wholesaleOrdersReceived = [];
+  ss.wholesaleOrdersReceived.unshift({
+    tireType, qty, unitPrice, day: g.day,
+    buyerName: g.companyName || 'Unknown',
+  });
+  if (ss.wholesaleOrdersReceived.length > 30) ss.wholesaleOrdersReceived.length = 30;
+}
+
+// ═══════════════════════════════════════
+// P2P CONTRACT AI — respond to / initiate contracts
+// ═══════════════════════════════════════
+
 export function botContractDecision(g, shared, allPlayers) {
   if (!g._botConfig) return;
   const cfg = g._botConfig;
