@@ -108,6 +108,14 @@ export function GameProvider({ children }) {
     }
   }, []);
 
+  // Apply state directly from action response — avoids extra GET /state round trip
+  const applyState = useCallback((actionResult) => {
+    if (actionResult?.state) {
+      dispatch({ type: 'SET_STATE', payload: { game: actionResult.state } });
+    }
+  }, [dispatch]);
+
+
   // Initial load
   useEffect(() => { refreshState(); }, [refreshState]);
 
@@ -177,7 +185,7 @@ export function GameProvider({ children }) {
   }, [refreshState]);
 
   return (
-    <GameContext.Provider value={{ state, dispatch, refreshState, sendChat, wsRef }}>
+    <GameContext.Provider value={{ state, dispatch, refreshState, applyState, sendChat, wsRef }}>
       {children}
     </GameContext.Provider>
   );
