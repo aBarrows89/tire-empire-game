@@ -273,6 +273,84 @@ export default function ShopPanel() {
                   </select>
                 </div>
 
+                {/* Stocking Preferences — control what drivers push to this location */}
+                <div className="card-section">
+                  <div className="row-between mb-4">
+                    <span className="text-xs text-dim">Auto-Stock Filter</span>
+                    <select
+                      className="autoprice-select"
+                      style={{ width: 'auto', fontSize: 10, minHeight: 28, padding: '2px 6px' }}
+                      value={(loc.stockingPrefs?.mode) || 'all'}
+                      onChange={async (e) => {
+                        const mode = e.target.value;
+                        setBusy(`stock-${i}`);
+                        await postAction('setStockingPrefs', {
+                          locationId: loc.id,
+                          mode,
+                          tireTypes: loc.stockingPrefs?.tireTypes || [],
+                        });
+                        refreshState();
+                        setBusy(null);
+                      }}
+                      disabled={busy === `stock-${i}`}
+                    >
+                      <option value="all">Stock All Types</option>
+                      <option value="blacklist">Exclude Selected</option>
+                      <option value="whitelist">Only Selected</option>
+                    </select>
+                  </div>
+                  {(loc.stockingPrefs?.mode === 'blacklist' || loc.stockingPrefs?.mode === 'whitelist') && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                      {Object.entries(TIRES).filter(([, t]) => !t.used).map(([k, t]) => {
+                        const selected = (loc.stockingPrefs?.tireTypes || []).includes(k);
+                        const isExclude = loc.stockingPrefs?.mode === 'blacklist';
+                        return (
+                          <button
+                            key={k}
+                            className="btn btn-sm"
+                            style={{
+                              fontSize: 9, padding: '3px 6px',
+                              background: selected
+                                ? (isExclude ? 'rgba(239,83,80,0.15)' : 'rgba(102,187,106,0.15)')
+                                : 'rgba(255,255,255,0.05)',
+                              border: `1px solid ${selected ? (isExclude ? 'var(--red)' : 'var(--green)') : 'rgba(255,255,255,0.1)'}`,
+                              color: selected ? (isExclude ? 'var(--red)' : 'var(--green)') : 'var(--text-dim)',
+                            }}
+                            onClick={async () => {
+                              const current = loc.stockingPrefs?.tireTypes || [];
+                              const updated = selected
+                                ? current.filter(x => x !== k)
+                                : [...current, k];
+                              setBusy(`stock-${i}`);
+                              await postAction('setStockingPrefs', {
+                                locationId: loc.id,
+                                mode: loc.stockingPrefs?.mode || 'blacklist',
+                                tireTypes: updated,
+                              });
+                              refreshState();
+                              setBusy(null);
+                            }}
+                          >
+                            {selected && (isExclude ? '✕ ' : '✓ ')}{t.n}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {loc.stockingPrefs?.mode === 'blacklist' && (loc.stockingPrefs?.tireTypes || []).length > 0 && (
+                    <div className="text-xs text-dim" style={{ marginTop: 4 }}>
+                      Drivers will skip {loc.stockingPrefs.tireTypes.length} excluded type(s)
+                    </div>
+                  )}
+                  {loc.stockingPrefs?.mode === 'whitelist' && (
+                    <div className="text-xs text-dim" style={{ marginTop: 4 }}>
+                      {(loc.stockingPrefs?.tireTypes || []).length === 0
+                        ? 'Select types to stock (none selected = nothing stocked)'
+                        : `Drivers will only stock ${loc.stockingPrefs.tireTypes.length} selected type(s)`}
+                    </div>
+                  )}
+                </div>
+
                 {/* Shop Sale / Marketplace Section */}
                 <div className="card-section">
                   {!isListed ? (
