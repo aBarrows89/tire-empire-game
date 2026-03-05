@@ -1786,9 +1786,10 @@ export function simDay(g, shared = {}) {
   // ── TIRE COINS — weekly drip + reputation bonus ──
   const tcCap = getTcCap(s);
 
-  // 14b: Emission scaling — small servers mint faster to build liquidity
+  // 14b: Emission scaling — ONLY applies to weekly drip, NOT achievements or premium
+  // This prevents one achievement from dumping 2000 TC into the economy
   const tcEmit = MONET.tcEmission;
-  const tcMult = Math.min(
+  const dripMult = Math.min(
     tcEmit.maxMultiplier,
     Math.max(tcEmit.minMultiplier, tcEmit.targetPlayerCount / (shared.activePlayerCount || 1))
   );
@@ -1802,20 +1803,20 @@ export function simDay(g, shared = {}) {
     else if (s.reputation >= 50) weeklyTC += 2;
     else if (s.reputation >= 25) weeklyTC += 1;
 
-    // Apply emission multiplier (rounds up, min 1)
-    const scaledTC = Math.max(1, Math.round(weeklyTC * tcMult));
+    // Apply emission multiplier to drip ONLY
+    const scaledTC = Math.max(1, Math.round(weeklyTC * dripMult));
     const prev = s.tireCoins || 0;
     s.tireCoins = Math.min(prev + scaledTC, tcCap);
     if (s.tireCoins > prev && scaledTC > 1) {
-      s.log.push({ msg: `Weekly TC drip: +${scaledTC} TireCoins${tcMult > 1.5 ? ' (small-server bonus)' : ' (rep bonus)'}`, cat: 'event' });
+      s.log.push({ msg: `Weekly TC drip: +${scaledTC} TireCoins${dripMult > 1.5 ? ' (small-server bonus)' : ' (rep bonus)'}`, cat: 'event' });
     }
   }
 
-  // 16d: Premium TC stipend — increased to 100 TC/month (also scaled)
+  // 16d: Premium TC stipend — flat 100 TC/month, NO multiplier
   if (s.isPremium && s.day % 30 === 0) {
-    const scaledStipend = Math.max(100, Math.round(100 * tcMult));
-    s.tireCoins = Math.min((s.tireCoins || 0) + scaledStipend, tcCap);
-    s.log.push({ msg: `Monthly PRO bonus: +${scaledStipend} TireCoins`, cat: 'event' });
+    const stipend = 100;
+    s.tireCoins = Math.min((s.tireCoins || 0) + stipend, tcCap);
+    s.log.push({ msg: `Monthly PRO bonus: +${stipend} TireCoins`, cat: 'event' });
   }
 
   // Clean up temp event flags
@@ -1829,7 +1830,7 @@ export function simDay(g, shared = {}) {
   // Rebuild aggregate inventory from all locations + warehouse
   rebuildGlobalInv(s);
 
-  // ── ACHIEVEMENTS ──
+  // ── ACHIEVEMENTS — flat TC rewards, NO emission multiplier ──
   if (!s.achievements || Array.isArray(s.achievements)) s.achievements = {};
   s._newAchievements = [];
   for (const ach of ACHIEVEMENTS) {
@@ -1837,10 +1838,10 @@ export function simDay(g, shared = {}) {
     try {
       if (ach.check(s)) {
         s.achievements[ach.id] = true;
-        const scaledReward = Math.max(ach.coins, Math.round(ach.coins * tcMult));
-        s.tireCoins = Math.min((s.tireCoins || 0) + scaledReward, tcCap);
-        s.log.push({ msg: `🏆 Achievement: ${ach.title} (+${scaledReward} TC)`, cat: 'event' });
-        s._newAchievements.push({ id: ach.id, name: ach.title, reward: scaledReward });
+        const reward = ach.coins || 0; // Flat — no multiplier
+        s.tireCoins = Math.min((s.tireCoins || 0) + reward, tcCap);
+        s.log.push({ msg: `🏆 Achievement: ${ach.title} (+${reward} TC)`, cat: 'event' });
+        s._newAchievements.push({ id: ach.id, name: ach.title, reward });
       }
     } catch {}
   }
