@@ -25,6 +25,8 @@ export default function ShopPanel() {
   const [cityAIShops, setCityAIShops] = useState({});
   const [offerAmounts, setOfferAmounts] = useState({});
   const [offerMsg, setOfferMsg] = useState({});
+  const [expandedLoc, setExpandedLoc] = useState(null);
+  const toggleLoc = (id) => setExpandedLoc(prev => prev === id ? null : id);
 
   useEffect(() => {
     fetch(`${API_BASE}/market/cities`)
@@ -178,392 +180,312 @@ export default function ShopPanel() {
 
   return (
     <>
+  return (
+    <>
+      {/* ── YOUR SHOPS ── */}
       {g.locations.length > 0 && (
         <div className={`card${(g.cosmetics || []).includes('neon_sign') ? ' neon-shop-card' : ''}`}>
           <div className="card-title">Your Shops ({g.locations.length})</div>
-          {g.locations.map((loc, i) => {
-            const city = CITIES.find(c => c.id === loc.cityId);
-            const competitors = aiCounts[loc.cityId] || 0;
-            const locInv = getLocInv(loc);
-            const locCap = getLocCap(loc);
-            const ds = loc.dailyStats || {};
-            const nextUpgrade = getNextUpgrade(loc);
-            const isListed = (g.shopListings || []).some(l => l.locationId === loc.id);
-            const listing = (g.shopListings || []).find(l => l.locationId === loc.id);
-            const bids = (g.shopBids || []).filter(b => b.locationId === loc.id);
-            const val = getShopValuation(loc, city);
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {g.locations.map((loc) => {
+              const city = CITIES.find(c => c.id === loc.cityId);
+              const competitors = aiCounts[loc.cityId] || 0;
+              const locInv = getLocInv(loc);
+              const locCap = getLocCap(loc);
+              const ds = loc.dailyStats || {};
+              const nextUpgrade = getNextUpgrade(loc);
+              const isListed = (g.shopListings || []).some(l => l.locationId === loc.id);
+              const listing = (g.shopListings || []).find(l => l.locationId === loc.id);
+              const bids = (g.shopBids || []).filter(b => b.locationId === loc.id);
+              const val = getShopValuation(loc, city);
+              const isOpen = expandedLoc === loc.id;
+              const invPct = locCap > 0 ? Math.round((locInv / locCap) * 100) : 0;
+              const profitColor = ds.profit >= 0 ? 'var(--green)' : 'var(--red)';
 
-            // Storage tier progress dots
-            let cumStorage = 0;
-            const tierDots = SHOP_STORAGE_UPGRADES.map(tier => {
-              cumStorage += tier.add;
-              const purchased = (loc.locStorage || 0) >= cumStorage;
-              return { ...tier, purchased };
-            });
+              let cumStorage = 0;
+              const tierDots = SHOP_STORAGE_UPGRADES.map(tier => {
+                cumStorage += tier.add;
+                return { ...tier, purchased: (loc.locStorage || 0) >= cumStorage };
+              });
 
-            return (
-              <div key={i} style={{ borderBottom: i < g.locations.length - 1 ? '1px solid var(--border)' : 'none', paddingBottom: 6, marginBottom: 6 }}>
-                <div className="row-between text-sm">
-                  <span className="font-bold">{city?.name}, {city?.state}</span>
-                  <span className="text-dim text-xs">Dem: {city?.dem}</span>
-                </div>
-                <div className="row-between text-xs text-dim">
-                  <span>{competitors} competitor{competitors !== 1 ? 's' : ''}</span>
-                  <span className={locInv >= locCap ? 'text-red font-bold' : ''}>Inv: {locInv}/{locCap}</span>
-                </div>
-                {/* Per-location daily stats */}
-                {(ds.sold > 0 || ds.rev > 0) && (
-                  <div className="row gap-8 text-xs" style={{ marginTop: 4 }}>
-                    <span className="text-green">{ds.sold} sold</span>
-                    <span className="text-green">${fmt(ds.rev)} rev</span>
-                    <span className={ds.profit >= 0 ? 'text-green' : 'text-red'}>${fmt(ds.profit)} profit</span>
-                  </div>
-                )}
-                {/* Customer Loyalty */}
-                <div className="text-xs text-dim" style={{ marginTop: 4 }}>
-                  Customer Loyalty: {loc.loyalty ?? 0}%
-                </div>
-                <div className="loyalty-bar">
-                  <div className="loyalty-fill" style={{ width: `${loc.loyalty ?? 0}%` }} />
-                </div>
-
-                {/* Storage Upgrade */}
-                <div style={{ marginTop: 6, padding: '4px 0' }}>
-                  <div className="row-between text-xs">
-                    <span className="text-dim">Storage: {locCap} capacity</span>
-                    {!nextUpgrade && <span className="text-green font-bold">MAX STORAGE</span>}
-                  </div>
-                  <div className="tier-track">
-                    {tierDots.map(td => (
-                      <div key={td.id} title={td.n} className={`tier-segment${td.purchased ? ' purchased' : ''}`} />
-                    ))}
-                  </div>
-                  {nextUpgrade && (
-                    <button
-                      className="btn btn-sm btn-outline btn-full mt-4"
-                      disabled={g.cash < nextUpgrade.cost || busy === `upg-${loc.id}`}
-                      onClick={() => upgradeStorage(loc.id)}
-                    >
-                      {busy === `upg-${loc.id}` ? '...' : g.cash < nextUpgrade.cost
-                        ? `Need $${fmt(nextUpgrade.cost)} for ${nextUpgrade.n}`
-                        : `${nextUpgrade.ic} ${nextUpgrade.n} (+${nextUpgrade.add}) - $${fmt(nextUpgrade.cost)}`}
-                    </button>
-                  )}
-                </div>
-
-                {/* Marketing */}
-                <div className="row-between" style={{ marginTop: 6 }}>
-                  <span className="text-xs text-dim">Marketing</span>
-                  <select
-                    className="autoprice-select"
-                    style={{ width: 'auto', fontSize: 10, minHeight: 28, padding: '2px 6px' }}
-                    value={loc.marketing || ''}
-                    onChange={async (e) => {
-                      setBusy(`mkt-${i}`);
-                      await postAction('setMarketing', { locationId: loc.id, tier: e.target.value || null });
-                      refreshState();
-                      setBusy(null);
-                    }}
-                    disabled={busy === `mkt-${i}`}
+              return (
+                <div key={loc.id} style={{ borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden' }}>
+                  {/* ── Collapsed header — always visible ── */}
+                  <div
+                    onClick={() => toggleLoc(loc.id)}
+                    style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', cursor: 'pointer', gap: 10,
+                      background: isOpen ? 'rgba(255,255,255,0.04)' : 'transparent' }}
                   >
-                    <option value="">None</option>
-                    <option value="flyers">Flyers ($50/day +10%)</option>
-                    <option value="radio">Radio ($200/day +25%)</option>
-                    <option value="digital">Digital ($500/day +40%)</option>
-                  </select>
-                </div>
-
-                {/* Best Sellers at this location */}
-                {loc.salesHistory && Object.keys(loc.salesHistory).length > 0 && (
-                  <div className="card-section">
-                    <div className="text-xs text-dim mb-4">Top Sellers</div>
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      {Object.entries(loc.salesHistory || {})
-                        .sort((a, b) => b[1] - a[1])
-                        .slice(0, 5)
-                        .map(([k, qty]) => (
-                          <span key={k} style={{
-                            fontSize: 9, padding: '3px 8px', borderRadius: 6,
-                            background: 'rgba(76,175,80,0.1)', color: 'var(--green)',
-                            border: '1px solid rgba(76,175,80,0.2)',
-                          }}>
-                            {TIRES[k]?.n || k}: {qty}
-                          </span>
-                        ))}
+                    {/* Left: name + city */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {loc.franchise ? '🏢' : '🏪'} {city?.name}, {city?.state}
+                        {isListed && <span style={{ fontSize: 9, background: 'rgba(255,213,79,0.2)', color: 'var(--gold)', padding: '1px 5px', borderRadius: 4 }}>FOR SALE</span>}
+                        {bids.length > 0 && <span style={{ fontSize: 9, background: 'rgba(76,175,80,0.2)', color: 'var(--green)', padding: '1px 5px', borderRadius: 4 }}>{bids.length} bid{bids.length > 1 ? 's' : ''}</span>}
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 2 }}>
+                        {competitors} competitor{competitors !== 1 ? 's' : ''} · Loyalty {loc.loyalty ?? 0}%
+                      </div>
                     </div>
-                  </div>
-                )}
 
-                {/* Stocking Preferences — control what drivers push to this location */}
-                <div className="card-section">
-                  <div className="row-between mb-4">
-                    <span className="text-xs text-dim">Auto-Stock Filter</span>
-                    <select
-                      className="autoprice-select"
-                      style={{ width: 'auto', fontSize: 10, minHeight: 28, padding: '2px 6px' }}
-                      value={(loc.stockingPrefs?.mode) || 'all'}
-                      onChange={async (e) => {
-                        const mode = e.target.value;
-                        setBusy(`stock-${i}`);
-                        await postAction('setStockingPrefs', {
-                          locationId: loc.id,
-                          mode,
-                          tireTypes: loc.stockingPrefs?.tireTypes || [],
-                        });
-                        refreshState();
-                        setBusy(null);
-                      }}
-                      disabled={busy === `stock-${i}`}
-                    >
-                      <option value="all">Stock All Types</option>
-                      <option value="blacklist">Exclude Selected</option>
-                      <option value="whitelist">Only Selected</option>
-                      <option value="vinnie">🧔 Vinnie's Picks</option>
-                    </select>
+                    {/* Middle: key stats */}
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)' }}>${fmt(ds.rev || 0)}</div>
+                        <div style={{ fontSize: 8, color: 'var(--text-dim)' }}>rev/day</div>
+                      </div>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: profitColor }}>${fmt(ds.profit || 0)}</div>
+                        <div style={{ fontSize: 8, color: 'var(--text-dim)' }}>profit</div>
+                      </div>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: invPct < 20 ? 'var(--red)' : invPct < 60 ? 'var(--gold)' : 'var(--text)' }}>{locInv}<span style={{ fontSize: 9, color: 'var(--text-dim)' }}>/{locCap}</span></div>
+                        <div style={{ fontSize: 8, color: 'var(--text-dim)' }}>inv</div>
+                      </div>
+                    </div>
+
+                    {/* Chevron */}
+                    <div style={{ fontSize: 14, color: 'var(--text-dim)', marginLeft: 4, transition: 'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'none' }}>▾</div>
                   </div>
 
-                  {/* Vinnie mode description */}
-                  {loc.stockingPrefs?.mode === 'vinnie' && (
-                    <div style={{
-                      padding: '8px 10px', borderRadius: 8, marginTop: 4,
-                      background: 'rgba(255,213,79,0.06)', border: '1px solid rgba(255,213,79,0.15)',
-                    }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--gold)', marginBottom: 4 }}>
-                        🧔 Vinnie is managing stock
-                      </div>
-                      <div style={{ fontSize: 10, color: 'var(--text-dim)', lineHeight: 1.5 }}>
-                        Vinnie picks tires based on this city's climate, the current season, and your best sellers here.
-                        Cold cities get winter tires in fall/winter. Warm cities skip them. Top sellers always stocked.
-                      </div>
-                    </div>
-                  )}
+                  {/* Mini inventory bar always visible */}
+                  <div style={{ height: 3, background: 'rgba(255,255,255,0.06)' }}>
+                    <div style={{ height: '100%', width: `${Math.min(100, invPct)}%`,
+                      background: invPct < 20 ? 'var(--red)' : invPct < 60 ? 'var(--gold)' : 'var(--green)',
+                      transition: 'width 0.3s' }} />
+                  </div>
 
-                  {(loc.stockingPrefs?.mode === 'blacklist' || loc.stockingPrefs?.mode === 'whitelist') && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
-                      {Object.entries(TIRES).filter(([, t]) => !t.used).map(([k, t]) => {
-                        const selected = (loc.stockingPrefs?.tireTypes || []).includes(k);
-                        const isExclude = loc.stockingPrefs?.mode === 'blacklist';
-                        return (
-                          <button
-                            key={k}
-                            className="btn btn-sm"
-                            style={{
-                              fontSize: 9, padding: '3px 6px',
-                              background: selected
-                                ? (isExclude ? 'rgba(239,83,80,0.15)' : 'rgba(102,187,106,0.15)')
-                                : 'rgba(255,255,255,0.05)',
-                              border: `1px solid ${selected ? (isExclude ? 'var(--red)' : 'var(--green)') : 'rgba(255,255,255,0.1)'}`,
-                              color: selected ? (isExclude ? 'var(--red)' : 'var(--green)') : 'var(--text-dim)',
-                            }}
-                            onClick={async () => {
-                              const current = loc.stockingPrefs?.tireTypes || [];
-                              const updated = selected
-                                ? current.filter(x => x !== k)
-                                : [...current, k];
-                              setBusy(`stock-${i}`);
-                              await postAction('setStockingPrefs', {
-                                locationId: loc.id,
-                                mode: loc.stockingPrefs?.mode || 'blacklist',
-                                tireTypes: updated,
-                              });
-                              refreshState();
-                              setBusy(null);
-                            }}
-                          >
-                            {selected && (isExclude ? '✕ ' : '✓ ')}{t.n}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {loc.stockingPrefs?.mode === 'blacklist' && (loc.stockingPrefs?.tireTypes || []).length > 0 && (
-                    <div className="text-xs text-dim" style={{ marginTop: 4 }}>
-                      Drivers will skip {loc.stockingPrefs.tireTypes.length} excluded type(s)
-                    </div>
-                  )}
-                  {loc.stockingPrefs?.mode === 'whitelist' && (
-                    <div className="text-xs text-dim" style={{ marginTop: 4 }}>
-                      {(loc.stockingPrefs?.tireTypes || []).length === 0
-                        ? 'Select types to stock (none selected = nothing stocked)'
-                        : `Drivers will only stock ${loc.stockingPrefs.tireTypes.length} selected type(s)`}
-                    </div>
-                  )}
-                </div>
+                  {/* ── Expanded detail ── */}
+                  {isOpen && (
+                    <div style={{ padding: '12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-                {/* Shop Sale / Marketplace Section */}
-                <div className="card-section">
-                  {!isListed ? (
-                    <>
-                      {/* Valuation breakdown */}
-                      <div className="text-xs text-dim mb-4">Valuation:</div>
-                      <div className="val-grid mb-4">
-                        <span className="text-dim">Base</span><span>${fmt(val.baseValue)}</span>
-                        <span className="text-dim">Inventory</span><span>${fmt(val.inventoryValue)}</span>
-                        <span className="text-dim">Loyalty bonus</span><span>${fmt(val.loyaltyBonus)}</span>
-                        <span className="text-dim">Revenue bonus</span><span>${fmt(val.revenueBonus)}</span>
-                        <span className="font-bold">Total</span><span className="font-bold text-accent">${fmt(val.totalValue)}</span>
-                      </div>
-                      <div className="row gap-8 mt-4">
-                        <input
-                          type="number"
-                          className="input input-sm"
-                          style={{ flex: 1 }}
-                          placeholder={`$${fmt(val.totalValue)}`}
-                          value={askingPrices[loc.id] || ''}
-                          onChange={(e) => setAskingPrices(p => ({ ...p, [loc.id]: Number(e.target.value) || '' }))}
-                        />
-                        <button
-                          className="btn btn-sm btn-green"
-                          disabled={busy === `list-${loc.id}`}
-                          onClick={() => listForSale(loc.id)}
-                        >
-                          {busy === `list-${loc.id}` ? '...' : 'List for Sale'}
-                        </button>
-                      </div>
-                      <button
-                        className="btn btn-sm btn-outline btn-full mt-4"
-                        style={{ color: 'var(--red)' }}
-                        disabled={busy === `sell-${loc.id}`}
-                        onClick={() => sellShop(loc.id)}
-                      >
-                        {busy === `sell-${loc.id}` ? 'Selling...' : `Quick Sell (60% = $${fmt(Math.round((city ? shopCost(city) : 120000) * 0.6))})`}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <div className="row-between mb-4">
-                        <span className="badge-listed">LISTED FOR SALE</span>
-                        <span className="text-xs text-dim">Asking: ${fmt(listing.askingPrice)}</span>
-                      </div>
-                      {bids.length === 0 && (
-                        <div className="text-xs text-dim mb-4">No bids yet. Check back tomorrow.</div>
-                      )}
-                      {bids.map(bid => {
-                        const isPlayerBid = !!bid.bidderId;
-                        const sharedListing = sharedListings.find(l => l.locationId === loc.id);
-                        const cf = counterForm[bid.id] || {};
-
-                        return (
-                          <div key={bid.id} className="bid-card">
-                            <div className="row-between text-xs">
-                              <span className="font-bold">{bid.bidderName}{isPlayerBid ? ' (Player)' : ' (AI)'}</span>
-                              <span className="font-bold text-green">${fmt(bid.bidPrice)}</span>
-                            </div>
-                            <div className="text-xs text-dim">{describeBid(bid)}</div>
-                            <div className="text-xs text-dim">Expires day {bid.day + 7}</div>
-                            {bid.isCounter && <div className="text-xs text-accent">Counter-offer</div>}
-                            <div className="row gap-8 mt-4">
-                              {isPlayerBid && sharedListing ? (
-                                <>
-                                  <button
-                                    className="btn btn-sm btn-green" style={{ flex: 1 }}
-                                    disabled={busy === `accept-${bid.id}`}
-                                    onClick={async () => {
-                                      setBusy(`accept-${bid.id}`);
-                                      await acceptShopOffer({ listingId: sharedListing.id, offerId: bid.id });
-                                      refreshState();
-                                      setBusy(null);
-                                    }}
-                                  >
-                                    {busy === `accept-${bid.id}` ? '...' : 'Accept'}
-                                  </button>
-                                  <button
-                                    className="btn btn-sm btn-outline" style={{ flex: 1 }}
-                                    disabled={busy === `reject-${bid.id}`}
-                                    onClick={async () => {
-                                      setBusy(`reject-${bid.id}`);
-                                      await rejectShopOffer({ listingId: sharedListing.id, offerId: bid.id });
-                                      refreshState();
-                                      setBusy(null);
-                                    }}
-                                  >
-                                    {busy === `reject-${bid.id}` ? '...' : 'Reject'}
-                                  </button>
-                                  <button
-                                    className="btn btn-sm btn-outline" style={{ flex: 1 }}
-                                    onClick={() => setCounterForm(p => ({ ...p, [bid.id]: { open: !cf.open, bidPrice: bid.bidPrice, paymentType: bid.paymentType || 'cash' } }))}
-                                  >
-                                    Counter
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button
-                                    className="btn btn-sm btn-green" style={{ flex: 1 }}
-                                    disabled={busy === `accept-${bid.id}`}
-                                    onClick={() => acceptBid(bid.id)}
-                                  >
-                                    {busy === `accept-${bid.id}` ? '...' : 'Accept'}
-                                  </button>
-                                  <button
-                                    className="btn btn-sm btn-outline" style={{ flex: 1 }}
-                                    disabled={busy === `reject-${bid.id}`}
-                                    onClick={() => rejectBid(bid.id)}
-                                  >
-                                    {busy === `reject-${bid.id}` ? '...' : 'Reject'}
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                            {/* Counter-offer form */}
-                            {cf.open && isPlayerBid && sharedListing && (
-                              <div className="mt-4">
-                                <div className="row gap-8 mb-4">
-                                  <input type="number" className="input input-sm" style={{ flex: 1 }}
-                                    placeholder="Counter price"
-                                    value={cf.bidPrice || ''}
-                                    onChange={e => setCounterForm(p => ({ ...p, [bid.id]: { ...p[bid.id], bidPrice: Number(e.target.value) || 0 } }))}
-                                  />
-                                  <select className="input input-sm" style={{ flex: 1 }}
-                                    value={cf.paymentType || 'cash'}
-                                    onChange={e => setCounterForm(p => ({ ...p, [bid.id]: { ...p[bid.id], paymentType: e.target.value } }))}
-                                  >
-                                    <option value="cash">Cash</option>
-                                    <option value="installment">Installment</option>
-                                    <option value="revShare">RevShare</option>
-                                  </select>
-                                </div>
-                                <button
-                                  className="btn btn-sm btn-full"
-                                  disabled={!cf.bidPrice || busy === `counter-${bid.id}`}
-                                  onClick={async () => {
-                                    setBusy(`counter-${bid.id}`);
-                                    await counterShopOffer({
-                                      listingId: sharedListing.id,
-                                      offerId: bid.id,
-                                      bidPrice: cf.bidPrice,
-                                      paymentType: cf.paymentType,
-                                    });
-                                    setCounterForm(p => ({ ...p, [bid.id]: { open: false } }));
-                                    refreshState();
-                                    setBusy(null);
-                                  }}
-                                >
-                                  {busy === `counter-${bid.id}` ? '...' : 'Send Counter'}
-                                </button>
-                              </div>
-                            )}
+                      {/* Stats row */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
+                        {[
+                          { label: 'Sold/day', value: ds.sold || 0 },
+                          { label: 'Loyalty', value: `${loc.loyalty ?? 0}%`, color: (loc.loyalty||0) >= 70 ? 'var(--green)' : (loc.loyalty||0) >= 40 ? '' : 'var(--red)' },
+                          { label: 'Inv cap', value: `${locCap}` },
+                          { label: 'Marketing', value: loc.marketing || 'None' },
+                          { label: 'Insurance', value: loc.insurance || 'None' },
+                          { label: 'Storage', value: `+${loc.locStorage || 0}` },
+                        ].map(s => (
+                          <div key={s.label} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 6, padding: '6px 8px', textAlign: 'center' }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: s.color || 'var(--text)' }}>{s.value}</div>
+                            <div style={{ fontSize: 9, color: 'var(--text-dim)' }}>{s.label}</div>
                           </div>
-                        );
-                      })}
-                      <button
-                        className="btn btn-sm btn-outline btn-full mt-4"
-                        style={{ color: 'var(--red)' }}
-                        disabled={busy === `delist-${loc.id}`}
-                        onClick={() => delistShop(loc.id)}
-                      >
-                        {busy === `delist-${loc.id}` ? '...' : 'Delist'}
-                      </button>
-                    </>
+                        ))}
+                      </div>
+
+                      {/* Loyalty bar */}
+                      <div>
+                        <div className="loyalty-bar"><div className="loyalty-fill" style={{ width: `${loc.loyalty ?? 0}%` }} /></div>
+                      </div>
+
+                      {/* Storage upgrade */}
+                      <div>
+                        <div className="row-between text-xs" style={{ marginBottom: 4 }}>
+                          <span className="text-dim">Storage Upgrades</span>
+                          {!nextUpgrade && <span className="text-green font-bold">MAX</span>}
+                        </div>
+                        <div className="tier-track" style={{ marginBottom: 6 }}>
+                          {tierDots.map(td => <div key={td.id} title={td.n} className={`tier-segment${td.purchased ? ' purchased' : ''}`} />)}
+                        </div>
+                        {nextUpgrade && (
+                          <button className="btn btn-sm btn-outline btn-full"
+                            disabled={g.cash < nextUpgrade.cost || busy === `upg-${loc.id}`}
+                            onClick={() => upgradeStorage(loc.id)}>
+                            {busy === `upg-${loc.id}` ? '...' : g.cash < nextUpgrade.cost
+                              ? `Need $${fmt(nextUpgrade.cost)} for ${nextUpgrade.n}`
+                              : `${nextUpgrade.ic} ${nextUpgrade.n} (+${nextUpgrade.add}) — $${fmt(nextUpgrade.cost)}`}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Marketing */}
+                      <div className="row-between">
+                        <span className="text-xs text-dim">Marketing</span>
+                        <select className="autoprice-select" style={{ width: 'auto', fontSize: 10, minHeight: 28, padding: '2px 6px' }}
+                          value={loc.marketing || ''}
+                          onChange={async (e) => { setBusy(`mkt-${loc.id}`); await postAction('setMarketing', { locationId: loc.id, tier: e.target.value || null }); refreshState(); setBusy(null); }}
+                          disabled={busy === `mkt-${loc.id}`}>
+                          <option value="">None</option>
+                          <option value="flyers">Flyers ($50/day +10%)</option>
+                          <option value="radio">Radio ($200/day +25%)</option>
+                          <option value="digital">Digital ($500/day +40%)</option>
+                        </select>
+                      </div>
+
+                      {/* Top Sellers */}
+                      {loc.salesHistory && Object.keys(loc.salesHistory).length > 0 && (
+                        <div>
+                          <div className="text-xs text-dim" style={{ marginBottom: 4 }}>Top Sellers</div>
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {Object.entries(loc.salesHistory).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,qty]) => (
+                              <span key={k} style={{ fontSize: 9, padding: '3px 8px', borderRadius: 6, background: 'rgba(76,175,80,0.1)', color: 'var(--green)', border: '1px solid rgba(76,175,80,0.2)' }}>
+                                {TIRES[k]?.n || k}: {qty}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Auto-Stock */}
+                      <div>
+                        <div className="row-between" style={{ marginBottom: 4 }}>
+                          <span className="text-xs text-dim">Auto-Stock Filter</span>
+                          <select className="autoprice-select" style={{ width: 'auto', fontSize: 10, minHeight: 28, padding: '2px 6px' }}
+                            value={(loc.stockingPrefs?.mode) || 'all'}
+                            onChange={async (e) => { const mode = e.target.value; setBusy(`stock-${loc.id}`); await postAction('setStockingPrefs', { locationId: loc.id, mode, tireTypes: loc.stockingPrefs?.tireTypes || [] }); refreshState(); setBusy(null); }}
+                            disabled={busy === `stock-${loc.id}`}>
+                            <option value="all">Stock All Types</option>
+                            <option value="blacklist">Exclude Selected</option>
+                            <option value="whitelist">Only Selected</option>
+                            <option value="vinnie">🧔 Vinnie's Picks</option>
+                          </select>
+                        </div>
+                        {loc.stockingPrefs?.mode === 'vinnie' && (
+                          <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(255,213,79,0.06)', border: '1px solid rgba(255,213,79,0.15)' }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--gold)', marginBottom: 2 }}>🧔 Vinnie is managing stock</div>
+                            <div style={{ fontSize: 10, color: 'var(--text-dim)', lineHeight: 1.5 }}>Picks based on climate, season, and best sellers.</div>
+                          </div>
+                        )}
+                        {(loc.stockingPrefs?.mode === 'blacklist' || loc.stockingPrefs?.mode === 'whitelist') && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                            {Object.entries(TIRES).filter(([,t]) => !t.used).map(([k,t]) => {
+                              const selected = (loc.stockingPrefs?.tireTypes || []).includes(k);
+                              const isExclude = loc.stockingPrefs?.mode === 'blacklist';
+                              return (
+                                <button key={k} className="btn btn-sm" style={{ fontSize: 9, padding: '3px 6px',
+                                  background: selected ? (isExclude ? 'rgba(239,83,80,0.15)' : 'rgba(102,187,106,0.15)') : 'rgba(255,255,255,0.05)',
+                                  border: `1px solid ${selected ? (isExclude ? 'var(--red)' : 'var(--green)') : 'rgba(255,255,255,0.1)'}`,
+                                  color: selected ? (isExclude ? 'var(--red)' : 'var(--green)') : 'var(--text-dim)' }}
+                                  onClick={async () => {
+                                    const current = loc.stockingPrefs?.tireTypes || [];
+                                    const updated = selected ? current.filter(x=>x!==k) : [...current,k];
+                                    setBusy(`stock-${loc.id}`);
+                                    await postAction('setStockingPrefs', { locationId: loc.id, mode: loc.stockingPrefs?.mode || 'blacklist', tireTypes: updated });
+                                    refreshState(); setBusy(null);
+                                  }}>
+                                  {selected && (isExclude ? '✕ ' : '✓ ')}{t.n}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Shop Sale section */}
+                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                        {!isListed ? (
+                          <>
+                            <div className="text-xs text-dim" style={{ marginBottom: 4 }}>Valuation</div>
+                            <div className="val-grid" style={{ marginBottom: 8 }}>
+                              <span className="text-dim">Base</span><span>${fmt(val.baseValue)}</span>
+                              <span className="text-dim">Inventory</span><span>${fmt(val.inventoryValue)}</span>
+                              <span className="text-dim">Loyalty</span><span>${fmt(val.loyaltyBonus)}</span>
+                              <span className="text-dim">Revenue</span><span>${fmt(val.revenueBonus)}</span>
+                              <span className="font-bold">Total</span><span className="font-bold text-accent">${fmt(val.totalValue)}</span>
+                            </div>
+                            <div className="row gap-8" style={{ marginBottom: 6 }}>
+                              <input type="number" className="input input-sm" style={{ flex: 1 }}
+                                placeholder={`$${fmt(val.totalValue)}`}
+                                value={askingPrices[loc.id] || ''}
+                                onChange={(e) => setAskingPrices(p => ({ ...p, [loc.id]: Number(e.target.value) || '' }))} />
+                              <button className="btn btn-sm btn-green" disabled={busy === `list-${loc.id}`} onClick={() => listForSale(loc.id)}>
+                                {busy === `list-${loc.id}` ? '...' : 'List'}
+                              </button>
+                            </div>
+                            <button className="btn btn-sm btn-outline btn-full" style={{ color: 'var(--red)' }}
+                              disabled={busy === `sell-${loc.id}`} onClick={() => sellShop(loc.id)}>
+                              {busy === `sell-${loc.id}` ? 'Selling...' : `Quick Sell (60% = $${fmt(Math.round((city ? shopCost(city) : 120000) * 0.6))})`}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="row-between" style={{ marginBottom: 6 }}>
+                              <span className="badge-listed">LISTED FOR SALE</span>
+                              <span className="text-xs text-dim">Asking: ${fmt(listing.askingPrice)}</span>
+                            </div>
+                            {bids.length === 0 && <div className="text-xs text-dim" style={{ marginBottom: 6 }}>No bids yet.</div>}
+                            {bids.map(bid => {
+                              const isPlayerBid = !!bid.bidderId;
+                              const sharedListing = sharedListings.find(l => l.locationId === loc.id);
+                              const cf = counterForm[bid.id] || {};
+                              return (
+                                <div key={bid.id} className="bid-card">
+                                  <div className="row-between text-xs">
+                                    <span className="font-bold">{bid.bidderName}{isPlayerBid ? ' (Player)' : ' (AI)'}</span>
+                                    <span className="font-bold text-green">${fmt(bid.bidPrice)}</span>
+                                  </div>
+                                  <div className="text-xs text-dim">{describeBid(bid)}</div>
+                                  <div className="text-xs text-dim">Expires day {bid.day + 7}</div>
+                                  {bid.isCounter && <div className="text-xs text-accent">Counter-offer</div>}
+                                  <div className="row gap-8 mt-4">
+                                    {isPlayerBid && sharedListing ? (
+                                      <>
+                                        <button className="btn btn-sm btn-green" style={{ flex:1 }} disabled={busy===`accept-${bid.id}`}
+                                          onClick={async()=>{setBusy(`accept-${bid.id}`);await acceptShopOffer({listingId:sharedListing.id,offerId:bid.id});refreshState();setBusy(null);}}>
+                                          {busy===`accept-${bid.id}`?'...':'Accept'}
+                                        </button>
+                                        <button className="btn btn-sm btn-outline" style={{ flex:1 }} disabled={busy===`reject-${bid.id}`}
+                                          onClick={async()=>{setBusy(`reject-${bid.id}`);await rejectShopOffer({listingId:sharedListing.id,offerId:bid.id});refreshState();setBusy(null);}}>
+                                          {busy===`reject-${bid.id}`?'...':'Reject'}
+                                        </button>
+                                        <button className="btn btn-sm btn-outline" style={{ flex:1 }}
+                                          onClick={()=>setCounterForm(p=>({...p,[bid.id]:{open:!cf.open,bidPrice:bid.bidPrice,paymentType:bid.paymentType||'cash'}}))}>
+                                          Counter
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <button className="btn btn-sm btn-green" style={{ flex:1 }} disabled={busy===`accept-${bid.id}`} onClick={()=>acceptBid(bid.id)}>
+                                          {busy===`accept-${bid.id}`?'...':'Accept'}
+                                        </button>
+                                        <button className="btn btn-sm btn-outline" style={{ flex:1 }} disabled={busy===`reject-${bid.id}`} onClick={()=>rejectBid(bid.id)}>
+                                          {busy===`reject-${bid.id}`?'...':'Reject'}
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                  {cf.open && isPlayerBid && sharedListing && (
+                                    <div className="mt-4">
+                                      <div className="row gap-8" style={{ marginBottom: 6 }}>
+                                        <input type="number" className="input input-sm" style={{ flex:1 }} placeholder="Counter price"
+                                          value={cf.bidPrice||''} onChange={e=>setCounterForm(p=>({...p,[bid.id]:{...p[bid.id],bidPrice:Number(e.target.value)||0}}))} />
+                                        <select className="input input-sm" style={{ flex:1 }} value={cf.paymentType||'cash'}
+                                          onChange={e=>setCounterForm(p=>({...p,[bid.id]:{...p[bid.id],paymentType:e.target.value}}))}>
+                                          <option value="cash">Cash</option>
+                                          <option value="installment">Installment</option>
+                                          <option value="revShare">RevShare</option>
+                                        </select>
+                                      </div>
+                                      <button className="btn btn-sm btn-full" disabled={!cf.bidPrice||busy===`counter-${bid.id}`}
+                                        onClick={async()=>{setBusy(`counter-${bid.id}`);await counterShopOffer({listingId:sharedListing.id,offerId:bid.id,bidPrice:cf.bidPrice,paymentType:cf.paymentType});setCounterForm(p=>({...p,[bid.id]:{open:false}}));refreshState();setBusy(null);}}>
+                                        {busy===`counter-${bid.id}`?'...':'Send Counter'}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                            <button className="btn btn-sm btn-outline btn-full mt-4" style={{ color: 'var(--red)' }}
+                              disabled={busy===`delist-${loc.id}`} onClick={()=>delistShop(loc.id)}>
+                              {busy===`delist-${loc.id}`?'...':'Delist'}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   )}
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
 
-      {/* Incoming Payments */}
+
+            {/* Incoming Payments */}
       {((g.shopInstallments || []).length > 0 || (g.shopRevenueShares || []).length > 0) && (
         <div className="card">
           <div className="card-title">Incoming Payments</div>

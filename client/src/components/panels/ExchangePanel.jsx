@@ -497,7 +497,7 @@ export default function ExchangePanel() {
                         </div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 18, fontWeight: 700 }}>${fmt(s.price)}</div>
+                        <div style={{ fontSize: 18, fontWeight: 700 }}>{fmt(s.price)}</div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
                           <MiniSparkline data={s.priceHistory || [s.price * 0.95, s.price * 0.97, s.price * 0.99, s.price]} color={s.change >= 0 ? 'var(--green)' : 'var(--red)'} width={50} height={16}/>
                           <span style={{ fontSize: 11, fontWeight: 700, color: s.change >= 0 ? 'var(--green)' : 'var(--red)' }}>
@@ -523,12 +523,12 @@ export default function ExchangePanel() {
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <div>
                     <div style={{ fontSize: 9, color: 'var(--text-dim)', letterSpacing: 1, textTransform: 'uppercase' }}>PORTFOLIO VALUE</div>
-                    <div style={{ fontSize: 26, fontWeight: 800 }}>${fmt(portfolio.totalValue)}</div>
+                    <div style={{ fontSize: 26, fontWeight: 800 }}>{fmt(portfolio.totalValue)}</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: 9, color: 'var(--text-dim)', letterSpacing: 1, textTransform: 'uppercase' }}>TOTAL P&L</div>
                     <div style={{ fontSize: 26, fontWeight: 800, color: portfolio.totalPnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                      {portfolio.totalPnl >= 0 ? '+' : ''}${fmt(portfolio.totalPnl)}
+                      {portfolio.totalPnl >= 0 ? '+' : ''}{fmt(portfolio.totalPnl)}
                     </div>
                   </div>
                 </div>
@@ -537,15 +537,15 @@ export default function ExchangePanel() {
               <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
                 <UICard style={{ flex: 1, textAlign: 'center', padding: 8 }}>
                   <div style={{ fontSize: 9, color: 'var(--text-dim)', letterSpacing: 0.5 }}>DIVIDENDS</div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--green)' }}>${fmt(portfolio.dividendIncome)}</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--green)' }}>{fmt(portfolio.dividendIncome)}</div>
                 </UICard>
                 <UICard style={{ flex: 1, textAlign: 'center', padding: 8 }}>
                   <div style={{ fontSize: 9, color: 'var(--text-dim)', letterSpacing: 0.5 }}>TAXES</div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--red)' }}>${fmt(portfolio.taxesPaid)}</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--red)' }}>{fmt(portfolio.taxesPaid)}</div>
                 </UICard>
                 <UICard style={{ flex: 1, textAlign: 'center', padding: 8 }}>
                   <div style={{ fontSize: 9, color: 'var(--text-dim)', letterSpacing: 0.5 }}>MARGIN</div>
-                  <div style={{ fontSize: 15, fontWeight: 700 }}>${fmt(portfolio.marginDebt)}</div>
+                  <div style={{ fontSize: 15, fontWeight: 700 }}>{fmt(portfolio.marginDebt)}</div>
                 </UICard>
               </div>
 
@@ -561,14 +561,14 @@ export default function ExchangePanel() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--accent)' }}>${p.ticker}</span>
-                        <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 2 }}>{p.qty} shares @ ${fmt(p.avgPrice)}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 2 }}>{p.qty} shares @ {fmt(p.avgCost)}</div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 16, fontWeight: 700 }}>${fmt(p.currentPrice)}</div>
+                        <div style={{ fontSize: 16, fontWeight: 700 }}>{fmt(p.currentPrice)}</div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
                           <MiniSparkline data={p.priceHistory || []} color={p.pnl >= 0 ? 'var(--green)' : 'var(--red)'} width={50} height={16}/>
                           <span style={{ fontSize: 11, fontWeight: 700, color: p.pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                            {p.pnl >= 0 ? '+' : ''}${fmt(p.pnl)}
+                            {p.pnl >= 0 ? '+' : ''}{fmt(p.pnl)}
                           </span>
                         </div>
                       </div>

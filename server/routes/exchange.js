@@ -77,7 +77,14 @@ router.get('/overview', authMiddleware, async (req, res) => {
         totalValue: portValue,
         positions: Object.entries(g.stockExchange.portfolio || {}).filter(([, h]) => h.qty > 0).map(([ticker, h]) => {
           const stock = exchangeState.stocks[ticker];
-          return { ticker, qty: h.qty, avgCost: h.avgCost, currentPrice: stock?.price || 0, pnl: stock ? (stock.price - h.avgCost) * h.qty : 0 };
+          return {
+            ticker, qty: h.qty, avgCost: h.avgCost,
+            currentPrice: stock?.price || 0,
+            pnl: stock ? +((stock.price - h.avgCost) * h.qty).toFixed(2) : 0,
+            dayChange: stock?.change || 0,
+            companyName: stock?.companyName || ticker,
+            priceHistory: stock?.priceHistory || [],
+          };
         }),
         dividendIncome: g.stockExchange.dividendIncome || 0,
         taxesPaid: g.stockExchange.taxesPaid || 0,
