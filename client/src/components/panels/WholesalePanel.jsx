@@ -151,7 +151,7 @@ export default function WholesalePanel() {
         </div>
         <div className="row-between mb-4">
           <span className="text-sm text-dim">Total WS Revenue</span>
-          <span className="font-bold text-green">${fmt(g.totalWholesaleRevenue || g.dayRevByChannel?.wholesale || 0)}</span>
+          <span className="font-bold text-green">${fmt(g.totalWholesaleRevenue || 0)}</span>
         </div>
         <div className="row-between mb-4">
           <span className="text-sm text-dim">Today's WS Revenue</span>
@@ -161,6 +161,14 @@ export default function WholesalePanel() {
           <span className="text-sm text-dim">Wholesale Clients</span>
           <span className="font-bold">{clients.length}</span>
         </div>
+        {clients.length > 0 && (
+          <div className="row-between mb-4">
+            <span className="text-sm text-dim">Avg Client Satisfaction</span>
+            <span className={'font-bold ' + (clients.reduce((a, c) => a + (c.satisfaction || 0), 0) / clients.length >= 70 ? 'text-green' : 'text-red')}>
+              {Math.round(clients.reduce((a, c) => a + (c.satisfaction || 0), 0) / clients.length)}%
+            </span>
+          </div>
+        )}
         <div className="row-between mb-4">
           <span className="text-sm text-dim">Orders Received</span>
           <span className="font-bold">{ordersReceived.length}</span>

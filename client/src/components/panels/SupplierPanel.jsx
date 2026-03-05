@@ -266,27 +266,45 @@ export default function SupplierPanel() {
                 {/* Auto-Order Section */}
                 <div style={{ marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
                   <div className="text-xs font-bold mb-4">Auto-Order</div>
-                  {!g.hasAutoRestock && !g.isPremium ? (
+                  {!(g.autoRestock?.enabled) ? (
                     <div style={{ textAlign: 'center', padding: '8px 0' }}>
-                      <div className="text-xs text-dim mb-4">Auto-restock is locked. Unlock to automate supplier orders.</div>
+                      <div className="text-xs text-dim mb-4">Auto-restock keeps your warehouse stocked from your cheapest supplier. Orders most-sold tires first.</div>
                       <button
                         className="btn btn-sm btn-full"
-                        style={{ background: 'linear-gradient(135deg, #ffd54f, #ff8f00)', color: '#1a1a2e', fontWeight: 700 }}
-                        disabled={busy === 'unlockAutoRestock'}
+                        style={{ background: 'var(--green)', color: '#fff', fontWeight: 700 }}
+                        disabled={busy === 'enableAutoRestock'}
                         onClick={async () => {
-                          setBusy('unlockAutoRestock');
-                          await postAction('activateAutoRestock', {});
+                          setBusy('enableAutoRestock');
+                          await postAction('setAutoRestock', { enabled: true, threshold: 0.3, maxSpend: 50000 });
                           refreshState();
                           setBusy(null);
                         }}
                       >
-                        Unlock Auto-Restock ($0.99)
+                        Enable Auto-Restock
                       </button>
-                      {g.isPremium && <div className="text-xs text-green mt-4">PRO members get this free!</div>}
+                      <div className="text-xs text-dim mt-4">Reorders when warehouse drops below 30%. Budget: $50K max.</div>
                     </div>
                   ) : (
                   <>
-                  <div className="text-xs text-dim mb-4">Orders when stock drops below threshold. Uses up to 50% of cash.</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <div className="text-xs text-green font-bold">Auto-Restock: ON</div>
+                    <button
+                      className="btn btn-sm"
+                      style={{ fontSize: 10, padding: '3px 8px', background: 'rgba(239,83,80,0.1)', color: 'var(--red)', border: '1px solid var(--red)' }}
+                      disabled={busy === 'disableAutoRestock'}
+                      onClick={async () => {
+                        setBusy('disableAutoRestock');
+                        await postAction('setAutoRestock', { enabled: false });
+                        refreshState();
+                        setBusy(null);
+                      }}
+                    >
+                      Disable
+                    </button>
+                  </div>
+                  <div className="text-xs text-dim mb-4">
+                    Threshold: {Math.round((g.autoRestock?.threshold || 0.3) * 100)}% | Budget: ${(g.autoRestock?.maxSpend || 50000).toLocaleString()}/cycle
+                  </div>
 
                   {/* Active auto-orders for this supplier */}
                   {(g.autoSuppliers || []).filter(a => a.supplierIndex === index).map(a => (

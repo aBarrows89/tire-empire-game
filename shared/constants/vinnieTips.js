@@ -164,6 +164,33 @@ export const VINNIE_TIPS = [
   { condKey: "noSupplyChain", tip: "Every tire you make depends on market rubber prices. A rubber farm or synthetic lab gives you cost control. Think vertical integration, kid." },
 
   // ═══════════════════════════════════════════
+  // ENDGAME (rep 50+, established empire)
+  // ═══════════════════════════════════════════
+  { condKey: "endgame_general", tip: "You've built something real here. Now it's about optimization — squeeze every margin, automate what you can, and think about legacy." },
+  { condKey: "endgame_general", tip: "At this level, it's not about selling more tires. It's about selling smarter. Every dollar saved in sourcing is a dollar of profit." },
+  { condKey: "endgame_general", tip: "You know what separates the shops from the empires? Distribution. Get your tires closer to more people, faster than anyone else." },
+  { condKey: "endgame_factory", tip: "Your factory is printing money — but are you maximizing quality? Higher quality rating means premium pricing and less competition." },
+  { condKey: "endgame_factory", tip: "Factory tip: R&D projects take time but the exclusive tires they unlock have zero competition. That's how you own a market." },
+  { condKey: "endgame_stock", tip: "Your stock price reflects your fundamentals. Grow revenue and the price follows. Dividend payouts attract long-term holders." },
+  { condKey: "endgame_stock", tip: "Watch your P/E ratio. If it's low, you might be undervalued — that's actually good for buybacks. If it's high, protect that growth." },
+  { condKey: "endgame_wholesale", tip: "Wholesale is volume, not margin. Keep your prices competitive and your delivery fast. Client retention is everything." },
+  { condKey: "endgame_wholesale", tip: "Your wholesale operation needs inventory depth. If you're out of stock when a client orders, they go somewhere else — permanently." },
+  { condKey: "endgame_ecom", tip: "E-commerce is a traffic game. SEO specialist + content writer + fitment database is the combo that prints. Invest in the stack." },
+  { condKey: "endgame_ecom", tip: "Your conversion rate is the lever. A 1% bump in conversion on your traffic could mean thousands more per day. A/B test everything." },
+  { condKey: "endgame_distribution", tip: "Distribution centers reduce shipping times to nearby regions. More DCs = faster delivery = more orders. Think geographic coverage." },
+  { condKey: "endgame_factory_nudge", tip: "You're sitting on $2M+ with no factory. A factory gives you branded product with zero supplier markup. That's pure margin." },
+  { condKey: "endgame_ipo_nudge", tip: "You haven't gone public yet. An IPO raises capital, builds brand awareness, and lets other players invest in your success." },
+  { condKey: "endgame_dist_nudge", tip: "You're doing wholesale without distribution centers. That's like selling pizza without delivery — you're leaving money on the table." },
+  { condKey: "endgame_legend", tip: "Rep 80+. You're a legend in the tire game. At this point, it's about building a legacy. Franchise, go public, dominate the market." },
+  { condKey: "endgame_legend", tip: "I've been in this business 40 years and I've never seen someone build what you've built. Keep pushing — the ceiling is higher than you think." },
+  { condKey: "endgame_bank", tip: "You've got half a million in cash but barely anything in the bank. That savings account earns interest every day. Park some cash." },
+  { condKey: "endgame_debt", tip: "You're carrying loans at your level? Consider paying them down early. The interest is eating into your margins." },
+  { condKey: "endgame_fall", tip: "Fall is coming — winter tire demand spikes in 2-3 weeks. Start stocking now while prices are still low. Early birds get the margins." },
+  { condKey: "endgame_winter", tip: "Winter is peak season for snow tires. If you're not stocking winter tires in cold-climate shops, you're missing the biggest margin window of the year." },
+  { condKey: "endgame_spring", tip: "Spring means all-season tire swaps. Everyone who bought winter tires needs to switch back. Have all-seasons and performance ready." },
+  { condKey: "endgame_summer", tip: "Summer is performance tire season. Car meets, road trips, upgrades. Stock up on performance and luxury touring — margins are fat." },
+
+  // ═══════════════════════════════════════════
   // DEFAULTS (multiple fallbacks for variety)
   // ═══════════════════════════════════════════
   { condKey: "default", tip: "Keep grinding, kid. The tire game rewards patience and hustle. Every day you show up is a day closer to empire." },
