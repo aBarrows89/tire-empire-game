@@ -43,32 +43,34 @@ export default function ChatOverlay({ messages = [], onSend, isOpen, onClose, ws
     if (filtered.length > 0) setTyping(false);
   }, [filtered.length]);
 
-  // Fetch recent chat history when overlay first opens
+  // Fetch chat history from DB whenever overlay opens or channel changes
+  const fetchHistory = useCallback(async (ch) => {
+    try {
+      const target = (!ch || ch === 'dm') ? 'global' : ch;
+      const h = await getHeaders();
+      const res = await fetch(`${API_BASE}/chat?limit=100&channel=${target}`, { headers: h });
+      if (!res.ok) return;
+      const msgs = await res.json();
+      if (!Array.isArray(msgs)) return;
+      msgs.forEach(m => {
+        dispatch({ type: 'ADD_CHAT', payload: {
+          id: m.id,
+          playerId: m.playerId || m.player_id,
+          playerName: m.playerName || m.player_name,
+          channel: m.channel || 'global',
+          text: m.text,
+          timestamp: m.timestamp || (m.created_at ? new Date(m.created_at).getTime() : Date.now()),
+        }});
+      });
+    } catch (e) {
+      console.warn('[Chat] fetch history failed:', e.message);
+    }
+  }, [dispatch]);
+
   useEffect(() => {
     if (!isOpen) return;
-    (async () => {
-      try {
-        const h = await getHeaders();
-        const res = await fetch(`${API_BASE}/chat?limit=100&channel=${channel === 'dm' ? 'global' : channel}`, { headers: h });
-        if (!res.ok) return;
-        const msgs = await res.json();
-        if (Array.isArray(msgs) && msgs.length > 0) {
-          // Dispatch into GameContext so they appear in messages prop
-          msgs.forEach(m => {
-            const normalized = {
-              id: m.id,
-              playerId: m.player_id || m.playerId,
-              playerName: m.player_name || m.playerName,
-              channel: m.channel || 'global',
-              text: m.text,
-              timestamp: m.created_at ? new Date(m.created_at).getTime() : (m.timestamp || Date.now()),
-            };
-            dispatch({ type: 'ADD_CHAT', payload: normalized });
-          });
-        }
-      } catch {}
-    })();
-  }, [isOpen]);
+    fetchHistory(channel);
+  }, [isOpen, channel, fetchHistory]);
 
   // Fetch DM partners when switching to DM tab
   useEffect(() => {

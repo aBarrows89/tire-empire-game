@@ -122,6 +122,26 @@ export function GameProvider({ children }) {
   // Initial load
   useEffect(() => { refreshState(); }, [refreshState]);
 
+  // Pre-load chat history on boot so messages are ready before chat is opened
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/chat?limit=100&channel=global');
+        if (!res.ok) return;
+        const msgs = await res.json();
+        if (!Array.isArray(msgs)) return;
+        msgs.forEach(m => dispatch({ type: 'ADD_CHAT', payload: {
+          id: m.id,
+          playerId: m.playerId || m.player_id,
+          playerName: m.playerName || m.player_name,
+          channel: m.channel || 'global',
+          text: m.text,
+          timestamp: m.timestamp || Date.now(),
+        }}));
+      } catch {}
+    })();
+  }, []);
+
   // WebSocket tick handler — use state from WS if available, else fallback to HTTP
   const onTick = useCallback((tickMsg) => {
     if (tickMsg?.state) {

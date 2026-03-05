@@ -5,7 +5,7 @@ import { authMiddleware } from '../middleware/auth.js';
 const router = Router();
 
 // GET /api/chat — fetch channel messages (optional ?channel=global|trade|help)
-router.get('/', authMiddleware, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit || '50', 10), 100);
     const channel = ['global', 'trade', 'help'].includes(req.query.channel) ? req.query.channel : null;
