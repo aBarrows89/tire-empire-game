@@ -762,7 +762,7 @@ function runOptimizations(g, cfg, pw, t, intensity, level, shared) {
       productionQueue: [], dailyCapacity: 50,
       qualityRating: 0.82, brandReputation: 10,
       rawMaterials: { rubber: 1.0, steel: 1.0, chemicals: 1.0 },
-      currentLine: null, switchCooldown: 0, isDistributor: false,
+      currentLine: null, switchCooldown: 0, isDistributor: true, // Bots always distribute
       discountTiers: [{ min: 0, disc: 0, label: 'Standard' }],
       wholesalePrices: { allSeason: 85, performance: 120, winter: 110 },
       mapPrices: {}, minOrders: {}, rdProjects: [],
@@ -774,8 +774,9 @@ function runOptimizations(g, cfg, pw, t, intensity, level, shared) {
   }
 
   // ── IPO ──
-  if (g.stockExchange?.hasBrokerage && !g.stockExchange.isPublic && intensity >= 7 && g.day > 100 && g.reputation >= 40 && g.cash > 200000 && Math.random() < 0.01) {
-    g.stockExchange.isPublic = true;
+  if (g.stockExchange?.hasBrokerage && !g.stockExchange.isPublic && !g.stockExchange._pendingIPO && intensity >= 7 && g.day > 100 && g.reputation >= 40 && g.cash > 200000 && Math.random() < 0.01) {
+    // Don't set isPublic here — let exchangeTick.js call processIPO() which creates the actual stock
+    g.stockExchange._pendingIPO = true;
     g.stockExchange.ipoDay = g.day;
     const words = (g.companyName || 'BOT').split(/\s+/);
     g.stockExchange.ticker = words.map(w => w[0]).join('').toUpperCase().slice(0, 4);
