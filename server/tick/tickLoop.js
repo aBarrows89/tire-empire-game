@@ -1303,6 +1303,10 @@ export async function runTick(clients) {
       const chatQueue = getBotChatQueue();
       const legacyChats = getPendingBotChats(); // fallback template messages
 
+      if (chatQueue.length > 0 || legacyChats.length > 0) {
+        console.log(`[Chat] Queue: ${chatQueue.length} AI, ${legacyChats.length} template`);
+      }
+
       let botChats = [];
 
       if (chatQueue.length > 0) {
@@ -1347,6 +1351,13 @@ export async function runTick(clients) {
         try {
           if (msg && msg.text && msg.playerId) {
             await addChatMessage(msg);
+            // Broadcast to all connected WS clients — same as real player chat
+            const payload = JSON.stringify({ type: 'chat', message: msg });
+            for (const client of clients) {
+              if (client.readyState === 1) {
+                try { client.send(payload); } catch {}
+              }
+            }
           }
         } catch (singleChatErr) {
           console.error(`[Tick] Failed to post bot chat from ${msg?.playerName}:`, singleChatErr.message);
