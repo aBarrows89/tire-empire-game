@@ -273,6 +273,27 @@ export default function ShopPanel() {
                   </select>
                 </div>
 
+                {/* Best Sellers at this location */}
+                {loc.salesHistory && Object.keys(loc.salesHistory).length > 0 && (
+                  <div className="card-section">
+                    <div className="text-xs text-dim mb-4">Top Sellers</div>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      {Object.entries(loc.salesHistory || {})
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, 5)
+                        .map(([k, qty]) => (
+                          <span key={k} style={{
+                            fontSize: 9, padding: '3px 8px', borderRadius: 6,
+                            background: 'rgba(76,175,80,0.1)', color: 'var(--green)',
+                            border: '1px solid rgba(76,175,80,0.2)',
+                          }}>
+                            {TIRES[k]?.n || k}: {qty}
+                          </span>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Stocking Preferences — control what drivers push to this location */}
                 <div className="card-section">
                   <div className="row-between mb-4">
@@ -297,8 +318,26 @@ export default function ShopPanel() {
                       <option value="all">Stock All Types</option>
                       <option value="blacklist">Exclude Selected</option>
                       <option value="whitelist">Only Selected</option>
+                      <option value="vinnie">🧔 Vinnie's Picks</option>
                     </select>
                   </div>
+
+                  {/* Vinnie mode description */}
+                  {loc.stockingPrefs?.mode === 'vinnie' && (
+                    <div style={{
+                      padding: '8px 10px', borderRadius: 8, marginTop: 4,
+                      background: 'rgba(255,213,79,0.06)', border: '1px solid rgba(255,213,79,0.15)',
+                    }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--gold)', marginBottom: 4 }}>
+                        🧔 Vinnie is managing stock
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--text-dim)', lineHeight: 1.5 }}>
+                        Vinnie picks tires based on this city's climate, the current season, and your best sellers here.
+                        Cold cities get winter tires in fall/winter. Warm cities skip them. Top sellers always stocked.
+                      </div>
+                    </div>
+                  )}
+
                   {(loc.stockingPrefs?.mode === 'blacklist' || loc.stockingPrefs?.mode === 'whitelist') && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
                       {Object.entries(TIRES).filter(([, t]) => !t.used).map(([k, t]) => {

@@ -41,6 +41,7 @@ import { getTireSeasonMult } from '../../shared/constants/tireSeasonal.js';
 import { FLEA_MARKETS, FLEA_DAILY_OPERATING, FLEA_PRICE_MULT } from '../../shared/constants/fleaMarkets.js';
 import { CAR_MEETS, CAR_MEET_SUMMER_START, CAR_MEET_SUMMER_END, CAR_MEET_PREMIUM_TIRES } from '../../shared/constants/carMeets.js';
 import { getCalendar } from '../../shared/helpers/calendar.js';
+import { CITIES } from '../../shared/constants/cities.js';
 import { getShopValuation, SHOP_BID, AI_BUYER_NAMES } from '../../shared/constants/shopSale.js';
 import { uid } from '../../shared/helpers/random.js';
 import { MONET } from '../../shared/constants/monetization.js';
@@ -701,9 +702,37 @@ export function simDay(g, shared = {}) {
       if (!loc.inventory) loc.inventory = {};
 
       // ── STOCKING PREFERENCES — filter what gets pushed to this location ──
-      // loc.stockingPrefs: { mode: 'all'|'whitelist'|'blacklist', tireTypes: ['allSeason','performance',...] }
       const prefs = loc.stockingPrefs || { mode: 'all', tireTypes: [] };
+
+      // Vinnie mode: smart stocking based on city climate + season
+      let vinnieTypes = null;
+      if (prefs.mode === 'vinnie') {
+        const locCity = CITIES ? CITIES.find(c => c.id === loc.cityId) : null;
+        const lat = locCity?.lat || 40;
+        const winMult = locCity?.win || 1.0;
+        const isWarm = lat < 33;
+        const isCold = lat > 42 || winMult >= 1.3;
+        const cal = getCalendar(s.day + (s.startDay || 1) - 1);
+        const season = cal?.season || 'Spring';
+        const isWinter = season === 'Winter' || season === 'Fall';
+
+        // Build priority list based on climate + season
+        vinnieTypes = new Set(['allSeason']); // Always stock all-season
+        if (!isWarm) vinnieTypes.add('lightTruck');
+        if (isWinter && isCold) { vinnieTypes.add('winter'); vinnieTypes.add('premiumAllWeather'); }
+        else if (isWinter && !isWarm) { vinnieTypes.add('winter'); }
+        if (!isWinter || isWarm) { vinnieTypes.add('performance'); vinnieTypes.add('evTire'); }
+        if (isWarm) { vinnieTypes.add('performance'); vinnieTypes.add('luxuryTouring'); }
+        vinnieTypes.add('commercial'); // Always some commercial
+        if (lat > 35) vinnieTypes.add('runFlat'); // Urban areas
+        // Use sales history to boost best sellers
+        const history = loc.salesHistory || {};
+        const topSellers = Object.entries(history).sort((a, b) => b[1] - a[1]).slice(0, 5);
+        for (const [k] of topSellers) { vinnieTypes.add(k); }
+      }
+
       const isAllowed = (tireKey) => {
+        if (prefs.mode === 'vinnie') return vinnieTypes ? vinnieTypes.has(tireKey) : true;
         if (prefs.mode === 'all') return true;
         if (prefs.mode === 'whitelist') return (prefs.tireTypes || []).includes(tireKey);
         if (prefs.mode === 'blacklist') return !(prefs.tireTypes || []).includes(tireKey);
@@ -759,7 +788,7 @@ export function simDay(g, shared = {}) {
 
     for (const loc of s.locations) {
       if (!loc.inventory) loc.inventory = {};
-      loc.dailyStats = { rev: 0, sold: 0, profit: 0 };
+      loc.dailyStats = { rev: 0, sold: 0, profit: 0, soldByType: {} };
       let remainingStaffCap = remainingStaffCapGlobal;
       const city = (shared.cities || []).find(c => c.id === loc.cityId) || { dem: 50, cost: 1, win: 0 };
       // ── LOYALTY UPDATE ──
@@ -852,6 +881,10 @@ export function simDay(g, shared = {}) {
         loc.dailyStats.rev += rev;
         loc.dailyStats.sold += qty;
         loc.dailyStats.profit += rev - cost;
+        loc.dailyStats.soldByType[k] = (loc.dailyStats.soldByType[k] || 0) + qty;
+        // Rolling best sellers — accumulate over time
+        if (!loc.salesHistory) loc.salesHistory = {};
+        loc.salesHistory[k] = (loc.salesHistory[k] || 0) + qty;
         s.dayRevByChannel.shops += rev;
         s.daySoldByChannel.shops += qty;
         s.daySoldByType[k] = (s.daySoldByType[k] || 0) + qty;
