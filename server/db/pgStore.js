@@ -303,6 +303,18 @@ async function ensureSchema() {
         posted_at     TIMESTAMPTZ DEFAULT NOW(),
         deleted       BOOLEAN DEFAULT false
       );
+      CREATE TABLE IF NOT EXISTS reddit_posts (
+        id            TEXT PRIMARY KEY,
+        subreddit     TEXT NOT NULL,
+        title         TEXT NOT NULL,
+        body          TEXT NOT NULL,
+        reddit_post_id TEXT,
+        url           TEXT,
+        posted_by     TEXT,
+        posted_at     TIMESTAMPTZ DEFAULT NOW(),
+        deleted       BOOLEAN DEFAULT false
+      );
+      CREATE INDEX IF NOT EXISTS idx_reddit_posts_date ON reddit_posts(posted_at DESC);
       CREATE INDEX IF NOT EXISTS idx_reddit_comments_thread ON reddit_comments(thread_id);
       CREATE INDEX IF NOT EXISTS idx_reddit_status ON reddit_threads(status);
       CREATE INDEX IF NOT EXISTS idx_reddit_fetched ON reddit_threads(fetched_at DESC);

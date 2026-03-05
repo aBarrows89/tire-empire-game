@@ -3,7 +3,7 @@ import { adminAuthMiddleware } from '../../middleware/adminAuth.js';
 import { getAllActivePlayers, getGame, saveGame } from '../../db/queries.js';
 import { getWealth } from '../../../shared/helpers/wealth.js';
 import { uid } from '../../../shared/helpers/random.js';
-import { isRedditApiConfigured, postComment as redditPostComment, deleteComment as redditDeleteComment } from '../../services/redditApi.js';
+import { isRedditApiConfigured, postComment as redditPostComment, deleteComment as redditDeleteComment, submitPost as redditSubmitPost } from '../../services/redditApi.js';
 
 const router = Router();
 router.use(adminAuthMiddleware);
@@ -296,6 +296,48 @@ router.delete('/reddit/comments/:commentId', async (req, res) => {
     await pool.query('UPDATE reddit_comments SET deleted = true WHERE id = $1', [req.params.commentId]);
     await auditLog(req, 'redditDeleteComment', req.params.commentId, { threadId: comment.thread_id });
     res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════
+// REDDIT POST GENERATOR
+// ═══════════════════════════════════════
+
+router.post('/reddit/post', async (req, res) => {
+  try {
+    if (!isRedditApiConfigured()) {
+      return res.status(400).json({ error: 'Reddit API not configured — set REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, REDDIT_PASSWORD in .env' });
+    }
+    const { subreddit, title, text, flairId } = req.body;
+    if (!subreddit || !title || !text) return res.status(400).json({ error: 'subreddit, title, and text are required' });
+
+    const result = await redditSubmitPost(subreddit, title, text, flairId || undefined);
+    const redditPostId = result?.name || result?.id || null;
+    const url = result?.url || null;
+
+    const { pool } = await import('../../db/pool.js');
+    const postId = uid();
+    await pool.query(
+      `INSERT INTO reddit_posts (id, subreddit, title, body, reddit_post_id, url, posted_by) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [postId, subreddit, title, text, redditPostId, url, req.adminId || 'admin']
+    );
+
+    await auditLog(req, 'redditPost', postId, { subreddit, title, redditPostId, url });
+    res.json({ ok: true, postId, redditPostId, url });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/reddit/posts', async (req, res) => {
+  try {
+    const { pool } = await import('../../db/pool.js');
+    const { rows } = await pool.query(
+      `SELECT * FROM reddit_posts WHERE deleted = false ORDER BY posted_at DESC LIMIT 50`
+    );
+    res.json({ ok: true, posts: rows });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

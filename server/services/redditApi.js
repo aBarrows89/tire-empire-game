@@ -106,6 +106,40 @@ export async function getThreadComments(threadId) {
   return resp.json();
 }
 
+export async function submitPost(subreddit, title, text, flairId) {
+  const token = await getAccessToken();
+  const params = {
+    api_type: 'json',
+    kind: 'self',
+    sr: subreddit,
+    title,
+    text,
+  };
+  if (flairId) params.flair_id = flairId;
+
+  const resp = await fetch('https://oauth.reddit.com/api/submit', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': REDDIT_USER_AGENT,
+    },
+    body: new URLSearchParams(params),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Reddit submit failed (${resp.status}): ${errText}`);
+  }
+
+  const data = await resp.json();
+  if (data.json?.errors?.length) {
+    throw new Error(`Reddit submit error: ${data.json.errors.map(e => e.join(': ')).join(', ')}`);
+  }
+
+  return data.json?.data || data;
+}
+
 export async function deleteComment(commentFullname) {
   const token = await getAccessToken();
   const resp = await fetch('https://oauth.reddit.com/api/del', {

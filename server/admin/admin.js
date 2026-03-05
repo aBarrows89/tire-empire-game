@@ -155,6 +155,7 @@ document.addEventListener('click', e => {
   if (sub === 'ops-audit') loadAuditLog();
   if (sub === 'ops-system') loadServerStats();
   if (sub === 'mkt-reddit' && typeof loadRedditScout === 'function') loadRedditScout();
+  if (sub === 'mkt-posts' && typeof loadRedditPostGenerator === 'function') loadRedditPostGenerator();
   if (sub === 'mkt-content' && typeof loadSocialContent === 'function') loadSocialContent();
   if (sub === 'mkt-referrals' && typeof loadReferrals === 'function') loadReferrals();
   if (sub === 'ret-churn' && typeof loadChurnRisk === 'function') loadChurnRisk();

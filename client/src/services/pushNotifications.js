@@ -9,7 +9,7 @@ import { postAction } from '../api/client.js';
 let _registered = false;
 
 // Set to true once google-services.json is added to android/app/
-const FCM_CONFIGURED = false;
+const FCM_CONFIGURED = true;
 
 /**
  * Register for push notifications.

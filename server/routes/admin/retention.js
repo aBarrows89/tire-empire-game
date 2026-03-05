@@ -239,7 +239,7 @@ router.post('/push/send', async (req, res) => {
           .replace(/\{\{cash\}\}/g, String(Math.round(g.cash || 0)))
           .replace(/\{\{rep\}\}/g, String(Math.round(g.reputation || 0)));
         try {
-          await sendPushToPlayer(p.id, personalTitle, personalBody);
+          await sendPushToPlayer(p.id, g.fcmToken, personalTitle, personalBody);
           sentCount++;
         } catch {}
       }
