@@ -9,6 +9,7 @@ import { handlePricing } from './actions/pricing.js';
 import { handleSourcing } from './actions/sourcing.js';
 import { handleStorage } from './actions/storage.js';
 import { handleShop } from './actions/shop.js';
+import { handleFranchise } from './actions/franchise.js';
 import { handleBank } from './actions/bank.js';
 import { handleWholesale } from './actions/wholesale.js';
 import { handleEcommerce } from './actions/ecommerce.js';
@@ -31,6 +32,7 @@ const handlers = [
   handleContracts,
   handleShopMarket,
   handleMisc,
+  handleFranchise,
 ];
 
 // POST /api/action — player actions (serialized per-player to prevent race conditions)

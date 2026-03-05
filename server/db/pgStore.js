@@ -321,6 +321,46 @@ async function ensureSchema() {
       CREATE INDEX IF NOT EXISTS idx_referral_code ON referral_events(code);
       CREATE INDEX IF NOT EXISTS idx_revenue_time ON revenue_events(created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_scheduled_day ON scheduled_events(trigger_day);
+      CREATE TABLE IF NOT EXISTS franchise_offerings (
+        id              TEXT PRIMARY KEY,
+        franchisor_id   TEXT NOT NULL,
+        brand_name      TEXT NOT NULL,
+        description     TEXT NOT NULL DEFAULT '',
+        buy_in          BIGINT NOT NULL DEFAULT 50000,
+        royalty_pct     REAL NOT NULL DEFAULT 0.07,
+        monthly_fee     INTEGER NOT NULL DEFAULT 1500,
+        required_brand  TEXT,
+        min_rep         INTEGER NOT NULL DEFAULT 0,
+        max_franchisees INTEGER NOT NULL DEFAULT 20,
+        territory_ids   JSONB DEFAULT '[]',
+        perks           JSONB DEFAULT '[]',
+        active          BOOLEAN DEFAULT true,
+        created_at      TIMESTAMPTZ DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS franchise_agreements (
+        id                  TEXT PRIMARY KEY,
+        offering_id         TEXT NOT NULL REFERENCES franchise_offerings(id),
+        franchisor_id       TEXT NOT NULL,
+        franchisee_id       TEXT NOT NULL,
+        location_id         TEXT NOT NULL,
+        brand_name          TEXT NOT NULL,
+        buy_in_paid         BIGINT NOT NULL DEFAULT 0,
+        royalty_pct         REAL NOT NULL DEFAULT 0.07,
+        monthly_fee         INTEGER NOT NULL DEFAULT 1500,
+        required_brand      TEXT,
+        status              TEXT NOT NULL DEFAULT 'active',
+        missed_payments     INTEGER NOT NULL DEFAULT 0,
+        total_royalties_paid BIGINT NOT NULL DEFAULT 0,
+        start_day           INTEGER NOT NULL DEFAULT 0,
+        created_at          TIMESTAMPTZ DEFAULT NOW(),
+        updated_at          TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_franchise_franchisor ON franchise_offerings(franchisor_id);
+      CREATE INDEX IF NOT EXISTS idx_franchise_active ON franchise_offerings(active);
+      CREATE INDEX IF NOT EXISTS idx_agreement_franchisee ON franchise_agreements(franchisee_id);
+      CREATE INDEX IF NOT EXISTS idx_agreement_franchisor ON franchise_agreements(franchisor_id);
+      CREATE INDEX IF NOT EXISTS idx_agreement_status ON franchise_agreements(status);
       INSERT INTO games (id) VALUES ('default') ON CONFLICT DO NOTHING;
     `);
     // Migration: add version column if missing (existing DBs)
@@ -909,4 +949,89 @@ export async function getPlayerContracts(filter = {}) {
     deliveredQty: r.delivered_qty, stagedQty: r.staged_qty, totalRevenue: r.total_revenue,
     createdAt: r.created_at, updatedAt: r.updated_at, completedAt: r.completed_at,
   }));
+}
+
+// ── Franchise Offerings ──
+
+export async function createFranchiseOffering(offering) {
+  await pool.query(
+    `INSERT INTO franchise_offerings (id, franchisor_id, brand_name, description, buy_in, royalty_pct, monthly_fee, required_brand, min_rep, max_franchisees, territory_ids, perks)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+    [offering.id, offering.franchisorId, offering.brandName, offering.description,
+     offering.buyIn, offering.royaltyPct, offering.monthlyFee, offering.requiredBrand || null,
+     offering.minRep || 0, offering.maxFranchisees || 20,
+     JSON.stringify(offering.territoryIds || []), JSON.stringify(offering.perks || [])]
+  );
+}
+
+export async function getFranchiseOfferings(activeOnly = true) {
+  const q = activeOnly
+    ? `SELECT fo.*, (SELECT COUNT(*) FROM franchise_agreements fa WHERE fa.offering_id = fo.id AND fa.status = 'active') as franchisee_count
+       FROM franchise_offerings fo WHERE fo.active = true ORDER BY fo.created_at DESC`
+    : `SELECT fo.*, (SELECT COUNT(*) FROM franchise_agreements fa WHERE fa.offering_id = fo.id AND fa.status = 'active') as franchisee_count
+       FROM franchise_offerings fo ORDER BY fo.created_at DESC`;
+  const { rows } = await pool.query(q);
+  return rows.map(r => ({ ...r, territory_ids: parseJson(r.territory_ids), perks: parseJson(r.perks), franchiseeCount: parseInt(r.franchisee_count || 0) }));
+}
+
+export async function getFranchiseOfferingById(id) {
+  const { rows } = await pool.query('SELECT * FROM franchise_offerings WHERE id = $1', [id]);
+  if (!rows[0]) return null;
+  const r = rows[0];
+  return { ...r, territory_ids: parseJson(r.territory_ids), perks: parseJson(r.perks) };
+}
+
+export async function updateFranchiseOffering(id, updates) {
+  const sets = [];
+  const vals = [];
+  let i = 1;
+  if (updates.active !== undefined) { sets.push(`active = $${i++}`); vals.push(updates.active); }
+  if (updates.buyIn !== undefined) { sets.push(`buy_in = $${i++}`); vals.push(updates.buyIn); }
+  if (updates.royaltyPct !== undefined) { sets.push(`royalty_pct = $${i++}`); vals.push(updates.royaltyPct); }
+  if (updates.monthlyFee !== undefined) { sets.push(`monthly_fee = $${i++}`); vals.push(updates.monthlyFee); }
+  if (updates.description !== undefined) { sets.push(`description = $${i++}`); vals.push(updates.description); }
+  sets.push(`updated_at = NOW()`);
+  vals.push(id);
+  await pool.query(`UPDATE franchise_offerings SET ${sets.join(', ')} WHERE id = $${i}`, vals);
+}
+
+// ── Franchise Agreements ──
+
+export async function createFranchiseAgreement(agreement) {
+  await pool.query(
+    `INSERT INTO franchise_agreements (id, offering_id, franchisor_id, franchisee_id, location_id, brand_name, buy_in_paid, royalty_pct, monthly_fee, required_brand, start_day)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [agreement.id, agreement.offeringId, agreement.franchisorId, agreement.franchiseeId,
+     agreement.locationId, agreement.brandName, agreement.buyInPaid, agreement.royaltyPct,
+     agreement.monthlyFee, agreement.requiredBrand || null, agreement.startDay || 0]
+  );
+}
+
+export async function getFranchiseAgreements(filter = {}) {
+  let q = 'SELECT * FROM franchise_agreements WHERE 1=1';
+  const vals = [];
+  let i = 1;
+  if (filter.franchiseeId) { q += ` AND franchisee_id = $${i++}`; vals.push(filter.franchiseeId); }
+  if (filter.franchisorId) { q += ` AND franchisor_id = $${i++}`; vals.push(filter.franchisorId); }
+  if (filter.status) { q += ` AND status = $${i++}`; vals.push(filter.status); }
+  q += ' ORDER BY created_at DESC';
+  const { rows } = await pool.query(q, vals);
+  return rows;
+}
+
+export async function getFranchiseAgreementById(id) {
+  const { rows } = await pool.query('SELECT * FROM franchise_agreements WHERE id = $1', [id]);
+  return rows[0] || null;
+}
+
+export async function updateFranchiseAgreement(id, updates) {
+  const sets = [];
+  const vals = [];
+  let i = 1;
+  if (updates.status !== undefined) { sets.push(`status = $${i++}`); vals.push(updates.status); }
+  if (updates.missedPayments !== undefined) { sets.push(`missed_payments = $${i++}`); vals.push(updates.missedPayments); }
+  if (updates.totalRoyaltiesPaid !== undefined) { sets.push(`total_royalties_paid = $${i++}`); vals.push(updates.totalRoyaltiesPaid); }
+  sets.push(`updated_at = NOW()`);
+  vals.push(id);
+  await pool.query(`UPDATE franchise_agreements SET ${sets.join(', ')} WHERE id = $${i}`, vals);
 }

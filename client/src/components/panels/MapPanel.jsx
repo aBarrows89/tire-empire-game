@@ -39,7 +39,7 @@ export default function MapPanel() {
       const topTireName = topTire ? (TIRES[topTire[0]]?.n || topTire[0]) : '-';
       data[st].cities.push({
         name: city.name, id: city.id, locId: loc.id,
-        shopName: loc.name || city.name,
+        shopName: loc.franchise ? `${loc.franchise.brandName} (DBA ${loc.name || city.name})` : (loc.name || city.name),
         rev: dailyRev, profit: dailyProfit, sold: loc.dailyStats?.sold || 0,
         inv: locInv, staff: staffCount, staffDetail: loc.staff || {},
         loyalty: Math.round(loc.loyalty || 0), locStorage: loc.locStorage || 0,

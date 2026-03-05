@@ -67,3 +67,12 @@ export { getCacheStats, invalidateAllPlayers, invalidateGame, invalidateLeaderbo
 
 // Re-export error class for catch handling
 export { VersionConflictError } from './pgStore.js';
+
+export const createFranchiseOffering = (...args) => impl.createFranchiseOffering?.(...args);
+export const getFranchiseOfferings = (...args) => impl.getFranchiseOfferings?.(...args);
+export const getFranchiseOfferingById = (...args) => impl.getFranchiseOfferingById?.(...args);
+export const updateFranchiseOffering = (...args) => impl.updateFranchiseOffering?.(...args);
+export const createFranchiseAgreement = (...args) => impl.createFranchiseAgreement?.(...args);
+export const getFranchiseAgreements = (...args) => impl.getFranchiseAgreements?.(...args);
+export const getFranchiseAgreementById = (...args) => impl.getFranchiseAgreementById?.(...args);
+export const updateFranchiseAgreement = (...args) => impl.updateFranchiseAgreement?.(...args);

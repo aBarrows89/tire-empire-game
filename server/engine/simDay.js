@@ -1464,6 +1464,54 @@ export function simDay(g, shared = {}) {
   ) / 30 * wageMult;
   s.cash -= ecomPayroll;
 
+  // ── Franchise royalties + monthly fees ──
+  // Processed daily (royalty % of today's shop revenue + monthly fee prorated)
+  if ((s.franchises || []).length > 0) {
+    for (const franchise of s.franchises) {
+      if (franchise.status !== 'active') continue;
+      const loc = (s.locations || []).find(l => l.id === franchise.locationId);
+      if (!loc || !loc.franchise) continue;
+
+      const locRev = loc.dailyStats?.rev || 0;
+      const royaltyAmt = Math.floor(locRev * (loc.franchise.royaltyPct || 0));
+      const dailyFee = Math.floor((loc.franchise.monthlyFee || 0) / 30);
+      const totalOwed = royaltyAmt + dailyFee;
+
+      if (s.cash >= totalOwed) {
+        s.cash -= totalOwed;
+        franchise.totalRoyaltiesPaid = (franchise.totalRoyaltiesPaid || 0) + totalOwed;
+        franchise.missedPayments = 0;
+        s.log.push({ msg: `🏪 ${loc.franchise.brandName} royalty: $${totalOwed.toLocaleString()} ($${royaltyAmt.toLocaleString()} rev + $${dailyFee.toLocaleString()} fee)`, cat: 'franchise' });
+
+        // Queue royalty payment to franchisor — handled by tickLoop cross-player transfer
+        if (!s._franchisePayments) s._franchisePayments = [];
+        s._franchisePayments.push({
+          franchisorId: franchise.franchisorId,
+          amount: totalOwed,
+          locationName: loc.name || loc.franchise.brandName,
+          agreementId: franchise.agreementId,
+        });
+      } else {
+        // Can't pay — missed payment
+        franchise.missedPayments = (franchise.missedPayments || 0) + 1;
+        s.log.push({ msg: `⚠️ Missed ${loc.franchise.brandName} royalty payment ($${totalOwed.toLocaleString()}) — ${franchise.missedPayments} missed`, cat: 'franchise' });
+
+        if (franchise.missedPayments >= 3) {
+          // Terminate for non-payment
+          if (loc.franchise) delete loc.franchise;
+          franchise.status = 'terminated_nonpayment';
+          s.log.push({ msg: `❌ ${franchise.franchisorName} franchise TERMINATED — too many missed payments`, cat: 'franchise' });
+        }
+      }
+    }
+    // Apply loyalty boost from franchise brand recognition perk
+    for (const loc of s.locations) {
+      if (loc.franchise?.perks?.includes('brand_recognition')) {
+        loc.loyalty = Math.min(100, (loc.loyalty || 0) + 0.1);
+      }
+    }
+  }
+
   // E-com upgrade monthly costs
   const ecomUpgradeCost = (s.ecomUpgrades || []).reduce(
     (a, upId) => a + (ECOM_UPGRADES[upId]?.monthly || 0), 0

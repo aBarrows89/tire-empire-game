@@ -1225,6 +1225,34 @@ export async function runTick(clients) {
         const newState = simDay(state, shared);
         await savePlayerState(player.id, newState);
 
+        // ── Franchise royalty cross-player transfers ──
+        if (newState._franchisePayments?.length > 0) {
+          for (const payment of newState._franchisePayments) {
+            try {
+              await withPlayerLock(payment.franchisorId, async () => {
+                const fp = await getPlayer(payment.franchisorId);
+                if (!fp) return;
+                const fs = { ...fp.game_state };
+                fs.cash = (fs.cash || 0) + payment.amount;
+                if (!fs.franchiseIncome) fs.franchiseIncome = { totalBuyIns: 0, totalRoyalties: 0 };
+                fs.franchiseIncome.totalRoyalties = (fs.franchiseIncome.totalRoyalties || 0) + payment.amount;
+                if (!fs._royaltyLog) fs._royaltyLog = [];
+                fs._royaltyLog.push({ from: newState.companyName || 'Franchisee', amount: payment.amount, day, location: payment.locationName });
+                if (fs._royaltyLog.length > 50) fs._royaltyLog = fs._royaltyLog.slice(-50);
+                await savePlayerState(payment.franchisorId, fs);
+              });
+              await updateFranchiseAgreement(payment.agreementId, {
+                totalRoyaltiesPaid: payment.amount, // additive in DB
+              });
+            } catch (fe) {
+              console.error('[Tick] Franchise royalty transfer error:', fe.message);
+            }
+          }
+          // Clear the payment queue from state before final save
+          delete newState._franchisePayments;
+          await savePlayerState(player.id, newState);
+        }
+
         // Attach dynamic economy data for WS broadcast (mirrors state.js)
         const wsState = { ...newState };
         if (game.economy?.supplierPricing) wsState._supplierPricing = game.economy.supplierPricing;

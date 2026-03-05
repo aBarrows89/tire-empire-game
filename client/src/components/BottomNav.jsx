@@ -24,6 +24,7 @@ const SECONDARY_TABS = [
   { id: 'ecommerce', icon: '\u{1F4BB}', label: 'E-Com' },
   { id: 'wholesale', icon: '\u{1F69B}', label: 'Wholesale' },
   { id: 'exchange', icon: '\u{1F4C8}', label: 'Exchange' },
+  { id: 'franchise', icon: '\u{1F3EA}', label: 'Franchise' },
   { id: 'map', icon: '\u{1F5FA}', label: 'Map' },
   { id: 'achievements', icon: '\u{1F3C5}', label: 'Awards' },
   { id: 'store', icon: '\u{1FA99}', label: 'TC Store' },
@@ -69,6 +70,9 @@ function getUnlockedTabs(g) {
 
   // Exchange: show if has brokerage or meets requirements
   if (g.stockExchange?.hasBrokerage || (g.reputation >= 10 && (g.locations || []).length >= 1)) unlocked.add('exchange');
+
+  // Franchise: visible at rep 50+ (teaser) or if already franchising
+  if (g.hasFactory || g.reputation >= 50 || (g.franchises || []).length > 0 || g.franchiseOffering?.active) unlocked.add('franchise');
 
   // Map: available once you have any shop
   if ((g.locations || []).length > 0) unlocked.add('map');

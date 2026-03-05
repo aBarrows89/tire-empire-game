@@ -198,9 +198,11 @@ export default function DashboardPanel() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 700 }}>
-                        {loc.isFranchise ? '\u{1F3E2}' : '\u{1F3EA}'} {city?.name || 'Shop'}
+                        {loc.franchise ? '🏢' : loc.isFranchise ? '\u{1F3E2}' : '\u{1F3EA}'} {loc.franchise ? loc.franchise.brandName : (city?.name || 'Shop')}
                       </div>
-                      <div style={{ fontSize: 10, color: 'var(--text-dim)' }}>{city?.state || ''}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text-dim)' }}>
+                        {loc.franchise ? `DBA ${g.companyName} · ${city?.name || ''}` : (city?.state || '')}
+                      </div>
                     </div>
                     <div style={{
                       padding: '2px 8px', borderRadius: 8, fontSize: 10, fontWeight: 700,

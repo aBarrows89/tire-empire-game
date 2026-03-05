@@ -142,6 +142,12 @@ export const ACTION_SCHEMAS = {
   buyMarketingBlitz:          empty,
   buyRepBoost:                empty,
   devSetState:                z.object({ cash: optNum, reputation: optNum, day: optNum, tireCoins: optNum, adminKey: optStr }).passthrough(),
+
+  // Franchise system
+  createFranchiseOffering:    z.object({ brandName: str, description: str, buyIn: z.number(), royaltyPct: z.number(), monthlyFee: z.number(), requiredBrand: optStr, minRep: optNum, maxFranchisees: optNum, perks: z.array(z.string()).optional() }),
+  updateFranchiseOffering:    z.object({ active: z.boolean().optional(), buyIn: optNum, royaltyPct: optNum, monthlyFee: optNum, description: optStr }),
+  buyFranchise:               z.object({ offeringId: str, locationId: str }),
+  terminateFranchise:         z.object({ agreementId: str }),
 };
 
 /** Top-level request body schema */
