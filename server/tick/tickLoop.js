@@ -1155,12 +1155,15 @@ export async function runTick(clients) {
               newState = { ...state, day: (state.day || 0) + 1, log: [], _events: [] };
             }
 
-            // Bot cash safety net — inject cash if a bot is going broke
-            // Bots shouldn't go bankrupt from the simulation; they exist to populate the economy
-            if (newState.cash < 5000 && (newState.locations || []).length > 0) {
-              const injection = Math.max(20000, (newState.locations || []).length * 15000);
-              newState.cash += injection;
-              // Don't log this — invisible to players
+            // Bot cash reality — no safety nets. If they're going broke, that's real.
+            // High intensity bots will take loans. Low intensity bots may go bankrupt.
+            // That's the game.
+            if (newState.cash < 0 && (newState.locations || []).length === 0) {
+              // Bot is bankrupt with no shops — mark for potential cleanup
+              if (!newState._botConfig._bankruptDay) {
+                newState._botConfig._bankruptDay = newState.day;
+                console.log(`[Bot] ${newState.companyName} went bankrupt on day ${newState.day} (intensity ${newState._botConfig.intensity})`);
+              }
             }
 
             // ALWAYS run bot decisions + chat, even if simDay had issues

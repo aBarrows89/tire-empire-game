@@ -198,6 +198,12 @@ export function runBotTick(g, shared, allPlayers) {
   // ═══ PRIORITY 0: ADMIN DIRECTIVES ═══
   executeBotDirectives(g);
 
+  // ═══ ALWAYS: Staff management runs every tick (you don't fire everyone on a day off) ═══
+  runStaffManagement(g, cfg, t, intensity);
+
+  // ═══ ALWAYS: Loan management (payments happen whether you're active or not) ═══
+  runLoanManagement(g, cfg, t, intensity, shared);
+
   // Check activity schedule
   if (!shouldAct(g)) {
     // simDay already handled the economic simulation for this tick
@@ -211,10 +217,10 @@ export function runBotTick(g, shared, allPlayers) {
   // ═══ PRIORITY 1: SURVIVAL CHECKS ═══
   runSurvival(g, cfg, t);
 
-  // ═══ PRIORITY 2: PERSONALITY-DRIVEN ACTIONS ═══
+  // ═══ PRIORITY 2: PERSONALITY-DRIVEN ACTIONS (buy inventory, set prices, expand) ═══
   runPersonalityActions(g, cfg, pWeights, personality, t, intensity, level, shared);
 
-  // ═══ PRIORITY 3: INTENSITY-SCALED OPTIMIZATION ═══
+  // ═══ PRIORITY 3: INTENSITY-SCALED OPTIMIZATION (unlock wholesale, ecom, factory, etc.) ═══
   runOptimizations(g, cfg, pWeights, t, intensity, level, shared);
 
   // ═══ PRIORITY 4: HUMAN NOISE (MISTAKES) ═══
@@ -274,14 +280,136 @@ function runSurvival(g, cfg, t) {
 }
 
 // ═══════════════════════════════════════
+// STAFF MANAGEMENT — bots hire/fire staff based on business needs
+// ═══════════════════════════════════════
+
+function runStaffManagement(g, cfg, t, intensity) {
+  const locCount = (g.locations || []).length;
+  if (locCount === 0) return;
+
+  // Target staff levels based on intensity
+  // Low intensity: bare minimum. High intensity: well-staffed.
+  const targetTechsPerLoc = intensity <= 3 ? 1 : intensity <= 6 ? 2 : intensity <= 8 ? 3 : 4;
+  const targetSalesPerLoc = intensity <= 3 ? 1 : intensity <= 6 ? 1 : intensity <= 8 ? 2 : 3;
+  const targetManagersPerLoc = intensity >= 6 ? 1 : 0;
+  const targetDrivers = intensity <= 3 ? 0 : intensity <= 6 ? 1 : Math.min(3, Math.ceil(locCount / 2));
+
+  const targetTechs = locCount * targetTechsPerLoc;
+  const targetSales = locCount * targetSalesPerLoc;
+  const targetManagers = Math.min(locCount, intensity >= 6 ? Math.ceil(locCount * 0.5) : 0);
+
+  if (!g.staff) g.staff = { techs: 0, sales: 0, managers: 0, drivers: 0, pricingAnalyst: 0 };
+
+  // Hiring cost per staff member (rough monthly salary / 30)
+  const hireCosts = { techs: 3000, sales: 2500, managers: 5000, drivers: 2800 };
+
+  // ── HIRE if under-staffed and can afford it ──
+  // Only hire if we have cash for at least 30 days of their salary
+  const hireIfNeeded = (role, current, target) => {
+    if (current >= target) return;
+    const monthlyCost = hireCosts[role] || 3000;
+    const canAfford = g.cash > monthlyCost * 2; // Need 2 months runway
+    if (canAfford && Math.random() < 0.3) { // Don't hire all at once — gradual
+      g.staff[role] = Math.min(current + 1, target);
+      // Also sync to per-location staff for the first understaffed location
+      for (const loc of (g.locations || [])) {
+        if (!loc.staff) loc.staff = { techs: 0, sales: 0, managers: 0 };
+        const locTarget = role === 'managers' ? targetManagersPerLoc : role === 'techs' ? targetTechsPerLoc : targetSalesPerLoc;
+        if ((loc.staff[role] || 0) < locTarget) {
+          loc.staff[role] = (loc.staff[role] || 0) + 1;
+          break;
+        }
+      }
+    }
+  };
+
+  hireIfNeeded('techs', g.staff.techs || 0, targetTechs);
+  hireIfNeeded('sales', g.staff.sales || 0, targetSales);
+  hireIfNeeded('managers', g.staff.managers || 0, targetManagers);
+  hireIfNeeded('drivers', g.staff.drivers || 0, targetDrivers);
+
+  // ── FIRE if losing money and overstaffed ──
+  if (g.cash < 5000 && g.dayProfit < 0) {
+    // Fire the most expensive non-essential staff first
+    if (g.staff.managers > 0 && Math.random() < 0.2) {
+      g.staff.managers--;
+    } else if (g.staff.drivers > 0 && Math.random() < 0.2) {
+      g.staff.drivers--;
+    }
+  }
+
+  // ── PRICING ANALYST (intensity 7+, optional luxury) ──
+  if (intensity >= 7 && !g.staff.pricingAnalyst && g.cash > 100000 && Math.random() < 0.02) {
+    g.staff.pricingAnalyst = 1;
+  }
+}
+
+// ═══════════════════════════════════════
+// LOAN MANAGEMENT — bots take and manage loans strategically
+// ═══════════════════════════════════════
+
+function runLoanManagement(g, cfg, t, intensity, shared) {
+  // ── TAKE LOANS when cash is dangerously low ──
+  const locCount = (g.locations || []).length;
+  const monthlyExpenses = locCount * 7000 + // rough rent
+    ((g.staff?.techs || 0) * 3000 + (g.staff?.sales || 0) * 2500 + (g.staff?.managers || 0) * 5000); // rough payroll
+  const runway = monthlyExpenses > 0 ? g.cash / (monthlyExpenses / 30) : 999; // Days of cash left
+
+  const maxLoans = intensity <= 3 ? 1 : intensity <= 6 ? 2 : 3;
+  const activeLoans = (g.loans || []).filter(l => l.remaining > 0).length;
+
+  // Conservative bots wait longer before taking loans
+  const quirks = new Set(cfg.quirks || []);
+  const loanThresholdDays = quirks.has('never_takes_loans') ? 999 : intensity >= 7 ? 30 : 15;
+
+  if (runway < loanThresholdDays && activeLoans < maxLoans && !quirks.has('never_takes_loans')) {
+    // Calculate a reasonable loan amount
+    const loanAmount = Math.min(
+      Math.max(30000, monthlyExpenses * 2),  // 2 months of expenses
+      intensity <= 3 ? 50000 : intensity <= 6 ? 200000 : 500000  // Capped by intensity
+    );
+
+    const rate = (shared?.bankRate || 0.042) - (g._loanRateBonus || 0);
+    const weeklyPayment = Math.ceil(loanAmount * (1 + rate * 0.5) / 26); // ~6 month payback
+
+    if (!g.loans) g.loans = [];
+    g.loans.push({
+      id: uid(),
+      amount: loanAmount,
+      remaining: loanAmount,
+      rate,
+      weeklyPayment,
+      takenDay: g.day,
+    });
+    g.cash += loanAmount;
+  }
+
+  // ── EXTRA PAYMENTS when flush with cash (intensity 6+) ──
+  if (intensity >= 6 && g.cash > monthlyExpenses * 3 && (g.loans || []).length > 0) {
+    const extraPayment = Math.floor(g.cash * 0.05); // Pay 5% of cash toward loans
+    for (const loan of g.loans) {
+      if (loan.remaining <= 0) continue;
+      const payment = Math.min(extraPayment, loan.remaining);
+      loan.remaining -= payment;
+      g.cash -= payment;
+      break; // One extra payment per tick
+    }
+  }
+
+  // Clean up paid loans
+  g.loans = (g.loans || []).filter(l => l.remaining > 0);
+}
+
+// ═══════════════════════════════════════
 // PERSONALITY-DRIVEN ACTIONS
 // ═══════════════════════════════════════
 
 function runPersonalityActions(g, cfg, pw, personality, t, intensity, level, shared) {
   const quirks = new Set(cfg.quirks || []);
 
-  // ── PURCHASING ──
-  if (Math.random() < 0.2 * pw.buyFrequency + t * 0.15) {
+  // ── PURCHASING — keep shops stocked so simDay can generate revenue ──
+  // This runs frequently because empty shelves = $0 revenue
+  if (Math.random() < 0.35 * (pw.buyFrequency || 1) + t * 0.2) {
     const tireKeys = Object.keys(TIRES).filter(k => !TIRES[k].used);
 
     // Bargain hunter: only buy when supplier prices are low
@@ -294,10 +422,11 @@ function runPersonalityActions(g, cfg, pw, personality, t, intensity, level, sha
       if (!loc.inventory) loc.inventory = {};
       const locTotal = Object.values(loc.inventory).reduce((a, b) => a + b, 0);
       const locCap = 50 + (loc.locStorage || 0);
-      const targetFill = locCap * pw.inventoryTarget * 0.5;
+      const targetFill = locCap * (pw.inventoryTarget || 0.7); // No 0.5 multiplier — fill properly
 
       if (locTotal < targetFill) {
-        const toAdd = Ri(5, Math.min(25 + Math.floor(t * 15), locCap - locTotal));
+        const deficit = Math.floor(targetFill - locTotal);
+        const toAdd = Ri(Math.min(5, deficit), Math.min(deficit, 40 + Math.floor(t * 20)));
         const costPer = 50 + Math.floor(t * 30);
         const totalCost = toAdd * costPer;
 
@@ -475,38 +604,25 @@ function runOptimizations(g, cfg, pw, t, intensity, level, shared) {
     g.wsClients = g.wsClients || [];
   }
 
-  // ── Wholesale revenue ──
-  if (g.hasWholesale && Math.random() < 0.1 + t * 0.15) {
-    const wsRev = Math.floor(R(500, 3000) * t);
-    g.cash += wsRev;
-    g.totalWholesaleRevenue = (g.totalWholesaleRevenue || 0) + wsRev;
-    g.monthlyPurchaseVol = (g.monthlyPurchaseVol || 0) + Math.floor(wsRev / 80);
-    g.dayRev += wsRev;
-    g.totalRev += wsRev;
-    if (g.wsClients.length < intensity * 2 && Math.random() < 0.1) {
+  // ── Wholesale client growth (organic — simDay handles actual revenue) ──
+  if (g.hasWholesale && Math.random() < 0.05 + t * 0.05) {
+    if ((g.wsClients || []).length < intensity * 2 && Math.random() < 0.1) {
+      if (!g.wsClients) g.wsClients = [];
       g.wsClients.push({
         id: uid(),
         name: `${pick(LAST_NAMES)} Tire Shop`,
         joinedDay: g.day, totalPurchased: 0,
       });
     }
+    g.monthlyPurchaseVol = (g.monthlyPurchaseVol || 0) + Ri(10, 50 + intensity * 10);
   }
 
-  // ── E-commerce ──
+  // ── E-commerce unlock ──
   const ecomFocused = pw.ecomPriority;
   if (!g.hasEcom && intensity >= (ecomFocused ? 4 : 6) && g.reputation >= (ecomFocused ? 20 : 30) && g.cash > 50000 && Math.random() < 0.03) {
     g.hasEcom = true;
   }
-  if (g.hasEcom && Math.random() < 0.15 + t * 0.1) {
-    const mult = ecomFocused ? 1.5 : 1.0;
-    const ecomRev = Math.floor(R(200, 1500) * t * mult);
-    const ecomOrders = Ri(1, 5 + Math.floor(t * 5));
-    g.ecomDailyOrders = ecomOrders;
-    g.ecomDailyRev = ecomRev;
-    g.cash += ecomRev;
-    g.dayRev += ecomRev;
-    g.totalRev += ecomRev;
-  }
+  // simDay handles actual ecommerce revenue — no fake injection needed
 
   // ── Distribution ──
   if (!g.hasDist && intensity >= 8 && g.reputation >= 50 && (g.locations || []).length >= 5 && g.hasWholesale && g.cash > 600000 && Math.random() < 0.02) {
@@ -520,6 +636,23 @@ function runOptimizations(g, cfg, pw, t, intensity, level, shared) {
   const quirks = new Set(cfg.quirks || []);
   if (!quirks.has('insurance_skipper') && !g.insurance && intensity >= 5 && g.cash > 30000 && Math.random() < 0.02) {
     g.insurance = intensity >= 8 ? 'premium' : 'business';
+  }
+
+  // ── Brokerage account (needed for stock trading) ──
+  if (!g.stockExchange?.hasBrokerage && intensity >= 4 && g.reputation >= 10 && g.cash > 30000 && Math.random() < 0.03) {
+    if (!g.stockExchange) g.stockExchange = {};
+    g.stockExchange.hasBrokerage = true;
+    g.stockExchange.portfolio = g.stockExchange.portfolio || {};
+  }
+
+  // ── Bank deposits (save excess cash for interest) ──
+  if (intensity >= 4 && g.cash > 100000 && Math.random() < 0.1) {
+    const saveAmount = Math.floor(g.cash * R(0.1, 0.3));
+    const minKeep = (g.locations || []).length * 20000 + 30000; // Keep enough for operations
+    if (g.cash - saveAmount > minKeep) {
+      g.bankBalance = (g.bankBalance || 0) + saveAmount;
+      g.cash -= saveAmount;
+    }
   }
 
   // ── Storage upgrades ──
