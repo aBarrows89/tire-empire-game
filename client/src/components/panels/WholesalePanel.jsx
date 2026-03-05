@@ -150,13 +150,32 @@ export default function WholesalePanel() {
           <span className="font-bold">{fmt(g.monthlyPurchaseVol || 0)} tires</span>
         </div>
         <div className="row-between mb-4">
-          <span className="text-sm text-dim">Total Revenue</span>
-          <span className="font-bold text-green">${fmt(g.totalWholesaleRevenue || 0)}</span>
+          <span className="text-sm text-dim">Total WS Revenue</span>
+          <span className="font-bold text-green">${fmt(g.totalWholesaleRevenue || g.dayRevByChannel?.wholesale || 0)}</span>
+        </div>
+        <div className="row-between mb-4">
+          <span className="text-sm text-dim">Today's WS Revenue</span>
+          <span className="font-bold text-green">${fmt(g.dayRevByChannel?.wholesale || 0)}</span>
         </div>
         <div className="row-between mb-4">
           <span className="text-sm text-dim">Wholesale Clients</span>
           <span className="font-bold">{clients.length}</span>
         </div>
+        <div className="row-between mb-4">
+          <span className="text-sm text-dim">Orders Received</span>
+          <span className="font-bold">{ordersReceived.length}</span>
+        </div>
+        {tier && (
+          <div className="row-between mb-4">
+            <span className="text-sm text-dim">Volume Tier</span>
+            <span className="font-bold">{tier.name || `Tier ${tier.level || 1}`}</span>
+          </div>
+        )}
+        {nextTier && (
+          <div className="text-xs text-dim" style={{ marginTop: 4 }}>
+            Next tier at {fmt(nextTier.min)} monthly volume ({fmt(nextTier.min - (g.monthlyPurchaseVol || 0))} to go)
+          </div>
+        )}
       </div>
 
       {/* Tab switcher */}
@@ -269,26 +288,85 @@ export default function WholesalePanel() {
         <div className="card">
           <div className="card-title">Your Wholesale Prices</div>
           <div className="text-xs text-dim mb-4" style={{ lineHeight: 1.5 }}>
-            Set prices for tires you want to sell to other players. Only tires with a price set will appear to buyers.
+            Set bulk prices for tires you sell to other players. Show your cost and margin to price competitively.
           </div>
 
-          {Object.entries(allTires).filter(([k, t]) => !t.used).map(([k, t]) => (
-            <div key={k} className="row-between mb-4" style={{ gap: 8 }}>
-              <span className="text-sm" style={{ flex: 1 }}>{t.n}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span className="text-xs text-dim">$</span>
-                <input
-                  type="number"
-                  min="1"
-                  placeholder="Price"
-                  value={priceInputs[k] || ''}
-                  onChange={e => setPriceInputs(prev => ({ ...prev, [k]: e.target.value }))}
-                  className="input"
-                  style={{ width: 70, fontSize: 12, padding: '4px 6px' }}
-                />
+          {Object.entries(allTires).filter(([k, t]) => !t.used).map(([k, t]) => {
+            const whQty = (g.warehouseInventory || {})[k] || 0;
+            const locQty = (g.locations || []).reduce((a, l) => a + ((l.inventory || {})[k] || 0), 0);
+            const totalQty = whQty + locQty;
+            const retailPrice = g.prices?.[k] || t.def;
+            const mktAvg = (g.marketPrices && g.marketPrices[k]) || t.def;
+
+            // Calculate your cost basis from supplier pricing
+            const supPrices = g._supplierPrices || {};
+            let costs = [];
+            for (const [, prices] of Object.entries(supPrices)) {
+              if (prices[k] && prices[k] > 0) costs.push(prices[k]);
+            }
+            const avgCost = costs.length > 0
+              ? Math.round(costs.reduce((a, b) => a + b, 0) / costs.length)
+              : Math.round((t.bMin + t.bMax) / 2);
+
+            const wsPrice = Number(priceInputs[k] || g.wholesalePrices?.[k] || 0);
+            const margin = wsPrice > 0 ? wsPrice - avgCost : 0;
+            const marginPct = wsPrice > 0 && avgCost > 0 ? Math.round((margin / avgCost) * 100) : 0;
+
+            return (
+              <div key={k} style={{
+                marginBottom: 12, paddingBottom: 10,
+                borderBottom: '1px solid rgba(255,255,255,0.06)',
+                opacity: totalQty === 0 ? 0.4 : 1,
+              }}>
+                <div className="row-between mb-4">
+                  <span className="font-bold text-sm">{t.n}</span>
+                  <span className="text-xs text-dim">
+                    In stock: {totalQty} ({whQty} WH / {locQty} shops)
+                  </span>
+                </div>
+
+                {/* Cost / Market / Retail context row */}
+                <div style={{ display: 'flex', gap: 12, marginBottom: 6 }}>
+                  <div className="text-xs">
+                    <span className="text-dim">Cost: </span>
+                    <span className="font-bold">${avgCost}</span>
+                  </div>
+                  <div className="text-xs">
+                    <span className="text-dim">Market: </span>
+                    <span className="font-bold">${mktAvg}</span>
+                  </div>
+                  <div className="text-xs">
+                    <span className="text-dim">Retail: </span>
+                    <span className="font-bold">${retailPrice}</span>
+                  </div>
+                </div>
+
+                {/* Price input with margin display */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="text-xs text-dim">WS Price: $</span>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder={String(Math.round(avgCost * 1.15))}
+                    value={priceInputs[k] || ''}
+                    onChange={e => setPriceInputs(prev => ({ ...prev, [k]: e.target.value }))}
+                    className="input"
+                    style={{ width: 70, fontSize: 12, padding: '4px 6px' }}
+                  />
+                  {wsPrice > 0 && (
+                    <span className={`text-xs font-bold ${margin >= 0 ? 'text-green' : 'text-red'}`}>
+                      {margin >= 0 ? '+' : ''}{margin}/tire ({marginPct}%)
+                    </span>
+                  )}
+                </div>
+
+                {/* Suggested range */}
+                <div className="text-xs text-dim" style={{ marginTop: 4 }}>
+                  Suggested: ${Math.round(avgCost * 1.10)}-${Math.round(avgCost * 1.30)} (10-30% markup)
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           <button
             className="btn btn-full btn-green"
@@ -296,7 +374,7 @@ export default function WholesalePanel() {
             disabled={savingPrices}
             style={{ marginTop: 8 }}
           >
-            {savingPrices ? 'Saving...' : 'Save Prices'}
+            {savingPrices ? 'Saving...' : 'Save Wholesale Prices'}
           </button>
         </div>
       )}
