@@ -1,3 +1,13 @@
+// Legacy franchise system constants (used by misc.js unlock/template actions)
+export const FRANCHISE = {
+  minLocations: 2,
+  minRep: 30,
+  unlockCost: 50000,
+  templateMaxCount: 5,
+  franchiseFee: 75000,
+  franchiseFeeScale: 1.5,
+};
+
 export const FRANCHISE_PERKS = {
   brand_recognition: { label: 'Brand Recognition', description: '+0.1 loyalty/day from established brand trust', icon: '⭐' },
   supply_chain:      { label: 'Supply Chain Access', description: 'Discounted branded tires direct from franchisor factory', icon: '🏭' },
