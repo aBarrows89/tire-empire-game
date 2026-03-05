@@ -1,15 +1,49 @@
-import React, { useState } from 'react';
-import { registerPlayer } from '../api/client.js';
+import React, { useState, useEffect, useRef } from 'react';
+import { registerPlayer, API_BASE } from '../api/client.js';
 import { useGame } from '../context/GameContext.jsx';
 
 export default function WelcomeScreen() {
   const { refreshState } = useGame();
   const [playerName, setPlayerName] = useState('');
   const [companyName, setCompanyName] = useState('');
+  const [referralCode, setReferralCode] = useState('');
+  const [referralStatus, setReferralStatus] = useState(null); // null | 'checking' | 'valid' | 'invalid'
+  const [referralPerks, setReferralPerks] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const checkTimer = useRef(null);
 
   const canSubmit = playerName.trim().length >= 2 && companyName.trim().length >= 2;
+
+  // Debounced referral code validation
+  useEffect(() => {
+    if (checkTimer.current) clearTimeout(checkTimer.current);
+    const code = referralCode.trim();
+    if (!code) {
+      setReferralStatus(null);
+      setReferralPerks(null);
+      return;
+    }
+    if (code.length < 3) return;
+    setReferralStatus('checking');
+    checkTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/state/check-referral/${encodeURIComponent(code)}`);
+        const data = await res.json();
+        if (data.valid) {
+          setReferralStatus('valid');
+          setReferralPerks(data.perks);
+        } else {
+          setReferralStatus('invalid');
+          setReferralPerks(null);
+        }
+      } catch {
+        setReferralStatus(null);
+        setReferralPerks(null);
+      }
+    }, 600);
+    return () => clearTimeout(checkTimer.current);
+  }, [referralCode]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -17,12 +51,25 @@ export default function WelcomeScreen() {
     setBusy(true);
     setError(null);
     try {
-      await registerPlayer(playerName.trim(), companyName.trim());
+      const code = referralCode.trim() || undefined;
+      await registerPlayer(playerName.trim(), companyName.trim(), code);
       await refreshState();
     } catch (err) {
       setError(err.message);
       setBusy(false);
     }
+  };
+
+  const formatPerkList = (perks) => {
+    if (!perks) return null;
+    const items = [];
+    if (perks.bonusCash) items.push(`+$${perks.bonusCash.toLocaleString()} starting cash`);
+    if (perks.bonusTireCoins) items.push(`+${perks.bonusTireCoins} TireCoins`);
+    if (perks.premiumDays) items.push(`${perks.premiumDays} days free Premium`);
+    if (perks.repBoost) items.push(`${Math.round((perks.repBoost.multiplier - 1) * 100)}% rep boost for ${perks.repBoost.days} days`);
+    if (perks.revenueBoost) items.push(`${Math.round((perks.revenueBoost.multiplier - 1) * 100)}% revenue boost for ${perks.revenueBoost.days} days`);
+    if (perks.freeStorageSlots) items.push(`+${perks.freeStorageSlots} warehouse slots`);
+    return items;
   };
 
   return (
@@ -62,6 +109,39 @@ export default function WelcomeScreen() {
               className="welcome-input"
             />
           </label>
+
+          <label className="welcome-label">
+            Referral Code <span style={{ fontWeight: 'normal', opacity: 0.6, fontSize: '0.85em' }}>(optional)</span>
+            <div style={{ position: 'relative' }}>
+              <input
+                type="text"
+                value={referralCode}
+                onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                placeholder="e.g. VINNIE50"
+                maxLength={30}
+                className="welcome-input"
+                style={{ paddingRight: 36 }}
+              />
+              {referralStatus === 'checking' && (
+                <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>...</span>
+              )}
+              {referralStatus === 'valid' && (
+                <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: '#22c55e', fontWeight: 'bold' }}>&#10003;</span>
+              )}
+              {referralStatus === 'invalid' && (
+                <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: '#ef4444', fontWeight: 'bold' }}>&#10007;</span>
+              )}
+            </div>
+          </label>
+
+          {referralStatus === 'valid' && referralPerks && (
+            <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, padding: '8px 12px', fontSize: '0.85em', marginTop: -4 }}>
+              <strong style={{ color: '#22c55e' }}>Bonus perks unlocked:</strong>
+              <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                {formatPerkList(referralPerks).map((p, i) => <li key={i}>{p}</li>)}
+              </ul>
+            </div>
+          )}
 
           {error && <div className="welcome-error">{error}</div>}
 

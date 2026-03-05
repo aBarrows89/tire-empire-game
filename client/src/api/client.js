@@ -80,12 +80,14 @@ export async function getState() {
   return res.json();
 }
 
-export async function registerPlayer(playerName, companyName) {
+export async function registerPlayer(playerName, companyName, referralCode) {
   const headers = await getHeaders();
+  const body = { playerName, companyName };
+  if (referralCode) body.referralCode = referralCode;
   const res = await fetchWithRetry(`${API_BASE}/state/register`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ playerName, companyName }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`POST /api/state/register failed: ${res.status}`);
   return res.json();

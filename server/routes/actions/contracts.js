@@ -65,6 +65,9 @@ export async function handleContracts(action, params, g, ctx) {
       // Seller must have a factory
       if (!sg.hasFactory || !sg.factory) return ctx.fail('Seller has no factory');
 
+      // Validate price
+      if (!pricePerUnit || pricePerUnit <= 0) return ctx.fail('Price per unit must be greater than 0');
+
       // Validate qty meets factory minimum for seller's level
       const sellerLevel = sg.factory.level || 1;
       const minQty = FACTORY_MIN_CONTRACT[sellerLevel] || 200;
@@ -193,6 +196,12 @@ export async function handleContracts(action, params, g, ctx) {
 
       const isBuyer = contract.buyerId === ctx.playerId;
       const otherId = isBuyer ? contract.sellerId : contract.buyerId;
+
+      // Verify seller still has a factory
+      const sellerCheck = await ctx.getPlayer(contract.sellerId);
+      if (!sellerCheck?.game_state?.hasFactory || !sellerCheck?.game_state?.factory) {
+        return ctx.fail('Seller no longer has a factory');
+      }
 
       // Handle prepaid payment
       if (contract.terms.paymentTerms === 'prepaid' && isBuyer) {

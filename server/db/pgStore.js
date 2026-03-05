@@ -259,9 +259,15 @@ async function ensureSchema() {
         code          TEXT PRIMARY KEY,
         channel       TEXT NOT NULL,
         campaign      TEXT,
+        perks         JSONB DEFAULT '{}',
+        max_uses      INTEGER DEFAULT 0,
+        current_uses  INTEGER DEFAULT 0,
         active        BOOLEAN DEFAULT true,
         created_at    TIMESTAMPTZ DEFAULT NOW()
       );
+      ALTER TABLE referral_codes ADD COLUMN IF NOT EXISTS perks JSONB DEFAULT '{}';
+      ALTER TABLE referral_codes ADD COLUMN IF NOT EXISTS max_uses INTEGER DEFAULT 0;
+      ALTER TABLE referral_codes ADD COLUMN IF NOT EXISTS current_uses INTEGER DEFAULT 0;
       CREATE TABLE IF NOT EXISTS referral_events (
         id            SERIAL PRIMARY KEY,
         code          TEXT,
@@ -427,7 +433,7 @@ export async function isCompanyNameTaken(name, excludeId = null) {
 
 export async function getAllActivePlayers() {
   const { rows } = await pool.query(
-    "SELECT id, game_state FROM players WHERE (game_state->>'paused')::boolean IS NOT TRUE"
+    "SELECT id, game_state FROM players WHERE COALESCE((game_state->>'paused')::boolean, false) = false"
   );
   for (const r of rows) r.game_state = parseJson(r.game_state);
   return rows;

@@ -104,6 +104,21 @@ export function simDay(g, shared = {}) {
   s.prevCash = Math.floor(g.cash || 0);
   s.prevRep = g.reputation || 0;
 
+  // ── REFERRAL BOOST EXPIRY ──
+  if (s._activeBoosts) {
+    if (s._activeBoosts.rep && s._activeBoosts.rep.expiresDay <= s.day) {
+      delete s._activeBoosts.rep;
+    }
+    if (s._activeBoosts.revenue && s._activeBoosts.revenue.expiresDay <= s.day) {
+      delete s._activeBoosts.revenue;
+    }
+    if (Object.keys(s._activeBoosts).length === 0) delete s._activeBoosts;
+  }
+  if (s.premiumExpiresDay && s.premiumExpiresDay > 0 && s.premiumExpiresDay <= s.day) {
+    s.premium = false;
+    s.premiumExpiresDay = 0;
+  }
+
   // Backward compat: migrate week-based state to day-based
   if (s.week && !s.startDay) {
     s.day = s.week; // treat old weeks as days
@@ -1712,12 +1727,22 @@ export function simDay(g, shared = {}) {
     const earlyBonus = s.day <= 180
       ? Math.max(0, (25 - s.reputation) * 0.025)   // aggressive early: +0.625/day at rep 0
       : Math.max(0, (10 - s.reputation) * 0.005);  // normal: +0.05/day at rep 0
-    const repGain = Math.min(0.5, s.daySold * 0.005 + s.locations.length * 0.005 + earlyBonus);
+    let repGain = Math.min(0.5, s.daySold * 0.005 + s.locations.length * 0.005 + earlyBonus);
+    repGain *= (s._activeBoosts?.rep?.multiplier || 1);
     s.reputation = C(s.reputation + repGain, 0, 100);
   }
   // Small passive daily rep for being in business
   if (s.day > 7) {
     s.reputation = C(s.reputation + 0.002, 0, 100);
+  }
+
+  // ── REVENUE BOOST (referral perk) ──
+  if (s._activeBoosts?.revenue?.multiplier) {
+    const mult = s._activeBoosts.revenue.multiplier;
+    const bonusRev = Math.round(s.dayRev * (mult - 1));
+    s.dayRev += bonusRev;
+    s.dayProfit += bonusRev;
+    s.cash += bonusRev;
   }
 
   // ── TOTALS ──

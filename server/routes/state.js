@@ -3,6 +3,7 @@ import { getPlayer, createPlayer, isCompanyNameTaken, getGame } from '../db/quer
 import { init } from '../engine/init.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { trackEvent } from '../analytics/tracker.js';
+import { pool } from '../db/pgStore.js';
 
 const router = Router();
 
@@ -62,10 +63,34 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
+// GET /api/state/check-referral/:code — validate referral code before registration
+router.get('/check-referral/:code', async (req, res) => {
+  try {
+    const code = req.params.code.trim().toUpperCase();
+    const { rows } = await pool.query(
+      'SELECT code, perks, max_uses, current_uses, active FROM referral_codes WHERE UPPER(code) = $1',
+      [code]
+    );
+    if (!rows.length || !rows[0].active) {
+      return res.json({ valid: false });
+    }
+    const ref = rows[0];
+    if (ref.max_uses > 0 && ref.current_uses >= ref.max_uses) {
+      return res.json({ valid: false });
+    }
+    // Return perks but strip internal details
+    const perks = typeof ref.perks === 'string' ? JSON.parse(ref.perks) : (ref.perks || {});
+    res.json({ valid: true, perks });
+  } catch (err) {
+    console.error('GET /check-referral error:', err);
+    res.json({ valid: false });
+  }
+});
+
 // POST /api/state/register — set player and company name
 router.post('/register', authMiddleware, async (req, res) => {
   try {
-    const { playerName, companyName } = req.body;
+    const { playerName, companyName, referralCode } = req.body;
     if (!playerName || !companyName) {
       return res.status(400).json({ error: 'playerName and companyName are required' });
     }
@@ -83,6 +108,28 @@ router.post('/register', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Company name is already taken' });
     }
 
+    // Validate referral code if provided
+    let referralPerks = null;
+    if (referralCode) {
+      const code = referralCode.trim().toUpperCase();
+      const { rows } = await pool.query(
+        'SELECT code, perks, max_uses, current_uses, active FROM referral_codes WHERE UPPER(code) = $1',
+        [code]
+      );
+      if (rows.length && rows[0].active) {
+        const ref = rows[0];
+        if (ref.max_uses === 0 || ref.current_uses < ref.max_uses) {
+          referralPerks = typeof ref.perks === 'string' ? JSON.parse(ref.perks) : (ref.perks || {});
+          // Increment usage and record event
+          await pool.query('UPDATE referral_codes SET current_uses = current_uses + 1 WHERE code = $1', [ref.code]);
+          await pool.query(
+            'INSERT INTO referral_events (code, player_id, event_type) VALUES ($1, $2, $3)',
+            [ref.code, req.playerId, 'signup']
+          );
+        }
+      }
+    }
+
     let player = await getPlayer(req.playerId);
 
     if (!player) {
@@ -91,6 +138,7 @@ router.post('/register', authMiddleware, async (req, res) => {
       const state = init(playerName, globalDay);
       state.id = req.playerId;
       state.companyName = companyName;
+      applyReferralPerks(state, referralPerks, globalDay);
       player = await createPlayer(req.playerId, playerName, state);
     } else {
       const oldState = player.game_state;
@@ -103,11 +151,12 @@ router.post('/register', authMiddleware, async (req, res) => {
         fresh.companyName = companyName;
         fresh.tutorialStep = oldState.tutorialStep || 0;
         fresh.tutorialDone = oldState.tutorialDone || false;
+        applyReferralPerks(fresh, referralPerks, globalDay);
         const { savePlayerState } = await import('../db/queries.js');
         await savePlayerState(req.playerId, fresh);
         player.game_state = fresh;
       } else {
-        // Update existing player's names
+        // Update existing player's names (no referral perks for name changes)
         const g = { ...oldState };
         g.name = playerName;
         g.companyName = companyName;
@@ -136,5 +185,42 @@ router.post('/register', authMiddleware, async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+/**
+ * Apply referral perks to a fresh player state.
+ */
+function applyReferralPerks(state, perks, currentDay) {
+  if (!perks || Object.keys(perks).length === 0) return;
+
+  if (perks.bonusCash) state.cash += perks.bonusCash;
+  if (perks.bonusTireCoins) state.tireCoins = (state.tireCoins || 0) + perks.bonusTireCoins;
+  if (perks.freeStorageSlots) state.warehouseCapacity = (state.warehouseCapacity || 500) + perks.freeStorageSlots;
+
+  if (perks.premiumDays) {
+    state.premium = true;
+    state.premiumExpiresDay = currentDay + perks.premiumDays;
+  }
+
+  // Time-limited boosts
+  if (!state._activeBoosts) state._activeBoosts = {};
+  if (perks.repBoost) {
+    state._activeBoosts.rep = {
+      multiplier: perks.repBoost.multiplier,
+      expiresDay: currentDay + (perks.repBoost.days || 14),
+    };
+  }
+  if (perks.revenueBoost) {
+    state._activeBoosts.revenue = {
+      multiplier: perks.revenueBoost.multiplier,
+      expiresDay: currentDay + (perks.revenueBoost.days || 14),
+    };
+  }
+
+  if (perks.customWelcomeMessage) {
+    state._referralWelcome = perks.customWelcomeMessage;
+  }
+
+  state._referralApplied = true;
+}
 
 export default router;

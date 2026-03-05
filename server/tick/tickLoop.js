@@ -388,6 +388,7 @@ async function fulfillContractShipments(players, day) {
     for (const contract of (sg.p2pContracts || [])) {
       if (contract.status !== 'active') continue;
       if (!contract._pendingShipment) continue;
+      if (!contract.terms) { delete contract._pendingShipment; continue; }
 
       const shipQty = contract._shipmentQty || 0;
       if (shipQty <= 0) { delete contract._pendingShipment; continue; }
@@ -507,10 +508,8 @@ async function processContractPayments(players, day) {
     const remaining = g._contractPayables.filter(p => day < p.dueDay);
 
     for (const payment of due) {
-      // Deduct from buyer
-      g.cash -= payment.amount;
-
-      // Credit seller
+      // Credit seller first — only deduct from buyer if seller exists
+      let sellerCredited = false;
       try {
         const seller = await getPlayer(payment.sellerId);
         if (seller) {
@@ -518,11 +517,20 @@ async function processContractPayments(players, day) {
           seller.game_state.log = seller.game_state.log || [];
           seller.game_state.log.push({ msg: `Contract payment received: +$${payment.sellerAmount}`, cat: 'contract' });
           await savePlayerState(payment.sellerId, seller.game_state);
+          sellerCredited = true;
         }
       } catch (e) {
         console.error('[contracts] Payment credit error:', e.message);
       }
 
+      if (!sellerCredited) {
+        // Skip deducting from buyer if seller couldn't be credited
+        remaining.push(payment); // Re-queue for next tick
+        continue;
+      }
+
+      // Deduct from buyer
+      g.cash -= payment.amount;
       g.log = g.log || [];
       g.log.push({ msg: `Contract payment due: -$${payment.amount}`, cat: 'contract' });
 

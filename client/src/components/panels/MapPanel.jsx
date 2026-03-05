@@ -29,7 +29,7 @@ export default function MapPanel() {
       data[st].shops++;
       data[st].rev += loc.weeklyRev || 0;
       // Count inventory at this location
-      const locInv = (loc.inventory || []).reduce((sum, t) => sum + (t.qty || 0), 0);
+      const locInv = Object.values(loc.inventory || {}).reduce((sum, qty) => sum + (qty || 0), 0);
       data[st].inv += locInv;
       data[st].cities.push({
         name: city.name,

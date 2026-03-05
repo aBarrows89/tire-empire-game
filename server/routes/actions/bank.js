@@ -3,12 +3,15 @@ import { LOAN_INDEX_TO_TIER } from '../../../shared/constants/bank.js';
 import { uid } from '../../../shared/helpers/random.js';
 
 export async function handleBank(action, params, g, ctx) {
+  // Ensure loans array exists for legacy players
+  if (!g.loans) g.loans = [];
+
   switch (action) {
     case 'takeLoan': {
       const { index } = params;
       const loan = LOANS[index];
       if (!loan) return ctx.fail('Invalid loan');
-      if ((g.loans || []).length >= 3) return ctx.fail('Max 3 active loans');
+      if (g.loans.length >= 3) return ctx.fail('Max 3 active loans');
       if (loan.rr && g.reputation < loan.rr) return ctx.fail('Not enough reputation');
 
       // Use dynamic per-tier rate from bankState if available

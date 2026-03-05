@@ -332,17 +332,39 @@ router.get('/referrals', async (req, res) => {
 
 router.post('/referrals', async (req, res) => {
   try {
-    const { code, channel, campaign } = req.body;
+    const { code, channel, campaign, perks, max_uses } = req.body;
     if (!code || !channel) return res.status(400).json({ error: 'code and channel required' });
     const { pool } = await import('../../db/pool.js');
     await pool.query(
-      `INSERT INTO referral_codes (code, channel, campaign) VALUES ($1,$2,$3)`,
-      [code, channel, campaign || null]
+      `INSERT INTO referral_codes (code, channel, campaign, perks, max_uses) VALUES ($1,$2,$3,$4::jsonb,$5)`,
+      [code, channel, campaign || null, JSON.stringify(perks || {}), max_uses || 0]
     );
-    await auditLog(req, 'createReferralCode', code, { channel, campaign });
+    await auditLog(req, 'createReferralCode', code, { channel, campaign, perks, max_uses });
     res.json({ ok: true });
   } catch (e) {
     if (e.code === '23505') return res.status(409).json({ error: 'Code already exists' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.put('/referrals/:code', async (req, res) => {
+  try {
+    const { perks, max_uses, active, channel, campaign } = req.body;
+    const { pool } = await import('../../db/pool.js');
+    const updates = [];
+    const vals = [];
+    let idx = 1;
+    if (perks !== undefined) { updates.push(`perks = $${idx++}::jsonb`); vals.push(JSON.stringify(perks)); }
+    if (max_uses !== undefined) { updates.push(`max_uses = $${idx++}`); vals.push(max_uses); }
+    if (active !== undefined) { updates.push(`active = $${idx++}`); vals.push(active); }
+    if (channel !== undefined) { updates.push(`channel = $${idx++}`); vals.push(channel); }
+    if (campaign !== undefined) { updates.push(`campaign = $${idx++}`); vals.push(campaign); }
+    if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
+    vals.push(req.params.code);
+    await pool.query(`UPDATE referral_codes SET ${updates.join(', ')} WHERE code = $${idx}`, vals);
+    await auditLog(req, 'updateReferralCode', req.params.code, req.body);
+    res.json({ ok: true });
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
