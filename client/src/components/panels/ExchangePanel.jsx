@@ -11,6 +11,7 @@ import PriceChart from '../PriceChart.jsx';
 import OrderBook from '../OrderBook.jsx';
 import RewardedAdButton from '../RewardedAdButton.jsx';
 import { UICard, MiniSparkline, Tag, TireCoin } from '../ui/ui.jsx';
+import { getCalendar, MONTH_NAMES } from '@shared/helpers/calendar.js';
 
 const TABS = ['Market', 'Portfolio', 'Trade', 'IPO', 'Premium'];
 
@@ -154,7 +155,9 @@ export default function ExchangePanel() {
   const [divRatio, setDivRatio] = useState(Math.round((se.dividendPayoutRatio || 0.25) * 100));
   const [ipoDivRatio, setIpoDivRatio] = useState(25);
   const [showExchangeInfo, setShowExchangeInfo] = useState(false);
+  const [myStockDetail, setMyStockDetail] = useState(null);
   const divTimerRef = React.useRef(null);
+  const myTicker = se.ticker || null;
 
   const load = useCallback(async () => {
     try {
@@ -170,6 +173,18 @@ export default function ExchangePanel() {
   }, [se.hasBrokerage]);
 
   useEffect(() => { if (se.hasBrokerage) load(); }, [se.hasBrokerage, load]);
+
+  // Auto-refresh selected stock detail every tick so trade logs stay live
+  useEffect(() => {
+    if (!selectedTicker || !se.hasBrokerage) return;
+    getStockDetail(selectedTicker).then(setStockDetail).catch(() => {});
+  }, [state.game?.day]);
+
+  // Auto-refresh MY stock detail every tick
+  useEffect(() => {
+    if (!myTicker || !se.hasBrokerage) return;
+    getStockDetail(myTicker).then(setMyStockDetail).catch(() => {});
+  }, [state.game?.day, myTicker]);
 
   // Pick up stock ticker from leaderboard quick-access
   useEffect(() => {
@@ -645,15 +660,22 @@ export default function ExchangePanel() {
                     <span style={{ flex: '0 0 56px', textAlign: 'right' }}>Price</span>
                   </div>
                   <div style={{ maxHeight: 200, overflowY: 'auto' }}>
-                    {stockDetail.tradeLogs.map((t, i) => (
-                      <div key={i} style={{ display: 'flex', gap: 4, fontSize: 11, padding: '3px 4px', borderTop: '1px solid var(--border)' }}>
-                        <span style={{ flex: '0 0 36px', color: 'var(--text-dim)' }}>{t.day}</span>
-                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--green)' }}>{t.buyerName}</span>
-                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--red)' }}>{t.sellerName}</span>
-                        <span style={{ flex: '0 0 40px', textAlign: 'right' }}>{t.qty}</span>
-                        <span style={{ flex: '0 0 56px', textAlign: 'right', fontWeight: 600 }}>${t.price?.toFixed(2)}</span>
-                      </div>
-                    ))}
+                    {stockDetail.tradeLogs.map((t, i) => {
+                      const worldDay = (g.startDay || 1) + (t.day || 0) - 1;
+                      const cal = getCalendar(worldDay);
+                      const dateStr = `${cal.monthName.slice(0,3)} ${cal.dayOfMonth}`;
+                      const iAmBuyer = t.buyerId === g.id;
+                      const iAmSeller = t.sellerId === g.id;
+                      return (
+                        <div key={i} style={{ display: 'flex', gap: 4, fontSize: 11, padding: '3px 4px', borderTop: '1px solid var(--border)', background: (iAmBuyer || iAmSeller) ? '#ffffff08' : 'transparent' }}>
+                          <span style={{ flex: '0 0 48px', color: 'var(--text-dim)' }}>{dateStr}</span>
+                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: iAmBuyer ? 'var(--accent)' : 'var(--green)', fontWeight: iAmBuyer ? 700 : 400 }}>{iAmBuyer ? '👤 You' : t.buyerName}</span>
+                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: iAmSeller ? 'var(--accent)' : 'var(--red)', fontWeight: iAmSeller ? 700 : 400 }}>{iAmSeller ? '👤 You' : t.sellerName}</span>
+                          <span style={{ flex: '0 0 36px', textAlign: 'right' }}>{t.qty}</span>
+                          <span style={{ flex: '0 0 56px', textAlign: 'right', fontWeight: 600 }}>${t.price?.toFixed(2)}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -707,6 +729,79 @@ export default function ExchangePanel() {
                 <div>IPO Day: {se.ipoDay}</div>
                 <div>Founder Shares: {(se.founderSharesLocked || 0).toLocaleString()}</div>
               </div>
+              {/* My Stock Activity */}
+              {myStockDetail && (
+                <div style={{ marginBottom: 16 }}>
+                  <h4 style={{ margin: '0 0 8px', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>📈 ${se.ticker} Activity</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-dim)', fontWeight: 400 }}>
+                      Price: <strong style={{ color: 'var(--text)' }}>${(myStockDetail.stock?.price || 0).toFixed(2)}</strong>
+                    </span>
+                  </h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 10 }}>
+                    {[
+                      { label: 'Float Shares', value: (myStockDetail.stock?.floatShares || 0).toLocaleString() },
+                      { label: 'Market Cap', value: `$${Math.round((myStockDetail.stock?.price || 0) * (myStockDetail.stock?.totalShares || 0)).toLocaleString()}` },
+                      { label: 'Recent Trades', value: (myStockDetail.tradeLogs?.length || 0) },
+                    ].map(s => (
+                      <div key={s.label} style={{ background: '#111', borderRadius: 6, padding: '6px 8px', textAlign: 'center' }}>
+                        <div style={{ fontSize: 13, fontWeight: 700 }}>{s.value}</div>
+                        <div style={{ fontSize: 9, color: 'var(--text-dim)' }}>{s.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Order book depth for my stock */}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 10, color: 'var(--green)', fontWeight: 700, marginBottom: 4 }}>BIDS (buyers)</div>
+                      {(myStockDetail.orderBook?.bids || []).slice(0,5).map((b, i) => (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2 }}>
+                          <span style={{ color: 'var(--green)' }}>${b.price.toFixed(2)}</span>
+                          <span style={{ color: 'var(--text-dim)' }}>{b.qty} sh</span>
+                        </div>
+                      ))}
+                      {!myStockDetail.orderBook?.bids?.length && <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>No bids</div>}
+                    </div>
+                    <div style={{ width: 1, background: 'var(--border)' }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 10, color: 'var(--red)', fontWeight: 700, marginBottom: 4 }}>ASKS (sellers)</div>
+                      {(myStockDetail.orderBook?.asks || []).slice(0,5).map((a, i) => (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2 }}>
+                          <span style={{ color: 'var(--red)' }}>${a.price.toFixed(2)}</span>
+                          <span style={{ color: 'var(--text-dim)' }}>{a.qty} sh</span>
+                        </div>
+                      ))}
+                      {!myStockDetail.orderBook?.asks?.length && <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>No asks</div>}
+                    </div>
+                  </div>
+                  {/* Recent trades on MY stock */}
+                  {myStockDetail.tradeLogs?.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 10, color: 'var(--text-dim)', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Recent Trades on Your Stock</div>
+                      <div style={{ maxHeight: 160, overflowY: 'auto' }}>
+                        {myStockDetail.tradeLogs.map((t, i) => {
+                          const worldDay = (g.startDay || 1) + (t.day || 0) - 1;
+                          const cal = getCalendar(worldDay);
+                          const dateStr = `${cal.monthName.slice(0,3)} ${cal.dayOfMonth}`;
+                          const totalVal = (t.qty * t.price);
+                          return (
+                            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '4px 0', borderBottom: '1px solid #1e1e1e', fontSize: 11 }}>
+                              <span style={{ color: 'var(--text-dim)', flex: '0 0 48px' }}>{dateStr}</span>
+                              <span style={{ flex: 1, fontWeight: 600, color: 'var(--green)' }}>{t.buyerName}</span>
+                              <span style={{ flex: '0 0 40px', textAlign: 'right', color: 'var(--text-dim)' }}>{t.qty} sh</span>
+                              <span style={{ flex: '0 0 64px', textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>${Math.round(totalVal).toLocaleString()}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {!myStockDetail.tradeLogs?.length && (
+                    <div style={{ fontSize: 12, color: 'var(--text-dim)', textAlign: 'center', padding: '12px 0' }}>No trades yet — bots will start buying soon</div>
+                  )}
+                </div>
+              )}
+
               <h4 style={{ margin: '12px 0 6px' }}>Dividend Payout Ratio</h4>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <input type="range" min="0" max="75" value={divRatio}

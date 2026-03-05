@@ -144,8 +144,16 @@ export function runExchangeTick(exchangeState, players, day) {
     const intent = g._aiTradeIntent;
     delete g._aiTradeIntent;
 
-    // Pick a random stock to trade
-    const ticker = tickers[Math.floor(Math.random() * tickers.length)];
+    // Pick a stock to trade — bias heavily toward player-issued stocks so real players get activity
+    const playerTickers = tickers.filter(t => {
+      const s = exchangeState.stocks[t];
+      return s && s.playerId && s.playerId !== p.id; // Player-issued, not their own
+    });
+    const npcTickers = tickers.filter(t => !exchangeState.stocks[t]?.playerId);
+    // 70% chance to trade a player stock if any exist, otherwise NPC stock
+    const poolToUse = (playerTickers.length > 0 && Math.random() < 0.70) ? playerTickers : (npcTickers.length > 0 ? npcTickers : tickers.filter(t => exchangeState.stocks[t]?.playerId !== p.id));
+    if (poolToUse.length === 0) continue;
+    const ticker = poolToUse[Math.floor(Math.random() * poolToUse.length)];
     const stock = exchangeState.stocks[ticker];
     const orderBook = exchangeState.orderBooks[ticker];
     if (!stock || !orderBook || stock.playerId === p.id) continue;
@@ -220,6 +228,25 @@ export function runExchangeTick(exchangeState, players, day) {
       });
       if (exchangeState.stockTradeLogs[ticker].length > 50) {
         exchangeState.stockTradeLogs[ticker] = exchangeState.stockTradeLogs[ticker].slice(0, 50);
+      }
+
+      // Notify the stock OWNER when their shares are traded
+      const stockOwnerPlayer = players.find(p => p.id === stock.playerId);
+      if (stockOwnerPlayer && !stockOwnerPlayer.game_state.isAI && !stockOwnerPlayer.game_state._botConfig) {
+        const ownerState = stockOwnerPlayer.game_state;
+        if (!ownerState._notifications) ownerState._notifications = [];
+        const totalValue = fill.qty * fill.price;
+        ownerState._notifications.push({
+          id: `stk_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
+          type: 'stock_trade',
+          icon: '📈',
+          title: `$${ticker} Trade`,
+          message: `${buyerName} bought ${fill.qty} shares @ $${fill.price.toFixed(2)} ($${Math.round(totalValue).toLocaleString()})`,
+          day,
+          ts: Date.now(),
+        });
+        if (ownerState._notifications.length > 50) ownerState._notifications = ownerState._notifications.slice(-50);
+        if (!modifiedPlayers.includes(stockOwnerPlayer)) modifiedPlayers.push(stockOwnerPlayer);
       }
     }
   }
