@@ -174,8 +174,16 @@ export default function DashboardPanel() {
               const locInv = Object.values(loc.inventory || {}).reduce((a, b) => a + (b || 0), 0);
               const locCap = 50 + (loc.locStorage || 0);
               const loy = Math.round(loc.loyalty || 0);
-              const staff = loc.staff || {};
-              const staffTotal = countStaff(staff);
+              // Real players store staff globally (g.staff), not per-location
+              // Show per-location staff if it exists (bots), otherwise show global divided by location count
+              const hasLocStaff = loc.staff && countStaff(loc.staff) > 0;
+              const locCount = (g.locations || []).length || 1;
+              const staff = hasLocStaff ? loc.staff : {
+                techs: Math.round((g.staff?.techs || 0) / locCount),
+                sales: Math.round((g.staff?.sales || 0) / locCount),
+                managers: Math.round((g.staff?.managers || 0) / locCount),
+              };
+              const staffTotal = hasLocStaff ? countStaff(staff) : countStaff(g.staff);
               const isAlert = dailyProfit < 0 || loy < 30;
               const topTire = Object.entries(loc.inventory || {}).sort((a, b) => b[1] - a[1])[0];
               const topTireName = topTire ? (TIRES[topTire[0]]?.n || topTire[0]) : '-';
@@ -229,7 +237,7 @@ export default function DashboardPanel() {
                   </div>
 
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    <Tag>{'\u{1F465}'} {staff.techs || 0}T {staff.sales || 0}S {staff.managers || 0}M</Tag>
+                    <Tag>{'\u{1F465}'} {staff.techs || 0}T {staff.sales || 0}S {staff.managers || 0}M{!hasLocStaff && locCount > 1 ? ' (co)' : ''}</Tag>
                     <Tag>{'\u{1F3C6}'} {topTireName}</Tag>
                     {loc.marketing && <Tag color="var(--accent)" bg="rgba(79,195,247,0.1)">{'\u{1F4E2}'} {loc.marketing}</Tag>}
                   </div>
