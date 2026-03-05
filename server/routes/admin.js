@@ -216,6 +216,27 @@ router.post('/players/:id/edit', async (req, res) => {
   }
 });
 
+// ── Transfer account: copy full game_state from one player to another ──
+router.post('/players/:id/transfer-from/:sourceId', async (req, res) => {
+  try {
+    const source = await getPlayer(req.params.sourceId);
+    if (!source) return res.status(404).json({ error: 'Source player not found' });
+    const target = await getPlayer(req.params.id);
+    if (!target) return res.status(404).json({ error: 'Target player not found' });
+
+    // Copy source game_state but update the id to the target's id
+    const newState = { ...source.game_state, id: req.params.id };
+    await savePlayerState(req.params.id, newState);
+    await auditLog(req, 'transferAccount', req.params.id, {
+      sourceId: req.params.sourceId,
+      targetId: req.params.id,
+    });
+    res.json({ ok: true, message: `Transferred state from ${req.params.sourceId} to ${req.params.id}` });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.post('/players/:id/ban', async (req, res) => {
   try {
     const player = await getPlayer(req.params.id);
