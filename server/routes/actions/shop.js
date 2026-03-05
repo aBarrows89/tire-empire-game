@@ -6,7 +6,7 @@ import { PAY } from '../../../shared/constants/staff.js';
 import { MARKETING } from '../../../shared/constants/marketing.js';
 import { INSURANCE } from '../../../shared/constants/insurance.js';
 import { getNextUpgrade } from '../../../shared/constants/shopStorage.js';
-import { rebuildGlobalInv } from '../../../shared/helpers/inventory.js';
+import { rebuildGlobalInv, getLocCap } from '../../../shared/helpers/inventory.js';
 
 export async function handleShop(action, params, g, ctx) {
   switch (action) {
@@ -19,7 +19,33 @@ export async function handleShop(action, params, g, ctx) {
       const check = canOpenInCity(g, cityId);
       if (!check.ok) return ctx.fail(check.reason);
       g.cash -= cost;
-      g.locations.push({ cityId, id: uid(), locStorage: 0, inventory: {}, loyalty: 0, openedDay: g.day });
+      const newLoc = { cityId, id: uid(), locStorage: 0, inventory: {}, loyalty: 0, openedDay: g.day };
+
+      // Auto-seed new store with up to 50 tires from warehouse (or from store #1 if no warehouse)
+      const seedInventory = {};
+      const seedSource = (g.hasWarehouse && g.warehouseInventory) ? g.warehouseInventory
+        : (g.locations[0]?.inventory || null);
+      if (seedSource) {
+        const locCap = getLocCap(newLoc) || 100;
+        const seedTarget = Math.min(50, Math.floor(locCap * 0.4)); // seed up to 40% capacity
+        let seeded = 0;
+        // Sort by qty descending — transfer most plentiful tires first
+        const sorted = Object.entries(seedSource)
+          .filter(([, q]) => q > 0)
+          .sort((a, b) => b[1] - a[1]);
+        for (const [k, qty] of sorted) {
+          if (seeded >= seedTarget) break;
+          const take = Math.min(qty, Math.ceil(seedTarget / Math.max(1, sorted.length)), seedTarget - seeded);
+          if (take <= 0) continue;
+          seedInventory[k] = take;
+          seedSource[k] = qty - take;
+          if (seedSource[k] <= 0) delete seedSource[k];
+          seeded += take;
+        }
+      }
+      newLoc.inventory = seedInventory;
+      g.locations.push(newLoc);
+      g.log?.push({ msg: `🏪 New store opened in ${city.name}${Object.keys(seedInventory).length ? ` with ${Object.values(seedInventory).reduce((a,b)=>a+b,0)} tires transferred` : ' (stock it up!)'}`, cat: 'expand' });
       break;
     }
 
@@ -79,7 +105,25 @@ export async function handleShop(action, params, g, ctx) {
       const check = canOpenInCity(g, cityId);
       if (!check.ok) return ctx.fail(check.reason);
       g.cash -= downPayment;
-      g.locations.push({ cityId, id: uid(), locStorage: 0, inventory: {}, loyalty: 0, openedDay: g.day });
+      // Auto-seed financed store same as cash purchase
+      const finLoc = { cityId, id: uid(), locStorage: 0, inventory: {}, loyalty: 0, openedDay: g.day };
+      const finSeedSource = (g.hasWarehouse && g.warehouseInventory) ? g.warehouseInventory : (g.locations[0]?.inventory || null);
+      if (finSeedSource) {
+        const finCap = getLocCap(finLoc) || 100;
+        const finTarget = Math.min(50, Math.floor(finCap * 0.4));
+        let finSeeded = 0;
+        const finSorted = Object.entries(finSeedSource).filter(([,q]) => q > 0).sort((a,b) => b[1]-a[1]);
+        for (const [k, qty] of finSorted) {
+          if (finSeeded >= finTarget) break;
+          const take = Math.min(qty, Math.ceil(finTarget / Math.max(1, finSorted.length)), finTarget - finSeeded);
+          if (take <= 0) continue;
+          finLoc.inventory[k] = take;
+          finSeedSource[k] = qty - take;
+          if (finSeedSource[k] <= 0) delete finSeedSource[k];
+          finSeeded += take;
+        }
+      }
+      g.locations.push(finLoc);
       const financed = cost - downPayment;
       const rate = 0.08;
       const totalOwed = financed * (1 + rate);

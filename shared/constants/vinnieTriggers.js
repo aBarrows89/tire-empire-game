@@ -159,6 +159,22 @@ export const VINNIE_TRIGGERS = [
     cooldown: 0, priority: 'high', oneTime: true,
   },
 
+  // ── NEW STORE INVENTORY ──
+  {
+    id: 'new_store_empty',
+    condition: (g) => {
+      if ((g.locations || []).length < 2) return false;
+      // Find a store opened in the last 5 days with zero inventory
+      return (g.locations || []).some(loc => {
+        const age = (g.day || 0) - (loc.openedDay || 0);
+        const inv = Object.values(loc.inventory || {}).reduce((a, b) => a + b, 0);
+        return age <= 5 && age >= 1 && inv === 0;
+      });
+    },
+    message: "That new store you just opened? Empty. Zero inventory. It can't sell what it doesn't have. Move tires from your warehouse, buy from a supplier, or set auto-restock. Do it today.",
+    cooldown: 3, priority: 'high',
+  },
+
   // ── STORE PERFORMANCE ──
   {
     id: 'store_bleeding',
