@@ -27,6 +27,42 @@ let currentDetailId = null;
       firebase.initializeApp(config);
       document.getElementById('google-signin-btn').style.display = '';
       document.getElementById('dev-auth-form').style.display = 'none';
+
+      // ── Auth state persistence ──
+      // Firebase persists the signed-in user across page reloads.
+      // onAuthStateChanged fires on load if the user is already signed in,
+      // so we don't need to manually restore Bearer tokens from sessionStorage.
+      firebase.auth().onAuthStateChanged(async (user) => {
+        if (!user) return; // Not signed in — show the login form, do nothing
+        try {
+          const token = await user.getIdToken();
+          AUTH_HEADER = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+          try { sessionStorage.setItem('te_admin_auth', JSON.stringify(AUTH_HEADER)); } catch {}
+
+          // Verify this user is actually an admin before showing the dashboard
+          const verify = await fetch(`${API}/server-stats`, { headers: AUTH_HEADER });
+          if (!verify.ok) {
+            // Signed in to Firebase but not whitelisted — sign them back out
+            await firebase.auth().signOut();
+            document.getElementById('auth-status').textContent = 'Not an admin — your Google account is not whitelisted';
+            document.getElementById('auth-status').style.color = '#ef5350';
+            return;
+          }
+
+          onAuthSuccess(user.email || user.uid);
+
+          // Keep token fresh — update AUTH_HEADER whenever Firebase rotates it
+          firebase.auth().onIdTokenChanged(async (u) => {
+            if (u) {
+              const newToken = await u.getIdToken();
+              AUTH_HEADER = { 'Authorization': `Bearer ${newToken}`, 'Content-Type': 'application/json' };
+              try { sessionStorage.setItem('te_admin_auth', JSON.stringify(AUTH_HEADER)); } catch {}
+            }
+          });
+        } catch (e) {
+          console.error('Auth state restore error:', e);
+        }
+      });
     }
   } catch (e) {
     // No Firebase config — dev mode, show UID input
@@ -42,34 +78,9 @@ document.getElementById('admin-uid-input')?.addEventListener('keydown', e => {
 async function googleSignIn() {
   try {
     const provider = new firebase.auth.GoogleAuthProvider();
-    const result = await firebase.auth().signInWithPopup(provider);
-    const token = await result.user.getIdToken();
-    AUTH_HEADER = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
-  try { sessionStorage.setItem('te_admin_auth', JSON.stringify(AUTH_HEADER)); } catch {}
-
-    const res = await fetch(`${API}/server-stats`, { headers: AUTH_HEADER });
-    if (res.status === 403) {
-      document.getElementById('auth-status').textContent = 'Not an admin — your Google account is not whitelisted';
-      document.getElementById('auth-status').style.color = '#ef5350';
-      await firebase.auth().signOut();
-      return;
-    }
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      document.getElementById('auth-status').textContent = err.error || 'Auth failed';
-      document.getElementById('auth-status').style.color = '#ef5350';
-      return;
-    }
-
-    onAuthSuccess(result.user.email || result.user.uid);
-
-    // Auto-refresh token before expiry
-    firebase.auth().onIdTokenChanged(async (user) => {
-      if (user) {
-        const newToken = await user.getIdToken();
-        AUTH_HEADER = { 'Authorization': `Bearer ${newToken}`, 'Content-Type': 'application/json' };
-      }
-    });
+    await firebase.auth().signInWithPopup(provider);
+    // onAuthStateChanged (registered in initAuth) fires after signInWithPopup,
+    // verifies admin status, and calls onAuthSuccess. Nothing else needed here.
   } catch (e) {
     document.getElementById('auth-status').textContent = 'Sign-in failed: ' + e.message;
     document.getElementById('auth-status').style.color = '#ef5350';
