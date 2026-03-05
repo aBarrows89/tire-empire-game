@@ -923,26 +923,75 @@ function runChat(g, cfg, pw, shared) {
   // Always decrement cooldown, even on "inactive" ticks
   if (cfg.chatCooldown > 0) {
     cfg.chatCooldown--;
-    return;
+    // UNLESS someone @mentioned us — always respond to that
+    const recentMessages = shared.recentChatMessages || [];
+    const myName = (g.companyName || g.name || '').toLowerCase();
+    const calledOut = recentMessages.some(m =>
+      m.playerId !== g.id &&
+      (m.text || '').toLowerCase().includes(myName) &&
+      m.timestamp > (cfg._lastChatCheckTime || 0)
+    );
+    if (!calledOut) return;
+    // If called out, skip cooldown and respond
+    cfg.chatCooldown = 0;
   }
 
-  // Base chat chance scales with intensity — active players chat more
-  // Intensity 1-3: 8%, 4-6: 15%, 7-9: 25%, 10-11: 35%
+  cfg._lastChatCheckTime = Date.now();
+
+  // Base chat chance scales with intensity
   const intensity = cfg.intensity || 5;
   const baseChatChance = intensity <= 3 ? 0.08 : intensity <= 6 ? 0.15 : intensity <= 9 ? 0.25 : 0.35;
   const personalityMult = (pw.chatFrequency || 1);
   const chatChance = baseChatChance * personalityMult;
 
+  // Check for @mentions or callouts FIRST — always respond to those
+  const recentMessages = shared.recentChatMessages || [];
+  const myName = (g.companyName || g.name || '').toLowerCase();
+  const otherMessages = recentMessages.filter(m => m.playerId !== g.id);
+
+  // Find messages that call out this bot specifically
+  const callouts = otherMessages.filter(m => {
+    const txt = (m.text || '').toLowerCase();
+    return txt.includes(myName) || txt.includes(`@${myName}`);
+  });
+
+  if (callouts.length > 0) {
+    // ALWAYS respond to a direct callout — skip random chance
+    const target = callouts[callouts.length - 1]; // Most recent callout
+    const result = generateReply(g, cfg, [target], shared);
+    if (result) {
+      // Always @mention back when responding to a callout
+      if (!result.text.includes('@')) {
+        result.text = `@${target.playerName} ${result.text}`;
+      }
+      _pendingBotChats.push({
+        id: uid(),
+        playerId: g.id,
+        playerName: g.companyName || g.name || 'Unknown',
+        channel: 'global',
+        text: result.text,
+        timestamp: Date.now(),
+        replyTo: result.replyTo ? {
+          id: result.replyTo.id,
+          playerName: result.replyTo.playerName,
+          text: (result.replyTo.text || '').slice(0, 80),
+        } : undefined,
+      });
+      _botChatBudget--;
+      const intensityCooldownMod = Math.max(1, 6 - Math.floor(intensity / 2));
+      cfg.chatCooldown = Ri(1, Math.max(2, intensityCooldownMod));
+      return; // Handled the callout
+    }
+  }
+
+  // Regular chat — random chance
   if (Math.random() > chatChance) return;
 
-  // Decide: reply to someone or post original message?
-  const recentMessages = shared.recentChatMessages || [];
   let msg = null;
   let replyTo = null;
 
-  // 40% chance to reply if there are recent messages from other players
-  const otherMessages = recentMessages.filter(m => m.playerId !== g.id);
-  if (otherMessages.length > 0 && Math.random() < 0.4) {
+  // 50% chance to reply to recent messages (up from 40%)
+  if (otherMessages.length > 0 && Math.random() < 0.50) {
     const result = generateReply(g, cfg, otherMessages, shared);
     if (result) {
       msg = result.text;
