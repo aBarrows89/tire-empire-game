@@ -1274,6 +1274,15 @@ export async function runTick(clients) {
           const fresh = await getPlayer(player.id);
           if (fresh && fresh.version > (player.version || 0)) {
             const fs = fresh.game_state;
+
+            // Guard: if DB player already has a higher day, another tick instance
+            // (e.g. during Railway deploy overlap) already processed this player.
+            // Skip our stale save to prevent day regression.
+            if ((fs.day || 0) >= (newState.day || 0)) {
+              console.warn(`[Tick] Skipping save for ${player.id}: DB day ${fs.day} >= computed day ${newState.day}`);
+              continue;
+            }
+
             // Compute deltas that simDay produced (costs, revenue, loan payments, interest)
             const cashDelta = newState.cash - state.cash;
             const bankDelta = (newState.bankBalance || 0) - (state.bankBalance || 0);

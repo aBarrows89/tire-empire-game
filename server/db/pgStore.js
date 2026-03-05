@@ -437,10 +437,16 @@ export async function savePlayerState(id, gameState, expectedVersion = null) {
     }
   } else {
     // Non-versioned save (tick loop, migrations, etc.)
-    await pool.query(
-      `UPDATE players SET game_state = $2::jsonb, updated_at = NOW(), version = version + 1 WHERE id = $1`,
-      [id, JSON.stringify(gameState)]
+    // Guard: never regress the player day (prevents stale tick overwrites during deploy overlap)
+    const newDay = gameState.day || 0;
+    const { rowCount } = await pool.query(
+      `UPDATE players SET game_state = $2::jsonb, updated_at = NOW(), version = version + 1
+       WHERE id = $1 AND COALESCE((game_state->>'day')::int, 0) <= $3`,
+      [id, JSON.stringify(gameState), newDay]
     );
+    if (rowCount === 0) {
+      console.warn(`[pgStore] savePlayerState skipped for ${id}: DB day > ${newDay} (stale save)`);
+    }
   }
   // Dual-write hot fields to dedicated tables (non-blocking, fire-and-forget)
   _syncHotTables(id, gameState).catch(() => {});
