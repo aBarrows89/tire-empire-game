@@ -5,6 +5,7 @@ import { fmt } from '@shared/helpers/format.js';
 import { postAction } from '../../api/client.js';
 import { hapticsMedium } from '../../api/haptics.js';
 import { playSound } from '../../api/sounds.js';
+import { UICard, ProgressBar, SectionHeader, Tag } from '../ui/ui.jsx';
 
 export default function BankPanel() {
   const { state, refreshState } = useGame();
@@ -18,8 +19,7 @@ export default function BankPanel() {
     setBusy(`loan-${index}`);
     await postAction('takeLoan', { index });
     hapticsMedium(); playSound('cash');
-    refreshState();
-    setBusy(null);
+    refreshState(); setBusy(null);
   };
 
   const deposit = async () => {
@@ -28,9 +28,7 @@ export default function BankPanel() {
     setBusy('dep');
     await postAction('bankDeposit', { amount: amt });
     hapticsMedium(); playSound('cash');
-    setDepAmount('');
-    refreshState();
-    setBusy(null);
+    refreshState(); setDepAmount(''); setBusy(null);
   };
 
   const withdraw = async () => {
@@ -38,286 +36,158 @@ export default function BankPanel() {
     if (!amt || amt <= 0) return;
     setBusy('wd');
     await postAction('bankWithdraw', { amount: amt });
-    setWdAmount('');
-    refreshState();
+    hapticsMedium(); playSound('cash');
+    refreshState(); setWdAmount(''); setBusy(null);
+  };
+
+  const repay = async (loanIdx) => {
+    const amt = Math.floor(Number(repayAmounts[loanIdx] || 0));
+    if (!amt || amt <= 0) return;
+    setBusy(`repay-${loanIdx}`);
+    await postAction('repayLoan', { loanIndex: loanIdx, amount: amt });
+    hapticsMedium(); refreshState();
+    setRepayAmounts(p => ({ ...p, [loanIdx]: '' }));
     setBusy(null);
   };
 
-  const repayLoan = async (loanIndex, amount) => {
-    setBusy(`repay-${loanIndex}`);
-    await postAction('repayLoan', { loanIndex, amount });
-    setRepayAmounts(prev => ({ ...prev, [loanIndex]: '' }));
-    refreshState();
-    setBusy(null);
-  };
+  const bankBal = g.bankBalance || 0;
+  const rate = g.bankRate || 0.042;
+  const dailyInterest = Math.round(bankBal * rate / 365);
+  const loans = (g.loans || []).filter(l => (l.remaining || 0) > 0);
+  const totalDebt = loans.reduce((a, l) => a + (l.remaining || 0), 0);
 
-  const vinnieBailout = async () => {
-    setBusy('bailout');
-    await postAction('vinnieBailout');
-    refreshState();
-    setBusy(null);
-  };
-
-  const depositAll = () => setDepAmount(String(Math.floor(g.cash)));
-  const withdrawAll = () => setWdAmount(String(Math.floor(g.bankBalance || 0)));
-
-  const annualRate = ((g.bankRate || 0.042) * 100).toFixed(2);
-  const weeklyRate = ((g.bankRate || 0.042) / 52 * 100).toFixed(3);
-  const balance = g.bankBalance || 0;
-  const weeklyInterest = g.bankInterestEarned || 0;
-  const totalInterest = g.bankTotalInterest || 0;
-
-  const inputStyle = {
-    flex: 1, padding: 8, borderRadius: 6, background: 'var(--surface)',
-    color: 'var(--text)', border: '1px solid var(--border)', minHeight: 40,
-    fontSize: 14,
-  };
+  // Daily P&L
+  const dayRev = g.dayRev || 0;
+  const dayProfit = g.dayProfit || 0;
+  const dayExpenses = dayRev - dayProfit;
 
   return (
     <>
-      {/* Vinnie Bailout */}
-      {g.cash < 0 && (g.tireCoins || 0) >= 10000 && (
-        <div className="card" style={{ borderColor: 'var(--red)' }}>
-          <div className="card-title" style={{ color: 'var(--red)' }}>Emergency Bailout</div>
-          <div className="text-xs text-dim mb-4">
-            You're in the red! Vinnie can bail you out for 10,000 TireCoins.
-          </div>
-          <button
-            className="btn btn-full btn-sm btn-red"
-            disabled={busy === 'bailout'}
-            onClick={vinnieBailout}
-          >
-            {busy === 'bailout' ? 'Processing...' : `Vinnie Bailout (10K TC) — You have ${g.tireCoins || 0} TC`}
-          </button>
+      {/* ── BANK BALANCE HERO ── */}
+      <UICard style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 9, color: 'var(--text-dim)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
+          BANK BALANCE
         </div>
-      )}
+        <div style={{ fontSize: 30, fontWeight: 800, color: 'var(--green)' }}>${fmt(bankBal)}</div>
+        <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>
+          {(rate * 100).toFixed(1)}% APR {'\u00B7'} Earning ${dailyInterest}/day
+        </div>
 
-      {/* Savings Account */}
-      <div className="card">
-        <div className="card-title">Savings Account</div>
-        <div className="text-sm text-dim mb-4">
-          Deposit cash to earn interest. Rate fluctuates with the market each week.
-        </div>
-        <div className="row-between mb-4">
-          <span className="text-sm text-dim">Balance</span>
-          <span className="text-green font-bold">${fmt(balance)}</span>
-        </div>
-        <div className="row-between mb-4">
-          <span className="text-sm text-dim">Annual Rate</span>
-          <span className="text-accent font-bold">{annualRate}%</span>
-        </div>
-        {(g.tcScarcityBonus || 0) > 0 && (
-          <div className="row-between mb-4">
-            <span className="text-sm text-dim">TC Scarcity Bonus</span>
-            <span className="text-green text-xs font-bold">+{((g.tcScarcityBonus || 0) * 100).toFixed(2)}%</span>
-          </div>
-        )}
-        {g.isPremium && (
-          <div className="row-between mb-4">
-            <span className="text-sm text-dim">PRO Interest Bonus</span>
-            <span className="text-gold text-xs font-bold">+10%</span>
-          </div>
-        )}
-        <div className="row-between mb-4">
-          <span className="text-sm text-dim">Weekly Rate</span>
-          <span className="text-xs">{weeklyRate}%</span>
-        </div>
-        {weeklyInterest > 0 && (
-          <div className="row-between mb-4">
-            <span className="text-sm text-dim">Last Interest</span>
-            <span className="text-green text-sm">+${fmt(weeklyInterest)}</span>
-          </div>
-        )}
-        {totalInterest > 0 && (
-          <div className="row-between mb-4">
-            <span className="text-sm text-dim">Total Earned</span>
-            <span className="text-sm">${fmt(totalInterest)}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Deposit */}
-      <div className="card">
-        <div className="card-title" style={{ fontSize: 13 }}>Deposit</div>
-        <div className="row gap-8">
-          <input
-            type="number"
-            placeholder="Amount"
-            value={depAmount}
-            onChange={(e) => setDepAmount(e.target.value.replace(/^0+(?=\d)/, ''))}
-            inputMode="numeric"
-            min={1}
-            max={Math.floor(g.cash)}
-            style={inputStyle}
-          />
-          <button
-            className="btn btn-sm btn-outline"
-            onClick={depositAll}
-            style={{ whiteSpace: 'nowrap' }}
-          >
-            Max
-          </button>
-          <button
-            className="btn btn-sm btn-green"
-            disabled={!depAmount || Number(depAmount) <= 0 || Number(depAmount) > g.cash || busy === 'dep'}
-            onClick={deposit}
-          >
-            {busy === 'dep' ? '...' : 'Deposit'}
-          </button>
-        </div>
-        <div className="text-xs text-dim mt-8">Cash available: ${fmt(g.cash)}</div>
-      </div>
-
-      {/* Withdraw */}
-      {balance > 0 && (
-        <div className="card">
-          <div className="card-title" style={{ fontSize: 13 }}>Withdraw</div>
-          <div className="row gap-8">
-            <input
-              type="number"
-              placeholder="Amount"
-              value={wdAmount}
-              onChange={(e) => setWdAmount(e.target.value.replace(/^0+(?=\d)/, ''))}
-              inputMode="numeric"
-              min={1}
-              max={Math.floor(balance)}
-              style={inputStyle}
-            />
-            <button
-              className="btn btn-sm btn-outline"
-              onClick={withdrawAll}
-              style={{ whiteSpace: 'nowrap' }}
-            >
-              All
+        {/* Deposit / Withdraw */}
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <div style={{ flex: 1 }}>
+            <input type="number" placeholder="Deposit $" value={depAmount}
+              onChange={e => setDepAmount(e.target.value)}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: 13, outline: 'none', marginBottom: 4 }}/>
+            <button onClick={deposit} disabled={busy === 'dep' || !depAmount}
+              style={{ width: '100%', padding: '8px', borderRadius: 8, border: 'none', background: 'var(--green)', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', opacity: busy === 'dep' || !depAmount ? 0.5 : 1 }}>
+              {busy === 'dep' ? '...' : 'Deposit'}
             </button>
-            <button
-              className="btn btn-sm btn-red"
-              disabled={!wdAmount || Number(wdAmount) <= 0 || Number(wdAmount) > balance || busy === 'wd'}
-              onClick={withdraw}
-            >
+          </div>
+          <div style={{ flex: 1 }}>
+            <input type="number" placeholder="Withdraw $" value={wdAmount}
+              onChange={e => setWdAmount(e.target.value)}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: 13, outline: 'none', marginBottom: 4 }}/>
+            <button onClick={withdraw} disabled={busy === 'wd' || !wdAmount}
+              style={{ width: '100%', padding: '8px', borderRadius: 8, border: 'none', background: 'var(--red)', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', opacity: busy === 'wd' || !wdAmount ? 0.5 : 1 }}>
               {busy === 'wd' ? '...' : 'Withdraw'}
             </button>
           </div>
         </div>
-      )}
+      </UICard>
 
-      {/* Active Loans with Repayment */}
-      {(g.loans || []).length > 0 && (
-        <div className="card">
-          <div className="card-title">Active Loans</div>
-          {g.loans.map((loan, i) => {
-            const repayVal = repayAmounts[i] || '';
+      {/* ── DAILY P&L ── */}
+      <UICard>
+        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>{'\u{1F4B3}'} Daily P&L</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+          <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>Revenue</span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)' }}>+${fmt(dayRev)}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+          <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>Expenses</span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>-${fmt(dayExpenses)}</span>
+        </div>
+        {totalDebt > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+            <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>Total Debt</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>${fmt(totalDebt)}</span>
+          </div>
+        )}
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 6, display: 'flex', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 12, fontWeight: 700 }}>Net Profit</span>
+          <span style={{ fontSize: 14, fontWeight: 800, color: dayProfit >= 0 ? 'var(--green)' : 'var(--red)' }}>
+            ${fmt(dayProfit)}
+          </span>
+        </div>
+      </UICard>
+
+      {/* ── ACTIVE LOANS ── */}
+      {loans.length > 0 && (
+        <>
+          <SectionHeader title={`Active Loans (${loans.length})`} icon={'\u{1F4CB}'}/>
+          {loans.map((loan, i) => {
+            const paidPct = loan.amount > 0 ? Math.round(((loan.amount - loan.remaining) / loan.amount) * 100) : 0;
             return (
-              <div key={i} style={{ borderBottom: i < g.loans.length - 1 ? '1px solid var(--border)' : 'none', paddingBottom: 8, marginBottom: 8 }}>
-                <div className="row-between text-sm mb-4">
-                  <span>{loan.name}</span>
-                  <span className="text-red">${fmt(Math.ceil(loan.remaining))} left</span>
+              <UICard key={loan.id || i}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>{loan.name || `Loan ${i + 1}`}</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-dim)' }}>
+                      {((loan.r || loan.rate || 0.08) * 100).toFixed(0)}% APR {'\u00B7'} ${fmt(loan.weeklyPayment || 0)}/week
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--red)' }}>${fmt(loan.remaining)}</div>
+                    <div style={{ fontSize: 9, color: 'var(--text-dim)' }}>remaining</div>
+                  </div>
                 </div>
-                <div className="text-xs text-dim mb-4">
-                  ${fmt(Math.round(loan.weeklyPayment || 0))}/wk &middot; Pay off: ${fmt(Math.ceil(loan.remaining))} (leaves ${fmt(Math.max(0, Math.floor(g.cash - loan.remaining)))})
+                <ProgressBar pct={paidPct} color="var(--accent)"/>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--text-dim)', marginTop: 2 }}>
+                  <span>${fmt(loan.amount - loan.remaining)} paid</span>
+                  <span>${fmt(loan.amount || 0)} total</span>
                 </div>
-                <div className="row gap-8">
-                  <input
-                    type="number"
-                    placeholder="Pay Extra"
-                    value={repayVal}
-                    onChange={(e) => setRepayAmounts(prev => ({ ...prev, [i]: e.target.value.replace(/^0+(?=\d)/, '') }))}
-                    inputMode="numeric"
-                    min={1}
-                    max={Math.min(Math.floor(g.cash), Math.ceil(loan.remaining))}
-                    style={{ ...inputStyle, fontSize: 12 }}
-                  />
-                  <button
-                    className="btn btn-sm btn-green"
-                    disabled={!repayVal || Number(repayVal) <= 0 || Number(repayVal) > g.cash || busy === `repay-${i}`}
-                    onClick={() => repayLoan(i, Number(repayVal))}
-                  >
-                    {busy === `repay-${i}` ? '...' : 'Pay'}
-                  </button>
-                  <button
-                    className="btn btn-sm btn-outline"
-                    disabled={g.cash < loan.remaining || busy === `repay-${i}`}
-                    onClick={() => {
-                      const amt = Math.ceil(loan.remaining);
-                      const afterCash = Math.floor(g.cash - amt);
-                      if (afterCash < 1000 && !window.confirm(`This will leave you with $${afterCash.toLocaleString()}. Continue?`)) return;
-                      repayLoan(i, amt);
-                    }}
-                    style={{ whiteSpace: 'nowrap' }}
-                  >
-                    Pay Off
+                {/* Extra payment */}
+                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                  <input type="number" placeholder="Extra $"
+                    value={repayAmounts[i] || ''}
+                    onChange={e => setRepayAmounts(p => ({ ...p, [i]: e.target.value }))}
+                    style={{ flex: 1, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: 11, outline: 'none' }}/>
+                  <button onClick={() => repay(i)} disabled={busy === `repay-${i}`}
+                    style={{ padding: '6px 12px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
+                    Pay
                   </button>
                 </div>
-              </div>
+              </UICard>
             );
           })}
-        </div>
+        </>
       )}
 
-      {/* Available Loans */}
-      <div className="card">
-        <div className="card-title">Available Loans</div>
-        <div className="text-sm text-dim mb-4">Borrow cash to grow faster.</div>
-      </div>
-
-      {LOANS.map((loan, index) => {
-        const locked = loan.rr > 0 && g.reputation < loan.rr;
-        const totalCost = loan.amt * (1 + loan.r);
-        const weeklyPay = totalCost / (loan.t * 4);
-
+      {/* ── AVAILABLE LOANS ── */}
+      <SectionHeader title="Available Loans" icon={'\u{1F3E6}'}/>
+      {LOANS.map((loan, i) => {
+        const canTake = (g.reputation || 0) >= (loan.minRep || 0) && loans.length < 5;
         return (
-          <div key={index} className="card" style={locked ? { opacity: 0.6 } : {}}>
-            <div className="row-between mb-4">
-              <span className="font-bold">{loan.n}</span>
-              <span className="text-green font-bold">${fmt(loan.amt)}</span>
+          <UICard key={i} style={{ opacity: canTake ? 1 : 0.5 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>${fmt(loan.amount)}</div>
+                <div style={{ fontSize: 10, color: 'var(--text-dim)' }}>
+                  {(loan.rate * 100).toFixed(0)}% APR {'\u00B7'} ${fmt(loan.weeklyPayment)}/week
+                  {loan.minRep > 0 && ` \u00B7 Rep ${loan.minRep}+`}
+                </div>
+              </div>
+              <button onClick={() => take(i)} disabled={busy === `loan-${i}` || !canTake}
+                style={{
+                  padding: '8px 16px', borderRadius: 8, border: 'none',
+                  background: canTake ? 'var(--green)' : 'rgba(255,255,255,0.05)',
+                  color: canTake ? '#fff' : 'var(--text-dim)',
+                  fontWeight: 700, fontSize: 12, cursor: canTake ? 'pointer' : 'default',
+                }}>
+                {busy === `loan-${i}` ? '...' : 'Take'}
+              </button>
             </div>
-            <div className="text-xs text-dim mb-4">
-              {(loan.r * 100).toFixed(1)}% rate {"\u00B7"} {loan.t} weeks {"\u00B7"} ${fmt(weeklyPay)}/wk
-              {loan.rr > 0 ? ` \u00B7 Rep ${loan.rr}+` : ''}
-            </div>
-            <button
-              className="btn btn-full btn-sm"
-              disabled={locked || busy === `loan-${index}`}
-              onClick={() => take(index)}
-            >
-              {locked ? `Need Rep ${loan.rr}` : busy === `loan-${index}` ? 'Processing...' : 'Take Loan'}
-            </button>
-          </div>
-        );
-      })}
-
-      {/* Insurance */}
-      <div className="card">
-        <div className="card-title">Insurance</div>
-        <div className="text-sm text-dim mb-4">Protect your business from unexpected events.</div>
-      </div>
-      {[
-        { tier: 'basic', name: 'Basic', cost: '$500/mo', desc: 'Covers theft and minor damage.' },
-        { tier: 'business', name: 'Business', cost: '$1,500/mo', desc: 'Covers theft, damage, chargebacks, and minor lawsuits.' },
-        { tier: 'premium', name: 'Premium', cost: '$3,000/mo', desc: 'Covers everything including major lawsuits and natural disasters.' },
-      ].map(ins => {
-        const isActive = g.insurance === ins.tier;
-        return (
-          <div key={ins.tier} className={`insurance-card${isActive ? ' active' : ''}`}>
-            <div className="row-between mb-4">
-              <span className="font-bold">{ins.name}</span>
-              <span className="text-accent font-bold">{ins.cost}</span>
-            </div>
-            <div className="text-xs text-dim mb-4">{ins.desc}</div>
-            {isActive && <div className="text-xs text-green font-bold mb-4">CURRENT PLAN</div>}
-            <button
-              className={`btn btn-full btn-sm ${isActive ? 'btn-red' : 'btn-green'}`}
-              disabled={busy === `ins-${ins.tier}`}
-              onClick={async () => {
-                setBusy(`ins-${ins.tier}`);
-                await postAction('setInsurance', { tier: isActive ? null : ins.tier });
-                refreshState();
-                setBusy(null);
-              }}
-            >
-              {busy === `ins-${ins.tier}` ? '...' : isActive ? 'Cancel' : 'Subscribe'}
-            </button>
-          </div>
+          </UICard>
         );
       })}
     </>
