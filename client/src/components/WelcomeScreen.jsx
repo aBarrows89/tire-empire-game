@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { registerPlayer, API_BASE } from '../api/client.js';
 import { useGame } from '../context/GameContext.jsx';
+import { cacheGameState } from '../services/offlineCache.js';
 
 export default function WelcomeScreen() {
-  const { refreshState } = useGame();
+  const { dispatch } = useGame();
   const [playerName, setPlayerName] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [referralCode, setReferralCode] = useState('');
@@ -52,8 +53,13 @@ export default function WelcomeScreen() {
     setError(null);
     try {
       const code = referralCode.trim() || undefined;
-      await registerPlayer(playerName.trim(), companyName.trim(), code);
-      await refreshState();
+      const gameState = await registerPlayer(playerName.trim(), companyName.trim(), code);
+      // Use the state returned directly from register — avoids a second round-trip
+      // that could hang if the server is slow loading economy data
+      if (gameState && gameState.companyName) {
+        dispatch({ type: 'SET_STATE', payload: gameState });
+        cacheGameState(gameState);
+      }
     } catch (err) {
       setError(err.message);
       setBusy(false);

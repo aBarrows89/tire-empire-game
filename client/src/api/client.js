@@ -75,9 +75,17 @@ async function fetchWithRetry(url, opts = {}, retries = 1) {
 
 export async function getState() {
   const headers = await getHeaders();
-  const res = await fetchWithRetry(`${API_BASE}/state`, { headers });
-  if (!res.ok) throw new Error(`GET /api/state failed: ${res.status}`);
-  return res.json();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000); // 12s timeout
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/state`, { headers, signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error(`GET /api/state failed: ${res.status}`);
+    return res.json();
+  } catch (err) {
+    clearTimeout(timeout);
+    throw err;
+  }
 }
 
 export async function registerPlayer(playerName, companyName, referralCode) {
