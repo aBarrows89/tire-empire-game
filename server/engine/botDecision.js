@@ -1008,6 +1008,25 @@ function _queueBotForAIChat(g, cfg, recentMessages, mentionedMsg) {
     if (last) recentEvent = last.type;
   }
 
+  // Build a richer state snippet so AI chat stays grounded in actual tire shop context
+  const totalInv = (g.locations || []).reduce((a, loc) => {
+    return a + Object.values(loc.inventory || {}).reduce((s, q) => s + q, 0);
+  }, 0) + Object.values(g.warehouseInventory || {}).reduce((a, v) => a + v, 0);
+
+  // Best selling tire type (most stocked = proxy for focus)
+  const tireAgg = {};
+  for (const loc of (g.locations || [])) {
+    for (const [k, q] of Object.entries(loc.inventory || {})) {
+      tireAgg[k] = (tireAgg[k] || 0) + q;
+    }
+  }
+  const topTireKey = Object.entries(tireAgg).sort((a, b) => b[1] - a[1])[0]?.[0];
+  const TOP_TIRE_NAMES = { allSeason: 'all-seasons', winter: 'winter tires', performance: 'performance tires', lightTruck: 'light truck tires', commercial: 'commercial tires', runFlat: 'run-flats', evTire: 'EV tires', luxuryTouring: 'luxury touring', premiumAllWeather: 'all-weather' };
+  const topTireName = topTireKey ? (TOP_TIRE_NAMES[topTireKey] || topTireKey) : null;
+
+  // What city they are mostly in
+  const mainCity = g.locations?.[0] ? (require('../../shared/constants/cities.js').CITIES?.find?.(c => c.id === g.locations[0].cityId)?.name || city) : city;
+
   _chatQueue.push({
     botId: g.id,
     botName: g.companyName || g.name || 'Unknown',
@@ -1019,11 +1038,18 @@ function _queueBotForAIChat(g, cfg, recentMessages, mentionedMsg) {
       cash,
       shopCount: locCount,
       rep,
-      city,
+      city: mainCity,
       doing,
       hasFactory: !!g.hasFactory,
       hasWholesale: !!g.hasWholesale,
+      hasEcom: !!g.hasEcom,
       recentEvent,
+      totalInventory: totalInv,
+      topTire: topTireName,
+      dayRevK: Math.round((g.dayRev || 0) / 100) / 10, // e.g. 2.4 = $2.4K
+      dayProfit: Math.round(g.dayProfit || 0),
+      hasWarehouse: !!g.hasWarehouse,
+      loanCount: (g.loans || []).length,
     },
   });
 }

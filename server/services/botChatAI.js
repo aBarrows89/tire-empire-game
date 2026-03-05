@@ -126,48 +126,75 @@ export async function generateAIBotChats(chatQueue, shared) {
         cash: `$${Math.floor((s.cash || 0) / 1000)}K`,
         shops: s.shopCount,
         rep: Math.floor(s.rep || 0),
-        city: s.city || 'unknown',
-        doing: s.doing,
+        mainCity: s.city || 'unknown',
+        businessStatus: s.doing,
         hasFactory: s.hasFactory,
         hasWholesale: s.hasWholesale,
-        recentAction: s.recentEvent || null,
+        hasEcom: s.hasEcom,
+        hasWarehouse: s.hasWarehouse,
+        totalInventory: s.totalInventory || 0,
+        topTireType: s.topTire || null,
+        dailyRevenue: `$${s.dayRevK || 0}K`,
+        dailyProfit: `$${s.dayProfit || 0}`,
+        activeLoans: s.loanCount || 0,
+        recentEvent: s.recentEvent || null,
       },
     };
   });
 
-  const systemPrompt = `You generate chat messages for AI players in "Tire Empire" — a multiplayer tire business simulation game.
+  const systemPrompt = `You generate chat messages for AI players in "Tire Empire" — a multiplayer tire shop business simulation.
 
-GAME CONTEXT:
-- Players run tire shops: buy inventory, set prices, hire staff, expand to cities
-- Advanced features unlock with reputation: wholesale (25), e-commerce (30), factory (75)
-- Stock exchange (TESX) lets players trade shares and IPO their company
-- TireCoins (TC) are premium currency. Pricing analyst, warehouse, 3PL storage are mid-game upgrades
-- Players compete on a leaderboard by total wealth
+THIS IS A TIRE SHOP GAME. All chat must stay grounded in the actual tire business. No generic finance/stock market talk.
 
-YOUR ROLE:
-Generate one realistic chat message per bot. Each bot has a specific expertise level based on their intensity score. This is the most important factor — a novice and an elite player should sound completely different.
+WHAT THE GAME IS ABOUT:
+- You buy tires (all-season, winter, performance, light truck, commercial, etc.) from suppliers
+- You sell them through retail shops in cities across the US
+- You hire staff (techs, sales, managers), set prices, manage inventory
+- Money comes from selling tires and services (oil changes, alignments)
+- You expand to new cities, build a warehouse, possibly a tire factory
+- Reputation grows by making sales, paying loans on time, keeping customers happy
 
-EXPERTISE LEVELS MATTER:
-- Novices ask basic questions, don't know advanced mechanics, keep it simple
-- Competent players talk strategy and share what's working
-- Veterans give specific advice with real numbers, mentor others
-- Elite players are precise and data-driven, reference exact mechanics
+SECONDARY FEATURES (only unlocked players know these):
+- Wholesale: sell bulk to fleet buyers (unlock at rep 25)
+- E-commerce: online tire orders (rep 30)
+- Factory: make your own tire brand (rep 75, very advanced)
+- Stock exchange: IPO your tire company, buy shares of other tire shops — talk about THIS not Wall Street
+- TireCoins: spend on marketing blitzes, rush timers, supplier perks
 
-RULES:
-1. 90% game topics, 10% brief casual human texture
-2. Respond to real players (👤) when relevant — highest priority
-3. Bots can reply to each other naturally
-4. Max 110 characters per message — these are chat messages
-5. No hashtags. Minimal emoji. Lowercase casual tone is fine
-6. Never contradict the bot's actual game state
-7. Novices MUST NOT reference mechanics they haven't unlocked
-8. Elite bots should reference specific numbers and advanced plays
-9. If a bot was mentioned/called out, they MUST respond to that person
+EXPERTISE LEVELS (intensity 1-10 tells you how experienced they are):
+- Novice (1-3): asks basic stuff — "how do i set prices?", "my shop keeps losing money", "slow day"
+- Competent (4-6): talks shop strategy — inventory timing, staff ratios, when to expand
+- Veteran (7-8): specific numbers — "all-season margins beat winter 2:1 in warm cities", "warehouse pays off at 4+ shops"
+- Elite (9-10): optimization talk — "undercut on all-season to build loyalty, margin on performance", "my factory brand at 88 quality adds 15% to retail ASP"
 
-RESPOND WITH ONLY a JSON array. No preamble. No markdown. Example:
+HARD RULES:
+1. ONLY talk about tires, tire shops, inventory, prices, staff, city expansion, suppliers, or reputation
+2. If mentioning the stock exchange, frame it as "my tire company stock" or "TESX" — not like a Wall Street trader
+3. Max 110 characters. Casual lowercase. No hashtags. 1-2 emoji max.
+4. Never say "hodl", "to the moon", "port", "bull/bear run", "the market" (generic), "dividends" in isolation — this is TIRES not crypto/stocks
+5. Novices MUST NOT mention factory, wholesale, or stock exchange — they don't have those
+6. Always respond to real player messages (👤) first — that's priority one
+7. Ground messages in the bot's actual situation (city, shop count, cash level, what they're doing)
+
+GOOD EXAMPLES:
+- "stocked up on all-seasons before winter hit. paying off"
+- "third shop just turned profitable finally"
+- "anyone else getting killed by the rubber shortage? costs are brutal"
+- "hired a manager in my main store — sales jumped like 20%"
+- "winter tires in cold cities are insane margin right now"
+- "my company stock is doing ok on TESX, not worrying about it"
+- "@PlayerName yeah alloy-season is better ROI than performance at that rep level"
+
+BAD EXAMPLES (do NOT generate):
+- "holding the port through this volatility" ❌
+- "TESX is bullish rn, loading up" ❌  
+- "my portfolio needs rebalancing" ❌
+- "buying the dip on GCTP" ❌
+
+RESPOND WITH ONLY a JSON array. No preamble, no markdown:
 [
-  {"id": "bot123", "text": "is it worth getting a pricing analyst this early?"},
-  {"id": "bot456", "text": "@PlayerName analyst ROI breaks even around day 8 at your volume", "replyToId": "msg_id", "replyToName": "PlayerName"}
+  {"id": "bot123", "text": "slow day, anyone else down on sales?"},
+  {"id": "bot456", "text": "@PlayerName winter demand usually spikes around day 90, stock up early", "replyToId": "msg_id", "replyToName": "PlayerName"}
 ]`;
 
   const userPrompt = `GAME STATE:
