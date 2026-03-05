@@ -2,7 +2,7 @@ import React from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { postAction } from '../../api/client.js';
 import { getWholesaleSuppliers, placeWholesaleOrder, setWholesalePrices } from '../../api/client.js';
-import { WS_MIN_REP, WS_MIN_STORAGE, VOL_TIERS, P2P_DELIVERY_FEE, P2P_COMMISSION } from '@shared/constants/wholesale.js';
+import { WS_MIN_REP, WS_MIN_STORAGE, VOL_TIERS, P2P_DELIVERY_FEE, P2P_COMMISSION, WS_UPGRADES } from '@shared/constants/wholesale.js';
 import { TIRES } from '@shared/constants/tires.js';
 import { fmt } from '@shared/helpers/format.js';
 import { getVolTier } from '@shared/helpers/wholesale.js';
@@ -182,8 +182,9 @@ export default function WholesalePanel() {
       <div className="card" style={{ padding: '4px' }}>
         <div style={{ display: 'flex', gap: 4 }}>
           {[
-            { id: 'buy', label: 'Buy from Players' },
-            { id: 'sell', label: 'Set Your Prices' },
+            { id: 'buy', label: 'Buy' },
+            { id: 'sell', label: 'Sell' },
+            { id: 'upgrades', label: 'Upgrades' },
             { id: 'history', label: 'Orders' },
           ].map(t => (
             <button
@@ -376,6 +377,72 @@ export default function WholesalePanel() {
           >
             {savingPrices ? 'Saving...' : 'Save Wholesale Prices'}
           </button>
+        </div>
+      )}
+
+      {/* === UPGRADES === */}
+      {tab === 'upgrades' && (
+        <div className="card">
+          <div className="card-title">Wholesale Upgrades</div>
+          <div className="text-xs text-dim mb-4" style={{ lineHeight: 1.5 }}>
+            Invest in your wholesale operation to serve more clients, ship faster, and store more.
+          </div>
+
+          {Object.entries(WS_UPGRADES || {}).map(([category, def]) => {
+            const currentLevel = (g.wsUpgrades || {})[category] || 1;
+            const currentLevelData = def.levels.find(l => l.level === currentLevel);
+            const nextLevel = def.levels.find(l => l.level === currentLevel + 1);
+            const isMaxed = !nextLevel;
+
+            return (
+              <div key={category} style={{
+                padding: 10, marginBottom: 8, borderRadius: 8,
+                background: 'rgba(255,255,255,0.02)',
+                border: '1px solid rgba(255,255,255,0.06)',
+              }}>
+                <div className="row-between mb-4">
+                  <span className="font-bold text-sm">{def.icon} {def.name}</span>
+                  <span className="text-xs" style={{ color: isMaxed ? 'var(--gold)' : 'var(--text-dim)' }}>
+                    {isMaxed ? 'MAX' : `Lv ${currentLevel}`}
+                  </span>
+                </div>
+                <div className="text-xs text-dim mb-4">{currentLevelData?.label || def.levels[0]?.label}</div>
+
+                {/* Level progress dots */}
+                <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+                  {def.levels.map(l => (
+                    <div key={l.level} style={{
+                      width: 8, height: 8, borderRadius: '50%',
+                      background: l.level <= currentLevel ? 'var(--green)' : 'rgba(255,255,255,0.15)',
+                    }} />
+                  ))}
+                </div>
+
+                {nextLevel && (
+                  <>
+                    <div className="text-xs mb-4" style={{ color: 'var(--accent)' }}>
+                      Next: {nextLevel.label}
+                    </div>
+                    <button
+                      className="btn btn-sm btn-green btn-full"
+                      disabled={busy || g.cash < nextLevel.cost}
+                      onClick={async () => {
+                        setBusy(true);
+                        await postAction('upgradeWholesale', { category });
+                        hapticsMedium();
+                        refreshState();
+                        setBusy(false);
+                      }}
+                    >
+                      {g.cash < nextLevel.cost
+                        ? `Need $${fmt(nextLevel.cost)}`
+                        : `Upgrade — $${fmt(nextLevel.cost)}`}
+                    </button>
+                  </>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

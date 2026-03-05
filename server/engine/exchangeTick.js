@@ -116,14 +116,21 @@ export function runExchangeTick(exchangeState, players, day) {
   for (const p of players) {
     const g = p.game_state;
     const isBot = g.isAI || g._botConfig;
-    if (!isBot || !g.stockExchange || g.stockExchange.isPublic) continue;
-    if ((g.reputation || 0) >= IPO_MIN_REP &&
+    if (!isBot || !g.stockExchange) continue;
+    if (g.stockExchange.isPublic) continue; // Already listed
+
+    // Check for pending IPO flag (set by botDecision.js) OR meet requirements directly
+    const wantsIPO = g.stockExchange._pendingIPO;
+    const meetsReqs = (g.reputation || 0) >= IPO_MIN_REP &&
         (g.totalRev || 0) >= IPO_MIN_REVENUE &&
         (g.locations || []).length >= IPO_MIN_LOCATIONS &&
         (g.day || 0) >= IPO_MIN_AGE &&
-        (g.cash || 0) >= IPO_MIN_CASH) {
+        (g.cash || 0) >= IPO_MIN_CASH;
+
+    if (wantsIPO || meetsReqs) {
       try {
         processIPO(g, exchangeState, day);
+        delete g.stockExchange._pendingIPO; // Clean up the flag
         if (!modifiedPlayers.includes(p)) modifiedPlayers.push(p);
       } catch (e) { /* skip failed IPO */ }
     }

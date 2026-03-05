@@ -80,6 +80,25 @@ export async function handleWholesale(action, params, g, ctx) {
       break;
     }
 
+    case 'upgradeWholesale': {
+      if (!g.hasWholesale) return ctx.fail('Wholesale not unlocked');
+      const { WS_UPGRADES } = await import('../../../shared/constants/wholesale.js');
+      const { category } = params;
+      const upgradeDef = WS_UPGRADES[category];
+      if (!upgradeDef) return ctx.fail('Invalid upgrade category');
+
+      if (!g.wsUpgrades) g.wsUpgrades = {};
+      const currentLevel = g.wsUpgrades[category] || 1;
+      const nextLevel = upgradeDef.levels.find(l => l.level === currentLevel + 1);
+      if (!nextLevel) return ctx.fail(`${upgradeDef.name} already at max level`);
+      if (g.cash < nextLevel.cost) return ctx.fail(`Need $${nextLevel.cost.toLocaleString()}`);
+
+      g.cash -= nextLevel.cost;
+      g.wsUpgrades[category] = nextLevel.level;
+      g.log.push({ msg: `Upgraded ${upgradeDef.name} to ${nextLevel.label} (-$${nextLevel.cost.toLocaleString()})`, cat: 'event' });
+      break;
+    }
+
     case 'enableFactoryDistribution': {
       if (!g.hasFactory || !g.factory) return ctx.fail('No factory');
       if (!g.hasDist) return ctx.fail('Need distribution network');
