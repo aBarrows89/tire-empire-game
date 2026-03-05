@@ -26,6 +26,7 @@ const SECONDARY_TABS = [
   { id: 'exchange', icon: '\u{1F4C8}', label: 'Exchange' },
   { id: 'map', icon: '\u{1F5FA}', label: 'Map' },
   { id: 'achievements', icon: '\u{1F3C5}', label: 'Awards' },
+  { id: 'store', icon: '\u{1FA99}', label: 'TC Store' },
   { id: 'profile', icon: '\u{1F464}', label: 'Profile' },
   { id: 'log', icon: '\u{1F4CB}', label: 'Log' },
 ];
@@ -56,6 +57,7 @@ function getUnlockedTabs(g) {
   }
 
   unlocked.add('achievements');
+  unlocked.add('store');
 
   if (g.hasFactory || g.reputation >= 50) unlocked.add('factory');
 

@@ -11,28 +11,28 @@ export const MONET = {
     { brand: "TireTech Academy", text: "\u{1F4DA} TireTech Academy \u2014 Certify Your Techs", color: "#cc7733" },
   ],
   coinRewards: {
-    weekSurvived: 5,
-    shopOpened: 50,
-    firstWarehouse: 100,
-    acquisitionComplete: 75,
-    revenueTarget100K: 200,
-    revenueTarget1M: 500,
-    wholesaleClientSigned: 25,
-    tpoContractSigned: 40,
-    ecomLaunched: 150,
-    distributorUnlocked: 300,
-    marketplaceLaunched: 30,
-    liquidationBought: 20,
-    liquidationSold: 35,
-    installerRecruited: 25,
-    becameInstaller: 40,
+    weekSurvived: 2,                   // was 5 — reduced
+    shopOpened: 20,                    // was 50
+    firstWarehouse: 40,                // was 100
+    acquisitionComplete: 30,           // was 75
+    revenueTarget100K: 75,             // was 200
+    revenueTarget1M: 200,              // was 500
+    wholesaleClientSigned: 10,         // was 25
+    tpoContractSigned: 15,             // was 40
+    ecomLaunched: 50,                  // was 150
+    distributorUnlocked: 100,          // was 300
+    marketplaceLaunched: 10,           // was 30
+    liquidationBought: 5,              // was 20
+    liquidationSold: 10,               // was 35
+    installerRecruited: 10,            // was 25
+    becameInstaller: 15,               // was 40
   },
   // 16d: Ad strategy — diminishing returns per ad
   adRewards: {
-    schedule: [50, 30, 15, 10, 10],  // 1st=50, 2nd=30, etc.
+    schedule: [25, 15, 10, 5, 5],  // 1st=25, 2nd=15, etc. (was 50,30,15,10,10 — total 60 vs 115)
     maxRewardedPerDay: 5,
   },
-  adRewardTC: 50,  // Legacy compat — 1st ad reward
+  adRewardTC: 25,  // Legacy compat — 1st ad reward (was 50)
   maxRewardedPerDay: 5,
   interstitialCooldownMs: 300_000,
   interstitialMinPanelSwitches: 3,
@@ -79,7 +79,7 @@ export const MONET = {
   // 14b: Emission scaling — TC earn rates scale inversely with player count
   tcEmission: {
     targetPlayerCount: 100,    // "Designed for" player count
-    maxMultiplier: 50,         // Cap so 1-player servers don't mint infinite coins
+    maxMultiplier: 5,          // Cap so small servers get a boost but not a flood (was 50)
     minMultiplier: 1,          // Never reduce below base earn rate
   },
 
@@ -112,5 +112,53 @@ export const MONET = {
     listingCooldownDays: 1,    // 1 listing per day per player
     listingDurationDays: 30,   // Auto-expire after 30 days
     priceRangeLimit: 0.50,     // Listings must be within ±50% of fair value
+  },
+
+  // ── TC In-App Purchases (real money → TireCoins) ──
+  tcPurchase: {
+    enabled: true,
+    tiers: [
+      { id: 'tc_100',   tc: 100,   price: 0.99,  label: 'Starter Pack',     bonus: 0,    popular: false },
+      { id: 'tc_500',   tc: 550,   price: 4.99,  label: 'Value Pack',       bonus: 50,   popular: false },
+      { id: 'tc_1200',  tc: 1400,  price: 9.99,  label: 'Pro Pack',         bonus: 200,  popular: true },
+      { id: 'tc_3000',  tc: 3750,  price: 24.99, label: 'Empire Pack',      bonus: 750,  popular: false },
+      { id: 'tc_7000',  tc: 9100,  price: 49.99, label: 'Tycoon Pack',      bonus: 2100, popular: false },
+      { id: 'tc_15000', tc: 21000, price: 99.99, label: 'Mogul Pack',       bonus: 6000, popular: false },
+    ],
+    // Premium members get 20% bonus TC on all purchases
+    premiumPurchaseBonus: 0.20,
+    // First purchase ever gets double TC (one-time)
+    firstPurchaseMultiplier: 2.0,
+    // Platform: 'capacitor' for mobile IAP, 'stripe' for web
+    // Server validates receipt before granting TC
+  },
+
+  // ── Premium Subscription Tiers ──
+  premiumTiers: {
+    monthly: {
+      id: 'premium_monthly',
+      price: 4.99,
+      label: 'PRO Monthly',
+      features: [
+        '+1500 TC storage capacity',
+        '100 TC monthly stipend',
+        'Auto-restock system',
+        '2% marketplace fee (vs 5%)',
+        '20% bonus on TC purchases',
+        'Gold company name',
+        'Priority customer traffic (+10%)',
+      ],
+    },
+    yearly: {
+      id: 'premium_yearly',
+      price: 29.99,
+      label: 'PRO Yearly',
+      savings: '50%',
+      features: [
+        'Everything in Monthly',
+        '+500 bonus TC on signup',
+        'Exclusive yearly badge',
+      ],
+    },
   },
 };
