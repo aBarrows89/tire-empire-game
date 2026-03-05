@@ -299,15 +299,18 @@ export default function WholesalePanel() {
             const retailPrice = g.prices?.[k] || t.def;
             const mktAvg = (g.marketPrices && g.marketPrices[k]) || t.def;
 
-            // Calculate your cost basis from supplier pricing
+            // Calculate cost from supplier pricing multipliers × tire base cost
+            const baseCost = Math.round((t.bMin + t.bMax) / 2);
             const supPrices = g._supplierPrices || {};
-            let costs = [];
+            let mults = [];
             for (const [, prices] of Object.entries(supPrices)) {
-              if (prices[k] && prices[k] > 0) costs.push(prices[k]);
+              if (prices[k] && prices[k] > 0) mults.push(prices[k]);
             }
-            const avgCost = costs.length > 0
-              ? Math.round(costs.reduce((a, b) => a + b, 0) / costs.length)
-              : Math.round((t.bMin + t.bMax) / 2);
+            // _supplierPrices stores MULTIPLIERS (0.70-1.35), not absolute prices
+            const avgMult = mults.length > 0
+              ? mults.reduce((a, b) => a + b, 0) / mults.length
+              : 1.0;
+            const avgCost = Math.round(baseCost * avgMult);
 
             const wsPrice = Number(priceInputs[k] || g.wholesalePrices?.[k] || 0);
             const margin = wsPrice > 0 ? wsPrice - avgCost : 0;
