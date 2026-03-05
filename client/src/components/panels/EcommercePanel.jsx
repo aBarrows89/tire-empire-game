@@ -157,6 +157,10 @@ export default function EcommercePanel() {
         )}
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 4 }}>
           <div className="row-between mb-4">
+            <span className="text-sm text-dim">Total E-Com Revenue</span>
+            <span className="font-bold text-green">${fmt(g.totalEcomRevenue || 0)}</span>
+          </div>
+          <div className="row-between mb-4">
             <span className="text-sm text-dim">Daily Orders</span>
             <span className="font-bold text-green">{g.ecomDailyOrders || 0}</span>
           </div>
@@ -167,6 +171,12 @@ export default function EcommercePanel() {
           <div className="row-between mb-4">
             <span className="text-sm text-dim">Monthly Costs</span>
             <span className="font-bold text-red">${fmt(totalMonthlyCost)}/mo</span>
+          </div>
+          <div className="row-between mb-4">
+            <span className="text-sm text-dim">Net Monthly</span>
+            <span className={'font-bold ' + ((g.ecomDailyRev || 0) * 30 - totalMonthlyCost >= 0 ? 'text-green' : 'text-red')}>
+              ${fmt(Math.round((g.ecomDailyRev || 0) * 30 - totalMonthlyCost))}/mo
+            </span>
           </div>
         </div>
       </div>
