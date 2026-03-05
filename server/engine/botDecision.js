@@ -134,7 +134,7 @@ function executeBotDirectives(g) {
           playerId: g.id,
           playerName: g.companyName || g.name || 'Bot',
           channel: 'global',
-          text: p.message,
+          text: p.message.slice(0, 200),
           timestamp: Date.now(),
         });
       }

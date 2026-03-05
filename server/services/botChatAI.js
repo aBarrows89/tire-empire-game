@@ -170,7 +170,7 @@ EXPERTISE LEVELS (intensity 1-10 tells you how experienced they are):
 HARD RULES:
 1. ONLY talk about tires, tire shops, inventory, prices, staff, city expansion, suppliers, or reputation
 2. If mentioning the stock exchange, frame it as "my tire company stock" or "TESX" — not like a Wall Street trader
-3. Max 110 characters. Casual lowercase. No hashtags. 1-2 emoji max.
+3. Max 180 characters. Casual lowercase. No hashtags. 1-2 emoji max.
 4. Never say "hodl", "to the moon", "port", "bull/bear run", "the market" (generic), "dividends" in isolation — this is TIRES not crypto/stocks
 5. Novices MUST NOT mention factory, wholesale, or stock exchange — they don't have those
 6. Always respond to real player messages (👤) first — that's priority one
@@ -257,7 +257,7 @@ ${JSON.stringify(botDescriptions, null, 2)}`;
         return {
           botId: m.id,
           botName: bot.botName,
-          text: m.text.slice(0, 140),
+          text: m.text.slice(0, 200),
           replyToId: m.replyToId || null,
           replyToName: m.replyToName || null,
         };

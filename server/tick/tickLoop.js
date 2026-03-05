@@ -572,7 +572,14 @@ export function getTickStats() {
   };
 }
 
+let _tickRunning = false;
+
 export async function runTick(clients) {
+  if (_tickRunning) {
+    console.warn('[Tick] Previous tick still running — skipping');
+    return;
+  }
+  _tickRunning = true;
   const _tickStart = Date.now();
   try {
     const game = await getGame();
@@ -1641,6 +1648,7 @@ export async function runTick(clients) {
   } catch (err) {
     console.error('Tick error:', err);
   } finally {
+    _tickRunning = false;
     const elapsed = Date.now() - _tickStart;
     _tickTimings.push(elapsed);
     if (_tickTimings.length > 100) _tickTimings.shift();
