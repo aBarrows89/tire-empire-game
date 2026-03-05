@@ -181,8 +181,6 @@ export default function ShopPanel() {
 
   return (
     <>
-  return (
-    <>
       {/* ── YOUR SHOPS ── */}
       {g.locations.length > 0 && (
         <div className={`card${(g.cosmetics || []).includes('neon_sign') ? ' neon-shop-card' : ''}`}>
