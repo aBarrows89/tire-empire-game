@@ -1,0 +1,75 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: client/package-lock.json
+
+      - name: Setup Java (Android SDK requires JDK 17)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install server dependencies (for shared imports)
+        run: npm ci
+        working-directory: .
+
+      - name: Install client dependencies
+        run: npm ci
+        working-directory: client
+
+      - name: Build web assets
+        run: npm run build
+        working-directory: client
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+        working-directory: client
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+        working-directory: client/android
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+        working-directory: client/android
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tire-empire-debug
+          path: client/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      - name: Get short SHA
+        id: sha
+        run: echo "short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Create Release (on manual trigger only)
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ steps.sha.outputs.short }}
+          name: Build ${{ steps.sha.outputs.short }}
+          files: client/android/app/build/outputs/apk/debug/app-debug.apk
+          draft: false
+          prerelease: true
