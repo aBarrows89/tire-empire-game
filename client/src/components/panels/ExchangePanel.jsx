@@ -10,6 +10,7 @@ import {
 import PriceChart from '../PriceChart.jsx';
 import OrderBook from '../OrderBook.jsx';
 import RewardedAdButton from '../RewardedAdButton.jsx';
+import { UICard, MiniSparkline, Tag, TireCoin } from '../ui/ui.jsx';
 
 const TABS = ['Market', 'Portfolio', 'Trade', 'IPO', 'Premium'];
 
@@ -441,7 +442,7 @@ export default function ExchangePanel() {
                 const q = stockSearch.toLowerCase();
                 return s.ticker.toLowerCase().includes(q) || s.companyName.toLowerCase().includes(q);
               }).map(s => {
-                const riskColor = { 'Very Low': 'var(--green)', 'Low': '#4a9', 'Moderate': 'var(--yellow)', 'High': 'var(--orange)', 'Very High': 'var(--red)' }[s.riskRating] || 'var(--text-dim)';
+                const riskColor = { 'Very Low': '#4caf50', 'Low': '#44aa99', 'Moderate': '#ff9800', 'High': '#f44336', 'Very High': '#d32f2f' }[s.riskRating] || '#7a8599';
                 return (
                   <UICard key={s.ticker} onClick={() => { selectStock(s.ticker); setTab(2); }}
                     style={{ padding: '10px 12px', marginBottom: 6, cursor: 'pointer' }}>
