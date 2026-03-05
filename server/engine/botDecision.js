@@ -9,7 +9,8 @@ import { TIRES } from '../../shared/constants/tires.js';
 import { shopCost } from '../../shared/constants/shop.js';
 import {
   PERSONALITIES, QUIRKS, INTENSITY_LEVELS, SCHEDULES,
-  CHAT_TEMPLATES, FIRST_NAMES, LAST_NAMES, COMPANY_PATTERNS,
+  CHAT_TEMPLATES, REPLY_TEMPLATES, PERSONALITY_VOICE,
+  FIRST_NAMES, LAST_NAMES, COMPANY_PATTERNS,
 } from '../../shared/constants/bots.js';
 
 const R = (lo, hi) => lo + Math.random() * (hi - lo);
@@ -714,7 +715,7 @@ const _pendingBotChats = [];
 let _botChatBudget = 0;  // Messages remaining for this tick cycle
 
 export function resetBotChatBudget() {
-  _botChatBudget = Ri(1, 5); // 1-5 messages per day across all bots
+  _botChatBudget = Ri(3, 8); // 3-8 messages per day across all bots (increased for replies)
 }
 
 export function getPendingBotChats() {
@@ -733,23 +734,125 @@ function runChat(g, cfg, pw, shared) {
   const chatChance = 0.02 * pw.chatFrequency;
   if (Math.random() > chatChance) return;
 
-  // Generate message
-  const msg = generateChatMessage(g, cfg, shared);
+  // Decide: reply to someone or post original message?
+  const recentMessages = shared.recentChatMessages || [];
+  let msg = null;
+  let replyTo = null;
+
+  // 40% chance to reply if there are recent messages from other players
+  const otherMessages = recentMessages.filter(m => m.playerId !== g.id);
+  if (otherMessages.length > 0 && Math.random() < 0.4) {
+    const result = generateReply(g, cfg, otherMessages, shared);
+    if (result) {
+      msg = result.text;
+      replyTo = result.replyTo;
+    }
+  }
+
+  // Otherwise generate an original message
+  if (!msg) {
+    msg = generateChatMessage(g, cfg, shared);
+  }
+
   if (!msg) return;
 
-  _pendingBotChats.push({
+  const chatMsg = {
     id: uid(),
     playerId: g.id,
     playerName: g.companyName || g.name || 'Unknown',
     channel: 'global',
     text: msg,
     timestamp: Date.now(),
-  });
+  };
 
+  // Add reply metadata if replying to someone
+  if (replyTo) {
+    chatMsg.replyTo = {
+      id: replyTo.id,
+      playerName: replyTo.playerName,
+      text: (replyTo.text || '').slice(0, 80),
+    };
+  }
+
+  _pendingBotChats.push(chatMsg);
   _botChatBudget--;
 
   // Set cooldown (social butterflies chat again sooner)
   cfg.chatCooldown = pw.chatFrequency >= 3 ? Ri(2, 8) : Ri(8, 30);
+}
+
+function generateReply(g, cfg, recentMessages, shared) {
+  // Pick a message to reply to (prefer more recent, prefer real players)
+  const weighted = recentMessages.map((m, i) => ({
+    msg: m,
+    weight: (recentMessages.length - i) * (m.isBot ? 0.3 : 1.0), // Prefer real players, prefer recent
+  }));
+  const totalWeight = weighted.reduce((a, w) => a + w.weight, 0);
+  let roll = Math.random() * totalWeight;
+  let target = weighted[0].msg;
+  for (const w of weighted) {
+    roll -= w.weight;
+    if (roll <= 0) { target = w.msg; break; }
+  }
+
+  const text = (target.text || '').toLowerCase();
+  const personality = cfg.personality || 'conservative';
+  const intensity = cfg.intensity || 5;
+
+  // Classify the message and pick a reply category
+  let category = null;
+
+  // Is it a question?
+  if (text.includes('?') || text.startsWith('how') || text.startsWith('what') || text.startsWith('when') || text.startsWith('anyone')) {
+    category = 'question_response';
+  }
+  // Is it bragging / milestone?
+  else if (text.includes('just hit') || text.includes('finally') || text.includes('best month') || text.includes('top 3') || text.includes('going public') || text.includes('revenue')) {
+    category = Math.random() < 0.6 ? 'congratulate' : 'competitive';
+  }
+  // Is it a complaint?
+  else if (text.includes('killing') || text.includes('tanked') || text.includes('struggling') || text.includes('can\'t') || text.includes('insane') || text.includes('robbery')) {
+    category = Math.random() < 0.7 ? 'agree' : 'helpful';
+  }
+  // Generic — just agree or add to the conversation
+  else {
+    category = pick(['agree', 'helpful', 'disagree']);
+  }
+
+  // Personality adjustments
+  if (personality === 'social_butterfly') {
+    // Social butterflies are more likely to congratulate and agree
+    if (category === 'disagree') category = 'agree';
+    if (category === 'competitive') category = 'congratulate';
+  } else if (personality === 'empire_builder' || personality === 'speculator') {
+    // Competitive types are more likely to talk trash
+    if (category === 'congratulate' && Math.random() < 0.4) category = 'competitive';
+  } else if (personality === 'conservative') {
+    // Conservatives give helpful advice
+    if (category === 'competitive') category = 'helpful';
+  }
+
+  const templates = REPLY_TEMPLATES[category];
+  if (!templates || templates.length === 0) return null;
+
+  let template = pick(templates);
+
+  // Fill variables
+  const city = g.locations?.[0] ? CITIES.find(c => c.id === g.locations[0].cityId)?.name || 'my city' : 'the market';
+  template = template
+    .replace(/{city}/g, city)
+    .replace(/{company}/g, g.companyName || 'My company')
+    .replace(/{shopCount}/g, String((g.locations || []).length));
+
+  // Sometimes @mention the person they're replying to
+  if (Math.random() < 0.3) {
+    template = `@${target.playerName} ${template}`;
+  }
+
+  // Apply personality voice
+  template = applyPersonalityVoice(template, personality);
+
+  return { text: template, replyTo: target };
 }
 
 function generateChatMessage(g, cfg, shared) {
@@ -760,10 +863,13 @@ function generateChatMessage(g, cfg, shared) {
   if (g.reputation >= 24 && g.reputation < 26) categories.push('milestone');
   if (g.totalRev >= 90000 && g.totalRev < 110000) categories.push('milestone');
   if ((g.locations || []).length > 0 && g.day < 60) categories.push('milestone');
+  if (g.hasFactory && g.day % 30 < 2) categories.push('milestone');
+  if (g.hasWholesale && g.day % 20 < 2) categories.push('milestone');
 
   // Complaints when things are tough
   if (g.dayRev < g.prevDayRev * 0.6) categories.push('complaint');
   if (g.cash < 5000) categories.push('complaint');
+  if (g.dayProfit < 0) categories.push('complaint');
 
   // Reactions to global events
   if ((shared?.globalEvents || []).length > 0) categories.push('reaction');
@@ -771,10 +877,21 @@ function generateChatMessage(g, cfg, shared) {
   // Bragging when doing well
   if (g.dayRev > 5000) categories.push('bragging');
   if ((g.locations || []).length >= 3) categories.push('bragging');
+  if (g.reputation > 50) categories.push('bragging');
+
+  // Trash talk from competitive personalities
+  const personality = cfg.personality || 'conservative';
+  if (['empire_builder', 'flipper', 'speculator'].includes(personality)) {
+    categories.push('trash_talk');
+  }
+
+  // Casual messages — always a possibility
+  categories.push('casual');
+  categories.push('casual');
 
   // Default: questions
   categories.push('question');
-  categories.push('question'); // Weight questions higher
+  categories.push('question');
 
   const category = pick(categories);
   const templates = CHAT_TEMPLATES[category] || CHAT_TEMPLATES.question;
@@ -800,9 +917,41 @@ function generateChatMessage(g, cfg, shared) {
     .replace(/{loyalty}/g, String(Math.floor(g.locations?.[0]?.loyalty || 0)))
     .replace(/{wsRev}/g, formatCash(Math.floor(R(500, 3000) * (cfg.intensity || 5) / 10)))
     .replace(/{rent}/g, formatCash(7000))
-    .replace(/{tcValue}/g, formatCash(shared?.tcValue || 10000));
+    .replace(/{tcValue}/g, formatCash(shared?.tcValue || 10000))
+    .replace(/{day}/g, String(g.day || 0));
+
+  // Apply personality voice
+  template = applyPersonalityVoice(template, personality);
 
   return template;
+}
+
+function applyPersonalityVoice(text, personality) {
+  const voice = PERSONALITY_VOICE[personality];
+  if (!voice) return text;
+
+  // Sometimes add a personality-specific prefix
+  if (voice.prefix && Math.random() < 0.2) {
+    const prefix = pick(voice.prefix);
+    if (prefix) text = prefix + text.charAt(0).toLowerCase() + text.slice(1);
+  }
+
+  // Sometimes add a personality-specific suffix
+  if (voice.suffix && Math.random() < 0.15) {
+    const suffix = pick(voice.suffix);
+    if (suffix) text = text + suffix;
+  }
+
+  // Apply word transforms
+  if (voice.transforms) {
+    for (const [from, to] of Object.entries(voice.transforms)) {
+      if (text.toLowerCase().includes(from) && Math.random() < 0.5) {
+        text = text.replace(new RegExp(from, 'i'), to);
+      }
+    }
+  }
+
+  return text;
 }
 
 function formatCash(n) {
