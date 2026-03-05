@@ -609,6 +609,10 @@ async function loadChat() {
       return;
     }
     const messages = await res.json();
+    if (!Array.isArray(messages)) {
+      console.error('loadChat: unexpected response', messages);
+      return;
+    }
     const log = document.getElementById('chat-log');
     log.innerHTML = '';
     if (!messages.length) {

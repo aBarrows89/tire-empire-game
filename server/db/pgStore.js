@@ -499,7 +499,7 @@ export async function isCompanyNameTaken(name, excludeId = null) {
 
 export async function getAllActivePlayers() {
   const { rows } = await pool.query(
-    "SELECT id, game_state FROM players WHERE COALESCE((game_state->>'paused')::boolean, false) = false"
+    "SELECT id, game_state, version FROM players WHERE COALESCE((game_state->>'paused')::boolean, false) = false"
   );
   for (const r of rows) r.game_state = parseJson(r.game_state);
   return rows;
