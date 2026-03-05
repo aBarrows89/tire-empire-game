@@ -692,6 +692,54 @@ export function simDay(g, shared = {}) {
     }
   }
 
+  // ── AUTO-REORDER FROM SUPPLIERS (keeps warehouse stocked) ──
+  // If player has autoRestock enabled and warehouse is below threshold, auto-order
+  if (s.autoRestock && s.autoRestock.enabled && (s.unlockedSuppliers || []).length > 0) {
+    const whInv = Object.values(s.warehouseInventory || {}).reduce((a, b) => a + b, 0);
+    const whCap = getStorageCap(s);
+    const fillPct = whCap > 0 ? whInv / whCap : 1;
+    const threshold = s.autoRestock.threshold || 0.3; // Reorder when below 30%
+    
+    if (fillPct < threshold && s.cash > 10000) {
+      // Pick the cheapest unlocked supplier
+      const supIdx = (s.unlockedSuppliers || [])[0]; // First unlocked
+      const sup = SUPPLIERS[supIdx];
+      if (sup) {
+        const budget = Math.min(s.cash * 0.15, s.autoRestock.maxSpend || 50000); // Max 15% of cash or cap
+        const freeSpace = whCap - whInv;
+        
+        // Order the most-needed tires based on sales history
+        const salesHistory = s.salesByType || [];
+        const recentSales = salesHistory.length > 0 ? salesHistory[salesHistory.length - 1] : {};
+        const tireTypes = Object.keys(TIRES).filter(k => !TIRES[k].used);
+        
+        // Sort by most sold recently
+        tireTypes.sort((a, b) => ((recentSales[b] || 0) - (recentSales[a] || 0)));
+        
+        let spent = 0;
+        let ordered = 0;
+        for (const tire of tireTypes) {
+          if (spent >= budget || ordered >= freeSpace) break;
+          const t = TIRES[tire];
+          const priceMult = shared?.supplierPrices?.[supIdx]?.[tire] || shared?.supplierPricing?.[tire] || 1.0;
+          const unitCost = Math.round(t.bMin * priceMult * (1 - (sup.disc || 0)));
+          const canAfford = Math.floor((budget - spent) / unitCost);
+          const qty = Math.min(canAfford, Math.max(10, Math.floor(freeSpace * 0.15)), freeSpace - ordered);
+          if (qty > 0 && unitCost > 0) {
+            const totalCost = qty * unitCost;
+            s.cash -= totalCost;
+            s.warehouseInventory[tire] = (s.warehouseInventory[tire] || 0) + qty;
+            spent += totalCost;
+            ordered += qty;
+          }
+        }
+        if (ordered > 0) {
+          s.log.push({ msg: `\u{1F504} Auto-restock: ordered ${ordered} tires ($${Math.round(spent).toLocaleString()}) from ${sup.n}`, cat: 'source' });
+        }
+      }
+    }
+  }
+
   // ── AUTO-FILL STORES FROM WAREHOUSE (requires drivers) ──
   const driverCount = s.staff.drivers || 0;
   if (driverCount > 0 && s.locations.length > 0) {
