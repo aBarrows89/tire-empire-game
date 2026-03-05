@@ -11,28 +11,28 @@ export const MONET = {
     { brand: "TireTech Academy", text: "\u{1F4DA} TireTech Academy \u2014 Certify Your Techs", color: "#cc7733" },
   ],
   coinRewards: {
-    weekSurvived: 2,                   // was 5 — reduced
-    shopOpened: 20,                    // was 50
-    firstWarehouse: 40,                // was 100
-    acquisitionComplete: 30,           // was 75
-    revenueTarget100K: 75,             // was 200
-    revenueTarget1M: 200,              // was 500
-    wholesaleClientSigned: 10,         // was 25
-    tpoContractSigned: 15,             // was 40
-    ecomLaunched: 50,                  // was 150
-    distributorUnlocked: 100,          // was 300
-    marketplaceLaunched: 10,           // was 30
-    liquidationBought: 5,              // was 20
-    liquidationSold: 10,               // was 35
-    installerRecruited: 10,            // was 25
-    becameInstaller: 15,               // was 40
+    weekSurvived: 3,
+    shopOpened: 30,
+    firstWarehouse: 60,
+    acquisitionComplete: 50,
+    revenueTarget100K: 120,
+    revenueTarget1M: 300,
+    wholesaleClientSigned: 15,
+    tpoContractSigned: 25,
+    ecomLaunched: 90,
+    distributorUnlocked: 180,
+    marketplaceLaunched: 20,
+    liquidationBought: 10,
+    liquidationSold: 20,
+    installerRecruited: 15,
+    becameInstaller: 25,
   },
   // 16d: Ad strategy — diminishing returns per ad
   adRewards: {
-    schedule: [25, 15, 10, 5, 5],  // 1st=25, 2nd=15, etc. (was 50,30,15,10,10 — total 60 vs 115)
+    schedule: [30, 20, 10, 8, 5],  // total 73/day max
     maxRewardedPerDay: 5,
   },
-  adRewardTC: 25,  // Legacy compat — 1st ad reward (was 50)
+  adRewardTC: 30,  // Legacy compat — 1st ad reward
   maxRewardedPerDay: 5,
   interstitialCooldownMs: 300_000,
   interstitialMinPanelSwitches: 3,
@@ -79,7 +79,7 @@ export const MONET = {
   // 14b: Emission scaling — TC earn rates scale inversely with player count
   tcEmission: {
     targetPlayerCount: 100,    // "Designed for" player count
-    maxMultiplier: 5,          // Cap so small servers get a boost but not a flood (was 50)
+    maxMultiplier: 10,         // Small server boost — keeps TC useful without flooding
     minMultiplier: 1,          // Never reduce below base earn rate
   },
 
