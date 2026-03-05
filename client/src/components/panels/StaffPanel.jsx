@@ -15,7 +15,7 @@ const ROLES = [
 ];
 
 export default function StaffPanel() {
-  const { state, refreshState } = useGame();
+  const { state, applyState, refreshState } = useGame();
   const g = state.game;
   const [pending, setPending] = React.useState(null);
   const [error, setError] = React.useState(null);
@@ -28,11 +28,21 @@ export default function StaffPanel() {
     if (pending) return;
     setPending(role + '_hire');
     setError(null);
+    // Optimistic update — show change instantly
+    applyState({ state: { ...g, staff: { ...g.staff, [role]: (g.staff[role] || 0) + 1 }, cash: g.cash - (PAY[role] || 0) } });
     try {
       const res = await postAction('hireStaff', { role });
-      if (res?.error) { setError(res.error); setTimeout(() => setError(null), 3000); return; }
+      if (res?.error) {
+        // Roll back on error
+        refreshState();
+        setError(res.error);
+        setTimeout(() => setError(null), 3000);
+        return;
+      }
       hapticsMedium();
-      refreshState();
+      if (res?.state) applyState(res); // Apply authoritative state from server
+    } catch {
+      refreshState(); // Sync on network error
     } finally {
       setPending(null);
     }
@@ -42,10 +52,19 @@ export default function StaffPanel() {
     if (pending) return;
     setPending(role + '_fire');
     setError(null);
+    // Optimistic update
+    applyState({ state: { ...g, staff: { ...g.staff, [role]: Math.max(0, (g.staff[role] || 0) - 1) } } });
     try {
       const res = await postAction('fireStaff', { role });
-      if (res?.error) { setError(res.error); setTimeout(() => setError(null), 3000); return; }
+      if (res?.error) {
+        refreshState();
+        setError(res.error);
+        setTimeout(() => setError(null), 3000);
+        return;
+      }
       hapticsMedium();
+      if (res?.state) applyState(res);
+    } catch {
       refreshState();
     } finally {
       setPending(null);
@@ -78,62 +97,35 @@ export default function StaffPanel() {
               <div className="text-xs text-dim">${fmt(PAY[key])}/mo{max ? '' : ' each'}</div>
             </div>
             <div className="row-between">
-              <button
-                className="btn btn-sm btn-red"
-                disabled={count <= 0 || !!pending}
-                onClick={() => fire(key)}
-              >
-                {pending === key + '_fire' ? '…' : '-'}
-              </button>
-              <span className="font-bold" style={{ fontSize: 20 }}>{count}</span>
-              <button
-                className="btn btn-sm btn-green"
-                disabled={atMax || !!pending}
-                onClick={() => hire(key)}
-              >
-                {pending === key + '_hire' ? '…' : '+'}
-              </button>
+              <div className="staff-count">{count}</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {count > 0 && (
+                  <button
+                    className="btn btn-sm btn-outline text-red"
+                    onClick={() => fire(key)}
+                    disabled={!!pending}
+                  >
+                    − Fire
+                  </button>
+                )}
+                {!atMax && (
+                  <button
+                    className="btn btn-sm btn-green"
+                    onClick={() => hire(key)}
+                    disabled={!!pending || g.cash < (PAY[key] || 0)}
+                  >
+                    + Hire
+                  </button>
+                )}
+                {atMax && <span className="text-xs text-dim">Max</span>}
+              </div>
             </div>
+            {key === 'pricingAnalyst' && count > 0 && (
+              <div className="text-xs text-dim mt-4">Auto-pricing strategies unlocked in the Shops panel.</div>
+            )}
           </div>
         );
       })}
-
-      {/* Marketplace Specialist */}
-      <div className="card">
-        <div className="card-title">Marketplace</div>
-        <div className="row-between mb-4">
-          <div>
-            <div className="font-bold text-sm">{MARKETPLACE_SPECIALIST.title}</div>
-            <div className="text-xs text-dim">{MARKETPLACE_SPECIALIST.description}</div>
-            <div className="text-xs text-dim">Requires: Rep {MARKETPLACE_SPECIALIST.minRep}+, {MARKETPLACE_SPECIALIST.minLocations}+ location</div>
-          </div>
-          <div className="text-xs text-dim">${fmt(MARKETPLACE_SPECIALIST.salary)}/mo</div>
-        </div>
-        <div className="row-between">
-          {g.marketplaceSpecialist ? (
-            <>
-              <span className="text-xs text-green font-bold">HIRED</span>
-              <button
-                className="btn btn-sm btn-red"
-                onClick={async () => { await postAction('fireMarketplaceSpecialist'); refreshState(); }}
-              >
-                Fire
-              </button>
-            </>
-          ) : (
-            <>
-              <span className="text-xs text-dim">Not hired</span>
-              <button
-                className="btn btn-sm btn-green"
-                disabled={g.reputation < MARKETPLACE_SPECIALIST.minRep || (g.locations || []).length < MARKETPLACE_SPECIALIST.minLocations}
-                onClick={async () => { await postAction('hireMarketplaceSpecialist'); refreshState(); }}
-              >
-                Hire
-              </button>
-            </>
-          )}
-        </div>
-      </div>
     </>
   );
 }

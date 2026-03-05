@@ -2179,6 +2179,25 @@ export function simDay(g, shared = {}) {
   });
   if (s.history.length > 30) s.history = s.history.slice(-30);
 
+  // Per-location daily history (last 30 days) — for individual store performance charts
+  if (!s.locHistory) s.locHistory = {};
+  for (const loc of (s.locations || [])) {
+    const ds = loc.dailyStats || {};
+    if (!s.locHistory[loc.id]) s.locHistory[loc.id] = [];
+    s.locHistory[loc.id].push({
+      day: s.day,
+      rev: Math.round(ds.rev || 0),
+      profit: Math.round(ds.profit || 0),
+      sold: ds.sold || 0,
+    });
+    if (s.locHistory[loc.id].length > 30) s.locHistory[loc.id] = s.locHistory[loc.id].slice(-30);
+  }
+  // Clean up history for closed locations
+  const activeLocIds = new Set((s.locations || []).map(l => l.id));
+  for (const locId of Object.keys(s.locHistory)) {
+    if (!activeLocIds.has(locId)) delete s.locHistory[locId];
+  }
+
   // Revenue history by channel for map/chart (last 60 days)
   if (!s.revHistory) s.revHistory = [];
   s.revHistory.push({ day: s.day, ...s.dayRevByChannel });

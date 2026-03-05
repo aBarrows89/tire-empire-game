@@ -252,46 +252,74 @@ export default function ReportsPanel() {
         </Section>
       )}
 
-      {/* Locations */}
+      {/* Locations — individual performance */}
       {locData.length > 0 && (
-        <Section title="Locations" accent="#4db6ac">
-          {locData.map(({ loc, city, rev, profit, margin }) => (
-            <div key={loc.id} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: '1px solid #1e1e1e' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 700 }}>
-                    {loc.franchise ? `🏢 ${loc.franchise.brandName}` : `🏪 ${city?.name || 'Shop'}`}
+        <Section title="Store Performance" accent="#4db6ac">
+          {locData.map(({ loc, city, rev, profit, margin }) => {
+            const locHist = (g.locHistory?.[loc.id] || []);
+            const profitData = locHist.map(d => d.profit);
+            const revData = locHist.map(d => d.rev);
+            const avg30profit = locHist.length ? locHist.reduce((a,d) => a + d.profit, 0) / locHist.length : profit;
+            const lossDays = locHist.filter(d => d.profit < 0).length;
+            const isStruggling = locHist.length >= 7 && lossDays >= Math.floor(locHist.length * 0.5);
+            return (
+              <div key={loc.id} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid #1e1e1e' }}>
+                {/* Store header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {loc.franchise ? '🏢' : '🏪'} {loc.franchise ? loc.franchise.brandName : (city?.name || 'Shop')}
+                      {isStruggling && <span style={{ fontSize: 9, background: '#ef535022', color: '#ef5350', padding: '1px 5px', borderRadius: 10, fontWeight: 700 }}>⚠ UNDERPERFORMING</span>}
+                    </div>
+                    <div style={{ fontSize: 9, color: 'var(--text-dim)' }}>
+                      {loc.franchise ? `DBA ${g.companyName} · ` : ''}{city?.name}{city?.state ? `, ${city.state}` : ''}
+                    </div>
                   </div>
-                  {loc.franchise && <div style={{ fontSize: 9, color: 'var(--text-dim)' }}>DBA {g.companyName} · {city?.name}</div>}
-                  {!loc.franchise && <div style={{ fontSize: 9, color: 'var(--text-dim)' }}>{city?.state} · Day {loc.openedDay || '?'}</div>}
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#4ea8de' }}>${fmt(rev)}/d</div>
-                  <div style={{ fontSize: 9, color: profit >= 0 ? '#4caf50' : '#ef5350' }}>
-                    {profit >= 0 ? '+' : ''}${fmt(profit)} profit
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#4ea8de' }}>${fmt(rev)}/d</div>
+                    <div style={{ fontSize: 10, color: profit >= 0 ? '#4caf50' : '#ef5350', fontWeight: 600 }}>
+                      {profit >= 0 ? '+' : ''}${fmt(profit)} profit
+                    </div>
                   </div>
                 </div>
+
+                {/* Sparklines side by side */}
+                {locHist.length >= 3 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 8, color: '#4ea8de', marginBottom: 2, letterSpacing: 0.5 }}>REVENUE (30d)</div>
+                      <Sparkline data={revData} color="#4ea8de" height={30} fill />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 8, color: avg30profit >= 0 ? '#4caf50' : '#ef5350', marginBottom: 2, letterSpacing: 0.5 }}>PROFIT (30d)</div>
+                      <Sparkline data={profitData} color={avg30profit >= 0 ? '#4caf50' : '#ef5350'} height={30} fill />
+                    </div>
+                  </div>
+                )}
+
+                {/* Stats row */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}>
+                  {[
+                    { label: 'Margin', value: `${margin.toFixed(0)}%`, color: margin >= 25 ? '#4caf50' : margin >= 10 ? '#ffb74d' : '#ef5350' },
+                    { label: '30d Avg', value: `$${fmt(Math.round(avg30profit))}`, color: avg30profit >= 0 ? '#4caf50' : '#ef5350' },
+                    { label: 'Loss Days', value: `${lossDays}/${locHist.length}`, color: lossDays > locHist.length * 0.4 ? '#ef5350' : 'var(--text)' },
+                    { label: 'Loyalty', value: `${Math.floor(loc.loyalty || 0)}%` },
+                    { label: 'Staff', value: Object.values(loc.staff || {}).reduce((a, v) => a + v, 0) },
+                  ].map(s => (
+                    <div key={s.label} style={{ textAlign: 'center', background: '#111', borderRadius: 4, padding: '4px 0' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: s.color || 'var(--text)' }}>{s.value}</div>
+                      <div style={{ fontSize: 8, color: 'var(--text-dim)' }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+                {loc.franchise && (
+                  <div style={{ marginTop: 4, fontSize: 9, color: '#ff9800' }}>
+                    Royalty: {(loc.franchise.royaltyPct * 100).toFixed(1)}% · Fee: ${fmt(loc.franchise.monthlyFee)}/mo
+                  </div>
+                )}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
-                {[
-                  { label: 'Margin', value: `${margin.toFixed(0)}%`, color: margin >= 25 ? '#4caf50' : margin >= 10 ? '#ffb74d' : '#ef5350' },
-                  { label: 'Loyalty', value: `${Math.floor(loc.loyalty || 0)}%` },
-                  { label: 'Insurance', value: loc.insurance || 'None' },
-                  { label: 'Staff', value: Object.values(loc.staff || {}).reduce((a, v) => a + v, 0) },
-                ].map(s => (
-                  <div key={s.label} style={{ textAlign: 'center', background: '#111', borderRadius: 4, padding: '3px 0' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: s.color || 'var(--text)' }}>{s.value}</div>
-                    <div style={{ fontSize: 8, color: 'var(--text-dim)' }}>{s.label}</div>
-                  </div>
-                ))}
-              </div>
-              {loc.franchise && (
-                <div style={{ marginTop: 4, fontSize: 9, color: '#ff9800' }}>
-                  Royalty: {(loc.franchise.royaltyPct * 100).toFixed(1)}% · Fee: ${fmt(loc.franchise.monthlyFee)}/mo
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
           <StatRow label="Total daily shop revenue" value={`$${fmt(totalLocRev)}`} color="#4ea8de" />
         </Section>
       )}

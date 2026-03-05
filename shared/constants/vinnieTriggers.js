@@ -159,6 +159,65 @@ export const VINNIE_TRIGGERS = [
     cooldown: 0, priority: 'high', oneTime: true,
   },
 
+  // ── STORE PERFORMANCE ──
+  {
+    id: 'store_bleeding',
+    condition: (g) => {
+      if ((g.locations || []).length < 2) return false;
+      // Find a store that's been losing money for 7+ of the last 14 days
+      const locHistory = g.locHistory || {};
+      return (g.locations || []).some(loc => {
+        const hist = locHistory[loc.id] || [];
+        if (hist.length < 7) return false;
+        const recent = hist.slice(-14);
+        const lossDays = recent.filter(d => d.profit < 0).length;
+        return lossDays >= 7;
+      });
+    },
+    message: () => {
+      // Dynamic message is handled in trigger evaluation — static fallback:
+      return "One of your locations is bleeding cash. Seven loss days in the last two weeks. Close it or fix it — I don't care which. But do something.";
+    },
+    cooldown: 10, priority: 'high',
+  },
+  {
+    id: 'store_dragging_avg',
+    condition: (g) => {
+      if ((g.locations || []).length < 2) return false;
+      const locHistory = g.locHistory || {};
+      const locs = g.locations || [];
+      // Find if one store's 30d avg profit is less than 30% of the best store
+      const avgs = locs.map(loc => {
+        const hist = (locHistory[loc.id] || []).slice(-30);
+        const avg = hist.length ? hist.reduce((a, d) => a + d.profit, 0) / hist.length : 0;
+        return { loc, avg };
+      });
+      const best = Math.max(...avgs.map(a => a.avg));
+      return best > 500 && avgs.some(a => a.avg < best * 0.3 && a.avg < 200);
+    },
+    message: "I pulled the numbers. One of your stores is dragging down your whole operation. It's making a fraction of what your best location does. You need to either fix the staffing, the location pricing, or cut your losses.",
+    cooldown: 14, priority: 'medium',
+  },
+  {
+    id: 'store_turnaround',
+    condition: (g) => {
+      if ((g.locations || []).length < 2) return false;
+      const locHistory = g.locHistory || {};
+      return (g.locations || []).some(loc => {
+        const hist = locHistory[loc.id] || [];
+        if (hist.length < 10) return false;
+        // Was losing before (first 5 of last 10), now profitable (last 5)
+        const older = hist.slice(-10, -5);
+        const recent = hist.slice(-5);
+        const oldAvg = older.reduce((a, d) => a + d.profit, 0) / older.length;
+        const newAvg = recent.reduce((a, d) => a + d.profit, 0) / recent.length;
+        return oldAvg < 0 && newAvg > 300;
+      });
+    },
+    message: "That location you were worried about? It turned around. Good. That's what patience and the right staff gets you.",
+    cooldown: 20, priority: 'low',
+  },
+
   // ── FLAVOR (fallback — ensure Vinnie never silent >3 days) ──
   {
     id: 'flavor_slow_day',
