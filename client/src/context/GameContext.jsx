@@ -21,11 +21,14 @@ function gameReducer(state, action) {
           ...(state.logHistory || []),
         ].slice(0, 200),
       };
-    case 'ADD_CHAT':
+    case 'ADD_CHAT': {
+      const existing = state.chatMessages || [];
+      if (action.payload.id && existing.some(m => m.id === action.payload.id)) return state;
       return {
         ...state,
-        chatMessages: [...(state.chatMessages || []), action.payload].slice(-200),
+        chatMessages: [...existing, action.payload].slice(-200),
       };
+    }
     case 'DELETE_CHAT':
       return {
         ...state,

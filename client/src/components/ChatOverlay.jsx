@@ -23,7 +23,7 @@ export default function ChatOverlay({ messages = [], onSend, isOpen, onClose, ws
   const listRef = useRef(null);
   const typingTimer = useRef(null);
 
-  const { state, refreshState } = useGame();
+  const { state, dispatch, refreshState } = useGame();
   const g = state.game;
   const blockedSet = useMemo(() => {
     return new Set((g?.blockedPlayers || []).map(b => b.id));
@@ -42,6 +42,33 @@ export default function ChatOverlay({ messages = [], onSend, isOpen, onClose, ws
   useEffect(() => {
     if (filtered.length > 0) setTyping(false);
   }, [filtered.length]);
+
+  // Fetch recent chat history when overlay first opens
+  useEffect(() => {
+    if (!isOpen) return;
+    (async () => {
+      try {
+        const h = await getHeaders();
+        const res = await fetch(`${API_BASE}/chat?limit=100&channel=${channel === 'dm' ? 'global' : channel}`, { headers: h });
+        if (!res.ok) return;
+        const msgs = await res.json();
+        if (Array.isArray(msgs) && msgs.length > 0) {
+          // Dispatch into GameContext so they appear in messages prop
+          msgs.forEach(m => {
+            const normalized = {
+              id: m.id,
+              playerId: m.player_id || m.playerId,
+              playerName: m.player_name || m.playerName,
+              channel: m.channel || 'global',
+              text: m.text,
+              timestamp: m.created_at ? new Date(m.created_at).getTime() : (m.timestamp || Date.now()),
+            };
+            dispatch({ type: 'ADD_CHAT', payload: normalized });
+          });
+        }
+      } catch {}
+    })();
+  }, [isOpen]);
 
   // Fetch DM partners when switching to DM tab
   useEffect(() => {
