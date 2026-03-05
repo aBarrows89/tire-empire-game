@@ -100,12 +100,12 @@ export async function handleShop(action, params, g, ctx) {
       const { locationId, mode, tireTypes } = params;
       const loc = g.locations.find(l => l.id === locationId);
       if (!loc) return ctx.fail('Invalid location');
-      if (!['all', 'whitelist', 'blacklist'].includes(mode)) return ctx.fail('Mode must be all, whitelist, or blacklist');
+      if (!['all', 'whitelist', 'blacklist', 'vinnie'].includes(mode)) return ctx.fail('Mode must be all, whitelist, blacklist, or vinnie');
       loc.stockingPrefs = {
         mode,
         tireTypes: Array.isArray(tireTypes) ? tireTypes : [],
       };
-      const label = mode === 'all' ? 'all tire types' : mode === 'whitelist' ? `only ${tireTypes.length} selected types` : `excluding ${tireTypes.length} types`;
+      const label = mode === 'vinnie' ? "Vinnie's recommendations" : mode === 'all' ? 'all tire types' : mode === 'whitelist' ? `only ${tireTypes.length} selected types` : `excluding ${tireTypes.length} types`;
       g.log.push({ msg: `Updated stocking prefs: ${label}`, cat: 'source' });
       break;
     }
