@@ -3,6 +3,14 @@
 const API = '/api/admin';
 let AUTH_HEADER = {};
 let currentPlayerPage = 1;
+
+// Restore auth from session storage on page refresh
+try {
+  const savedAuth = sessionStorage.getItem('te_admin_auth');
+  if (savedAuth) {
+    AUTH_HEADER = JSON.parse(savedAuth);
+  }
+} catch {}
 let _tickSource = null;
 let currentDetailId = null;
 
@@ -25,9 +33,9 @@ let currentDetailId = null;
   }
 })();
 
-document.getElementById('google-signin-btn').addEventListener('click', googleSignIn);
-document.getElementById('auth-btn').addEventListener('click', devAuthenticate);
-document.getElementById('admin-uid-input').addEventListener('keydown', e => {
+document.getElementById('google-signin-btn')?.addEventListener('click', googleSignIn);
+document.getElementById('auth-btn')?.addEventListener('click', devAuthenticate);
+document.getElementById('admin-uid-input')?.addEventListener('keydown', e => {
   if (e.key === 'Enter') devAuthenticate();
 });
 
@@ -37,6 +45,7 @@ async function googleSignIn() {
     const result = await firebase.auth().signInWithPopup(provider);
     const token = await result.user.getIdToken();
     AUTH_HEADER = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+  try { sessionStorage.setItem('te_admin_auth', JSON.stringify(AUTH_HEADER)); } catch {}
 
     const res = await fetch(`${API}/server-stats`, { headers: AUTH_HEADER });
     if (res.status === 403) {
@@ -72,6 +81,7 @@ async function devAuthenticate() {
   if (!uid) return;
 
   AUTH_HEADER = { 'X-Player-Id': uid, 'Content-Type': 'application/json' };
+  try { sessionStorage.setItem('te_admin_auth', JSON.stringify(AUTH_HEADER)); } catch {}
 
   try {
     const res = await fetch(`${API}/server-stats`, { headers: AUTH_HEADER });
@@ -87,6 +97,27 @@ async function devAuthenticate() {
     document.getElementById('auth-status').style.color = '#ef5350';
   }
 }
+
+// Auto-restore session on page load
+(function autoRestore() {
+  try {
+    const savedAuth = sessionStorage.getItem('te_admin_auth');
+    if (savedAuth) {
+      const parsed = JSON.parse(savedAuth);
+      if (parsed['X-Player-Id']) {
+        AUTH_HEADER = parsed;
+        // Verify still valid
+        fetch(API + '/server-stats', { headers: AUTH_HEADER }).then(res => {
+          if (res.ok) {
+            onAuthSuccess(parsed['X-Player-Id']);
+          } else {
+            sessionStorage.removeItem('te_admin_auth');
+          }
+        }).catch(() => {});
+      }
+    }
+  } catch {}
+})();
 
 function onAuthSuccess(displayName) {
   document.getElementById('auth-status').textContent = `Authenticated as ${displayName}`;
@@ -180,7 +211,7 @@ function refreshActiveView() {
 // TAB SWITCHING
 // ═══════════════════════════════════════
 
-document.getElementById('admin-tabs').addEventListener('click', e => {
+document.getElementById('admin-tabs')?.addEventListener('click', e => {
   const tab = e.target.closest('.tab');
   if (!tab) return;
   const id = tab.dataset.tab;
@@ -242,8 +273,8 @@ document.addEventListener('click', e => {
 // PLAYERS
 // ═══════════════════════════════════════
 
-document.getElementById('player-search-btn').addEventListener('click', () => { currentPlayerPage = 1; loadPlayers(); });
-document.getElementById('player-search').addEventListener('keydown', e => {
+document.getElementById('player-search-btn')?.addEventListener('click', () => { currentPlayerPage = 1; loadPlayers(); });
+document.getElementById('player-search')?.addEventListener('keydown', e => {
   if (e.key === 'Enter') { currentPlayerPage = 1; loadPlayers(); }
 });
 
@@ -388,7 +419,7 @@ function closeModal() {
   document.getElementById('player-detail-modal').classList.add('hidden');
   currentDetailId = null;
 }
-document.getElementById('player-detail-modal').addEventListener('click', e => {
+document.getElementById('player-detail-modal')?.addEventListener('click', e => {
   if (e.target === e.currentTarget) closeModal();
 });
 
@@ -540,15 +571,15 @@ async function deletePlayer(id) {
 // CHAT
 // ═══════════════════════════════════════
 
-document.getElementById('refresh-chat-btn').addEventListener('click', loadChat);
-document.getElementById('mute-btn').addEventListener('click', mutePlayer);
-document.getElementById('admin-chat-text').addEventListener('keydown', e => {
+document.getElementById('refresh-chat-btn')?.addEventListener('click', loadChat);
+document.getElementById('mute-btn')?.addEventListener('click', mutePlayer);
+document.getElementById('admin-chat-text')?.addEventListener('keydown', e => {
   if (e.key === 'Enter') sendAdminChat();
 });
-document.getElementById('admin-dm-text').addEventListener('keydown', e => {
+document.getElementById('admin-dm-text')?.addEventListener('keydown', e => {
   if (e.key === 'Enter') sendAdminDM();
 });
-document.getElementById('admin-dm-target').addEventListener('change', e => {
+document.getElementById('admin-dm-target')?.addEventListener('change', e => {
   const pid = e.target.value.trim();
   if (pid) loadDMHistory(pid);
 });
