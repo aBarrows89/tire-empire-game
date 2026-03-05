@@ -204,10 +204,11 @@ export function runBotTick(g, shared, allPlayers) {
   // ═══ ALWAYS: Loan management (payments happen whether you're active or not) ═══
   runLoanManagement(g, cfg, t, intensity, shared);
 
-  // Check activity schedule
+  // ═══ ALWAYS: Chat — people chat even on days they're not actively working ═══
+  runChat(g, cfg, pWeights, shared);
+
+  // Check activity schedule — everything below only runs on "active" ticks
   if (!shouldAct(g)) {
-    // simDay already handled the economic simulation for this tick
-    // Bot just isn't making active decisions (buying, expanding, etc.)
     return g;
   }
 
@@ -240,9 +241,6 @@ export function runBotTick(g, shared, allPlayers) {
 
   // ═══ P2P CONTRACT DECISIONS ═══
   botContractDecision(g, shared, allPlayers);
-
-  // ═══ CHAT MESSAGES ═══
-  runChat(g, cfg, pWeights, shared);
 
   // Whale schedule: extra actions
   const sched = SCHEDULES[cfg.schedule];
@@ -335,59 +333,74 @@ function runStaffManagement(g, cfg, t, intensity) {
   if (locCount === 0) return;
 
   // Target staff levels based on intensity
-  // Low intensity: bare minimum. High intensity: well-staffed.
   const targetTechsPerLoc = intensity <= 3 ? 1 : intensity <= 6 ? 2 : intensity <= 8 ? 3 : 4;
   const targetSalesPerLoc = intensity <= 3 ? 1 : intensity <= 6 ? 1 : intensity <= 8 ? 2 : 3;
   const targetManagersPerLoc = intensity >= 6 ? 1 : 0;
   const targetDrivers = intensity <= 3 ? 0 : intensity <= 6 ? 1 : Math.min(3, Math.ceil(locCount / 2));
 
-  const targetTechs = locCount * targetTechsPerLoc;
-  const targetSales = locCount * targetSalesPerLoc;
-  const targetManagers = Math.min(locCount, intensity >= 6 ? Math.ceil(locCount * 0.5) : 0);
-
   if (!g.staff) g.staff = { techs: 0, sales: 0, managers: 0, drivers: 0, pricingAnalyst: 0 };
 
-  // Hiring cost per staff member (rough monthly salary / 30)
-  const hireCosts = { techs: 3000, sales: 2500, managers: 5000, drivers: 2800 };
+  // ── ENSURE every location has minimum staff (fix for bots that spawned with 0 staff) ──
+  for (const loc of (g.locations || [])) {
+    if (!loc.staff) loc.staff = { techs: 0, sales: 0, managers: 0 };
+    // Minimum: 1 tech and 1 sales per location — they literally can't sell without staff
+    if ((loc.staff.techs || 0) < 1) loc.staff.techs = 1;
+    if ((loc.staff.sales || 0) < 1) loc.staff.sales = 1;
+  }
 
-  // ── HIRE if under-staffed and can afford it ──
-  // Only hire if we have cash for at least 30 days of their salary
-  const hireIfNeeded = (role, current, target) => {
-    if (current >= target) return;
-    const monthlyCost = hireCosts[role] || 3000;
-    const canAfford = g.cash > monthlyCost * 2; // Need 2 months runway
-    if (canAfford && Math.random() < 0.3) { // Don't hire all at once — gradual
-      g.staff[role] = Math.min(current + 1, target);
-      // Also sync to per-location staff for the first understaffed location
-      for (const loc of (g.locations || [])) {
-        if (!loc.staff) loc.staff = { techs: 0, sales: 0, managers: 0 };
-        const locTarget = role === 'managers' ? targetManagersPerLoc : role === 'techs' ? targetTechsPerLoc : targetSalesPerLoc;
-        if ((loc.staff[role] || 0) < locTarget) {
-          loc.staff[role] = (loc.staff[role] || 0) + 1;
-          break;
-        }
-      }
+  // ── HIRE up to target — runs every tick but gradually ──
+  for (const loc of (g.locations || [])) {
+    if (!loc.staff) loc.staff = { techs: 0, sales: 0, managers: 0 };
+    
+    // Hire techs
+    if ((loc.staff.techs || 0) < targetTechsPerLoc && g.cash > 6000 && Math.random() < 0.2) {
+      loc.staff.techs = (loc.staff.techs || 0) + 1;
     }
-  };
-
-  hireIfNeeded('techs', g.staff.techs || 0, targetTechs);
-  hireIfNeeded('sales', g.staff.sales || 0, targetSales);
-  hireIfNeeded('managers', g.staff.managers || 0, targetManagers);
-  hireIfNeeded('drivers', g.staff.drivers || 0, targetDrivers);
-
-  // ── FIRE if losing money and overstaffed ──
-  if (g.cash < 5000 && g.dayProfit < 0) {
-    // Fire the most expensive non-essential staff first
-    if (g.staff.managers > 0 && Math.random() < 0.2) {
-      g.staff.managers--;
-    } else if (g.staff.drivers > 0 && Math.random() < 0.2) {
-      g.staff.drivers--;
+    // Hire sales
+    if ((loc.staff.sales || 0) < targetSalesPerLoc && g.cash > 5000 && Math.random() < 0.2) {
+      loc.staff.sales = (loc.staff.sales || 0) + 1;
+    }
+    // Hire manager
+    if (targetManagersPerLoc > 0 && !(loc.staff.managers || 0) && g.cash > 10000 && Math.random() < 0.1) {
+      loc.staff.managers = 1;
     }
   }
 
-  // ── PRICING ANALYST (intensity 7+, optional luxury) ──
+  // Hire drivers at global level
+  if ((g.staff.drivers || 0) < targetDrivers && g.cash > 6000 && Math.random() < 0.15) {
+    g.staff.drivers = (g.staff.drivers || 0) + 1;
+  }
+
+  // Pricing analyst (intensity 7+)
   if (intensity >= 7 && !g.staff.pricingAnalyst && g.cash > 100000 && Math.random() < 0.02) {
     g.staff.pricingAnalyst = 1;
+  }
+
+  // ── SYNC global staff totals from per-location (single source of truth) ──
+  const synced = { techs: 0, sales: 0, managers: 0, drivers: g.staff.drivers || 0, pricingAnalyst: g.staff.pricingAnalyst || 0 };
+  for (const loc of (g.locations || [])) {
+    const ls = loc.staff || {};
+    synced.techs += (ls.techs || 0);
+    synced.sales += (ls.sales || 0);
+    synced.managers += (ls.managers || 0);
+  }
+  g.staff = synced;
+
+  // ── FIRE if losing money badly ──
+  if (g.cash < 3000 && (g.dayProfit || 0) < -500) {
+    // Find location with most staff and reduce
+    const overstaffed = [...(g.locations || [])].sort((a, b) => {
+      const aStaff = Object.values(a.staff || {}).reduce((s, v) => s + v, 0);
+      const bStaff = Object.values(b.staff || {}).reduce((s, v) => s + v, 0);
+      return bStaff - aStaff;
+    })[0];
+    if (overstaffed?.staff) {
+      if ((overstaffed.staff.managers || 0) > 0 && Math.random() < 0.3) {
+        overstaffed.staff.managers--;
+      } else if ((overstaffed.staff.sales || 0) > 1 && Math.random() < 0.2) {
+        overstaffed.staff.sales--;
+      }
+    }
   }
 }
 
@@ -895,7 +908,7 @@ const _pendingBotChats = [];
 let _botChatBudget = 0;  // Messages remaining for this tick cycle
 
 export function resetBotChatBudget() {
-  _botChatBudget = Ri(5, 12); // 5-12 messages per day across all bots
+  _botChatBudget = Ri(8, 20); // 8-20 messages per tick across all bots — enough for real conversations
 }
 
 export function getPendingBotChats() {
@@ -906,13 +919,20 @@ export function getPendingBotChats() {
 
 function runChat(g, cfg, pw, shared) {
   if (_botChatBudget <= 0) return;
+
+  // Always decrement cooldown, even on "inactive" ticks
   if (cfg.chatCooldown > 0) {
     cfg.chatCooldown--;
     return;
   }
 
-  // Higher base chance — bots should chat regularly to feel alive
-  const chatChance = 0.05 * (pw.chatFrequency || 1);
+  // Base chat chance scales with intensity — active players chat more
+  // Intensity 1-3: 8%, 4-6: 15%, 7-9: 25%, 10-11: 35%
+  const intensity = cfg.intensity || 5;
+  const baseChatChance = intensity <= 3 ? 0.08 : intensity <= 6 ? 0.15 : intensity <= 9 ? 0.25 : 0.35;
+  const personalityMult = (pw.chatFrequency || 1);
+  const chatChance = baseChatChance * personalityMult;
+
   if (Math.random() > chatChance) return;
 
   // Decide: reply to someone or post original message?
@@ -959,7 +979,11 @@ function runChat(g, cfg, pw, shared) {
   _botChatBudget--;
 
   // Set cooldown (social butterflies chat again sooner)
-  cfg.chatCooldown = pw.chatFrequency >= 3 ? Ri(1, 4) : Ri(3, 12);
+  // Cooldown based on personality and intensity
+  // Social butterflies chat in rapid bursts, others space it out
+  // High intensity = more engaged = shorter gaps
+  const intensityCooldownMod = Math.max(1, 6 - Math.floor(intensity / 2));
+  cfg.chatCooldown = pw.chatFrequency >= 3 ? Ri(1, 3) : Ri(intensityCooldownMod, intensityCooldownMod + 4);
 }
 
 function generateReply(g, cfg, recentMessages, shared) {
