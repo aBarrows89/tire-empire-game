@@ -1558,3 +1558,27 @@ input[type="range"]::-webkit-slider-thumb {
   0%, 100% { opacity: 0.3; transform: translateY(0); }
   50% { opacity: 1; transform: translateY(-4px); }
 }
+
+
+/* ═══ UI OVERHAUL ADDITIONS ═══ */
+@keyframes coinSpin { 0% { transform: rotateY(0deg); } 50% { transform: rotateY(180deg); } 100% { transform: rotateY(360deg); } }
+@keyframes coinBounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+@keyframes coinPop { 0% { transform: scale(0); opacity: 0; } 60% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* Badge channel tags */
+.badge-channel {
+  font-size: 10px; padding: 3px 8px; border-radius: 6px;
+  background: rgba(255,255,255,0.05); color: var(--text-dim);
+  display: inline-flex; align-items: center; gap: 4px;
+  border: 1px solid var(--border);
+}
+
+/* Horizontal scroll snap for shop carousel */
+.shop-carousel { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
+.shop-carousel::-webkit-scrollbar { display: none; }
+.shop-carousel > * { scroll-snap-align: start; }
+
+/* Slider custom styling */
+input[type=range] { -webkit-appearance: none; width: 100%; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.08); outline: none; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); cursor: pointer; border: 2px solid var(--bg); }
