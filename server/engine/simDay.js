@@ -1524,9 +1524,13 @@ export function simDay(g, shared = {}) {
     s.cash -= (ECOM_HOSTING_BASE + (s.ecomDailyOrders || 0) * ECOM_HOSTING_SCALE / 200) / 30;
   }
 
-  // Track ecom recurring costs toward tier progression
-  if (s.hasEcom && (ecomPayroll + ecomUpgradeCost) > 0) {
-    s.ecomTotalSpent = (s.ecomTotalSpent || 0) + (ecomPayroll + ecomUpgradeCost) / 30;
+  // Track ecom investment + revenue toward tier progression
+  // Tier is driven by total ecom spend AND revenue — both count
+  if (s.hasEcom) {
+    const dailyEcomContrib = ((ecomPayroll + ecomUpgradeCost) / 30) + (s.ecomDailyRev || 0);
+    if (dailyEcomContrib > 0) {
+      s.ecomTotalSpent = (s.ecomTotalSpent || 0) + dailyEcomContrib;
+    }
   }
 
   // Storage rent (premium players get 50% off)

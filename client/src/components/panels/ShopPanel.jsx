@@ -27,6 +27,7 @@ export default function ShopPanel() {
   const [offerMsg, setOfferMsg] = useState({});
   const [expandedLoc, setExpandedLoc] = useState(null);
   const toggleLoc = (id) => setExpandedLoc(prev => prev === id ? null : id);
+  const [localServicePrices, setLocalServicePrices] = useState({});
 
   useEffect(() => {
     fetch(`${API_BASE}/market/cities`)
@@ -561,12 +562,23 @@ export default function ShopPanel() {
                   <input
                     type="number"
                     className="autoprice-offset"
-                    value={price}
+                    value={localServicePrices[k] ?? price}
                     min={Math.round(svc.price * 0.5)}
                     max={Math.round(svc.price * 3)}
-                    onChange={async (e) => {
-                      await postAction('setServicePrice', { service: k, price: Number(e.target.value) });
+                    onChange={(e) => {
+                      setLocalServicePrices(prev => ({ ...prev, [k]: e.target.value }));
+                    }}
+                    onBlur={async (e) => {
+                      const val = Number(e.target.value);
+                      if (!val || val <= 0) return;
+                      setLocalServicePrices(prev => ({ ...prev, [k]: val }));
+                      await postAction('setServicePrice', { service: k, price: val });
                       refreshState();
+                    }}
+                    onKeyDown={async (e) => {
+                      if (e.key === 'Enter') {
+                        e.target.blur();
+                      }
                     }}
                   />
                 </div>

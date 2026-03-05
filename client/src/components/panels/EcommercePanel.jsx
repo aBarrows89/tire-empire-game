@@ -146,15 +146,27 @@ export default function EcommercePanel() {
           <span className="text-sm text-dim">Total Invested</span>
           <span className="font-bold">${fmt(g.ecomTotalSpent || 0)}</span>
         </div>
-        {nextTier && (
-          <div className="row-between mb-4">
-            <span className="text-sm text-dim">Next Tier</span>
-            <span className="text-xs text-dim">
-              {nextTier.label} at ${fmt(nextTier.min)}
-              {' '}(${fmt(nextTier.min - (g.ecomTotalSpent || 0))} more)
-            </span>
-          </div>
-        )}
+        {nextTier && (() => {
+          const spent = g.ecomTotalSpent || 0;
+          const remaining = nextTier.min - spent;
+          const pct = Math.min(100, Math.round((spent / nextTier.min) * 100));
+          return (
+            <div style={{ marginBottom: 8 }}>
+              <div className="row-between mb-4">
+                <span className="text-sm text-dim">Next Tier</span>
+                <span className="text-xs" style={{ color: 'var(--accent)' }}>{nextTier.label}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-dim)', marginBottom: 4 }}>
+                <span>${fmt(spent)} earned + invested</span>
+                <span>${fmt(remaining)} to go</span>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+                <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent)', borderRadius: 4, transition: 'width 0.4s' }} />
+              </div>
+              <div className="text-xs text-dim" style={{ marginTop: 3, textAlign: 'right' }}>{pct}% of the way there</div>
+            </div>
+          );
+        })()}
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 4 }}>
           <div className="row-between mb-4">
             <span className="text-sm text-dim">Total E-Com Revenue</span>
