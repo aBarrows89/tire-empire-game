@@ -525,7 +525,7 @@ async function loadReferrals() {
     el.innerHTML = `
       <div style="padding:12px;background:#1a1a2e;border-radius:8px;border:1px solid #333;margin-bottom:16px">
         <h4 style="margin-bottom:8px;font-size:14px">New Referral Code</h4>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
           <div class="edit-field"><label>Code</label><input type="text" id="ref-code" placeholder="e.g. reddit_tycoon"></div>
           <div class="edit-field"><label>Channel</label>
             <select id="ref-channel">
@@ -537,18 +537,42 @@ async function loadReferrals() {
             </select>
           </div>
           <div class="edit-field"><label>Campaign</label><input type="text" id="ref-campaign" placeholder="Optional"></div>
-          <button class="btn btn-green btn-sm" onclick="createReferral()">Create</button>
+          <div class="edit-field"><label>Max Uses</label><input type="number" id="ref-max-uses" placeholder="0 = unlimited" min="0" value="0" style="width:100px"></div>
         </div>
+        <div style="margin-bottom:10px">
+          <div style="font-size:12px;font-weight:600;color:#aaa;margin-bottom:6px">Perks (applied to new signups)</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div class="edit-field"><label>Bonus Cash</label><input type="number" id="ref-perk-cash" placeholder="0" min="0" style="width:100px"></div>
+            <div class="edit-field"><label>Bonus TireCoins</label><input type="number" id="ref-perk-tc" placeholder="0" min="0" style="width:100px"></div>
+            <div class="edit-field"><label>Storage Slots</label><input type="number" id="ref-perk-storage" placeholder="0" min="0" style="width:100px"></div>
+            <div class="edit-field"><label>Premium Days</label><input type="number" id="ref-perk-premium" placeholder="0" min="0" style="width:100px"></div>
+            <div class="edit-field"><label>Rep Boost (x)</label><input type="number" id="ref-perk-rep" placeholder="e.g. 1.5" min="0" step="0.1" style="width:100px"></div>
+            <div class="edit-field"><label>Rev Boost (x)</label><input type="number" id="ref-perk-rev" placeholder="e.g. 1.5" min="0" step="0.1" style="width:100px"></div>
+          </div>
+        </div>
+        <button class="btn btn-green btn-sm" onclick="createReferral()">Create</button>
       </div>
 
       ${referrals.length > 0 ? `
         <table>
-          <thead><tr><th>Code</th><th>Channel</th><th>Signups</th><th>7-Day</th><th>30-Day</th><th>Premium</th><th>Conv %</th><th></th></tr></thead>
+          <thead><tr><th>Code</th><th>Channel</th><th>Perks</th><th>Uses</th><th>Signups</th><th>7-Day</th><th>30-Day</th><th>Premium</th><th>Conv %</th><th></th></tr></thead>
           <tbody>${referrals.map(r => {
             const conv = r.signups > 0 ? Math.round(r.premium / r.signups * 100) : 0;
+            const perks = typeof r.perks === 'string' ? JSON.parse(r.perks || '{}') : (r.perks || {});
+            const perkList = [];
+            if (perks.bonusCash) perkList.push('+$' + perks.bonusCash);
+            if (perks.bonusTireCoins) perkList.push('+' + perks.bonusTireCoins + ' TC');
+            if (perks.freeStorageSlots) perkList.push('+' + perks.freeStorageSlots + ' storage');
+            if (perks.premiumDays) perkList.push(perks.premiumDays + 'd premium');
+            if (perks.repBoost) perkList.push(perks.repBoost.multiplier + 'x rep');
+            if (perks.revenueBoost) perkList.push(perks.revenueBoost.multiplier + 'x rev');
+            const perkStr = perkList.length > 0 ? perkList.join(', ') : '<span style="color:#555">none</span>';
+            const usesStr = r.max_uses > 0 ? r.current_uses + '/' + r.max_uses : r.current_uses + '/&infin;';
             return `<tr>
               <td><code style="color:#6ec6ff">${esc(r.code)}</code></td>
               <td>${esc(r.channel)}</td>
+              <td style="font-size:11px">${perkStr}</td>
+              <td>${usesStr}</td>
               <td>${r.signups}</td>
               <td>${r.day7}</td>
               <td>${r.day30}</td>
@@ -569,10 +593,28 @@ async function createReferral() {
   const code = document.getElementById('ref-code').value.trim();
   const channel = document.getElementById('ref-channel').value;
   const campaign = document.getElementById('ref-campaign').value.trim();
+  const max_uses = parseInt(document.getElementById('ref-max-uses')?.value) || 0;
   if (!code) return alert('Code required');
+
+  // Build perks object from form fields
+  const perks = {};
+  const cash = parseFloat(document.getElementById('ref-perk-cash')?.value);
+  const tc = parseFloat(document.getElementById('ref-perk-tc')?.value);
+  const storage = parseInt(document.getElementById('ref-perk-storage')?.value);
+  const premium = parseInt(document.getElementById('ref-perk-premium')?.value);
+  const repBoost = parseFloat(document.getElementById('ref-perk-rep')?.value);
+  const revBoost = parseFloat(document.getElementById('ref-perk-rev')?.value);
+  if (cash > 0) perks.bonusCash = cash;
+  if (tc > 0) perks.bonusTireCoins = tc;
+  if (storage > 0) perks.freeStorageSlots = storage;
+  if (premium > 0) perks.premiumDays = premium;
+  if (repBoost > 0) perks.repBoost = { multiplier: repBoost, days: 14 };
+  if (revBoost > 0) perks.revenueBoost = { multiplier: revBoost, days: 14 };
+
   try {
     const res = await fetch(`${API}/marketing/referrals`, {
-      method: 'POST', headers: AUTH_HEADER, body: JSON.stringify({ code, channel, campaign: campaign || undefined }),
+      method: 'POST', headers: AUTH_HEADER,
+      body: JSON.stringify({ code, channel, campaign: campaign || undefined, perks, max_uses }),
     });
     const data = await res.json();
     if (data.error) alert(data.error);

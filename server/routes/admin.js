@@ -13,6 +13,18 @@ import { createStealthPlayer, isBotPlayer } from '../engine/aiPlayers.js';
 import { CITIES } from '../../shared/constants/cities.js';
 
 const router = Router();
+
+// Allow SSE tick-stream to authenticate via query param (EventSource doesn't support headers)
+router.use('/tick-stream', (req, res, next) => {
+  if (req.query.token && !req.headers.authorization) {
+    req.headers.authorization = `Bearer ${req.query.token}`;
+  }
+  if (req.query.devId && !req.headers['x-player-id']) {
+    req.headers['x-player-id'] = req.query.devId;
+  }
+  next();
+});
+
 router.use(adminAuthMiddleware);
 
 // ── Helper: push to audit log ──
@@ -38,6 +50,30 @@ async function auditLog(req, action, targetId, details) {
     console.error('Audit log error:', e);
   }
 }
+
+// ═══════════════════════════════════════
+// TICK STREAM (SSE)
+// ═══════════════════════════════════════
+
+import { tickEmitter } from '../tick/tickEmitter.js';
+
+router.get('/tick-stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+  res.write('data: {"type":"connected"}\n\n');
+
+  const onTick = (data) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+  tickEmitter.on('tick', onTick);
+
+  req.on('close', () => {
+    tickEmitter.off('tick', onTick);
+  });
+});
 
 // ═══════════════════════════════════════
 // PLAYER MANAGEMENT

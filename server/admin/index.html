@@ -10,7 +10,10 @@
   <div id="app">
     <header id="admin-header">
       <h1>Tire Empire Admin</h1>
-      <div id="auth-status">Not authenticated</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div id="auth-status">Not authenticated</div>
+        <span id="live-indicator" style="display:none;font-size:11px;color:#66bb6a;font-weight:600;letter-spacing:0.5px" title="Live — auto-refreshing every tick">&#9679; LIVE</span>
+      </div>
       <div id="auth-form">
         <button class="btn btn-blue" id="google-signin-btn" style="display:none">Sign in with Google</button>
         <div id="dev-auth-form">

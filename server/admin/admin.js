@@ -3,7 +3,7 @@
 const API = '/api/admin';
 let AUTH_HEADER = {};
 let currentPlayerPage = 1;
-let serverStatsInterval = null;
+let _tickSource = null;
 let currentDetailId = null;
 
 // ═══════════════════════════════════════
@@ -96,6 +96,84 @@ function onAuthSuccess(displayName) {
   document.getElementById('admin-content').style.display = 'block';
   loadPlayers();
   initCreatePlayerForm();
+  startTickStream();
+}
+
+// ═══════════════════════════════════════
+// LIVE TICK STREAM (SSE)
+// ═══════════════════════════════════════
+
+function startTickStream() {
+  if (_tickSource) { _tickSource.close(); _tickSource = null; }
+
+  // Build SSE URL with auth query params (EventSource doesn't support headers)
+  const params = new URLSearchParams();
+  if (AUTH_HEADER['Authorization']) {
+    params.set('token', AUTH_HEADER['Authorization'].replace('Bearer ', ''));
+  }
+  if (AUTH_HEADER['X-Player-Id']) {
+    params.set('devId', AUTH_HEADER['X-Player-Id']);
+  }
+
+  _tickSource = new EventSource(`${API}/tick-stream?${params.toString()}`);
+
+  _tickSource.onopen = () => {
+    const el = document.getElementById('live-indicator');
+    if (el) { el.style.display = ''; el.title = 'Live — auto-refreshing every tick'; }
+  };
+
+  _tickSource.onmessage = (e) => {
+    try { JSON.parse(e.data); } catch { return; }
+    refreshActiveView();
+  };
+
+  _tickSource.onerror = () => {
+    const el = document.getElementById('live-indicator');
+    if (el) { el.style.display = 'none'; }
+  };
+}
+
+function refreshActiveView() {
+  const activeTab = document.querySelector('.tab.active');
+  if (!activeTab) return;
+  const tab = activeTab.dataset.tab;
+
+  // Find active sub-tab if any
+  const section = document.getElementById(`tab-${tab}`);
+  const activeSub = section?.querySelector('.sub-tab.active')?.dataset?.sub;
+
+  switch (tab) {
+    case 'players': loadPlayers(); break;
+    case 'chat': loadChat(); break;
+    case 'economy':
+      if (activeSub === 'economy-bots' && typeof loadBots === 'function') loadBots();
+      else if (activeSub === 'economy-simulator' && typeof loadSimulator === 'function') loadSimulator();
+      else if (activeSub === 'economy-schedule' && typeof loadSchedule === 'function') loadSchedule();
+      else if (activeSub === 'economy-watch' && typeof loadMarketWatch === 'function') loadMarketWatch();
+      else loadEconomy();
+      break;
+    case 'events': loadEvents(); break;
+    case 'operations':
+      if (activeSub === 'ops-audit') loadAuditLog();
+      else if (activeSub === 'ops-health' && typeof loadDbHealth === 'function') loadDbHealth();
+      else if (activeSub === 'ops-announce' && typeof loadAnnouncements === 'function') loadAnnouncements();
+      else if (activeSub === 'ops-abtests' && typeof loadAbTests === 'function') loadAbTests();
+      else if (activeSub === 'ops-revenue' && typeof loadRevenue === 'function') loadRevenue();
+      else loadServerStats();
+      break;
+    case 'marketing':
+      if (activeSub === 'mkt-reddit' && typeof loadRedditScout === 'function') loadRedditScout();
+      else if (activeSub === 'mkt-posts' && typeof loadRedditPostGenerator === 'function') loadRedditPostGenerator();
+      else if (activeSub === 'mkt-content' && typeof loadSocialContent === 'function') loadSocialContent();
+      else if (activeSub === 'mkt-referrals' && typeof loadReferrals === 'function') loadReferrals();
+      break;
+    case 'retention':
+      if (activeSub === 'ret-churn' && typeof loadChurnRisk === 'function') loadChurnRisk();
+      else if (activeSub === 'ret-journey' && typeof loadJourneys === 'function') loadJourneys();
+      else if (activeSub === 'ret-push' && typeof loadPushManager === 'function') loadPushManager();
+      break;
+    case 'settings': loadSettings(); break;
+  }
 }
 
 // ═══════════════════════════════════════
@@ -121,10 +199,7 @@ document.getElementById('admin-tabs').addEventListener('click', e => {
   if (id === 'retention') { if (typeof loadRetention === 'function') loadRetention(); }
   if (id === 'settings') loadSettings();
 
-  clearInterval(serverStatsInterval);
-  if (id === 'operations') {
-    serverStatsInterval = setInterval(loadServerStats, 10000);
-  }
+  // Auto-refresh handled by SSE tick stream
 });
 
 // ═══════════════════════════════════════

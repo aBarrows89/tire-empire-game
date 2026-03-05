@@ -16,6 +16,7 @@ import { P2P_FEES } from '../../shared/constants/marketplace.js';
 import { GLOBAL_EVENTS, GLOBAL_EVENT_CHANCE, GLOBAL_EVENT_MAX_CONCURRENT } from '../../shared/constants/globalEvents.js';
 import { MONET } from '../../shared/constants/monetization.js';
 import { broadcast } from './broadcast.js';
+import { tickEmitter } from './tickEmitter.js';
 import { checkAndSendPush } from '../notifications/sender.js';
 import { updateAIPrices } from '../engine/aiPriceWar.js';
 import { saveTournament } from '../db/queries.js';
@@ -1418,6 +1419,9 @@ export async function runTick(clients) {
       tcMetrics: game.economy.tcMetrics || {},
       tcHistory: game.economy.tcHistory || [],
     }, playerStatesMap);
+
+    // Notify admin SSE listeners
+    tickEmitter.emit('tick', { day, playerCount: players.length, timestamp: Date.now() });
 
     if (day % 30 === 0) {
       console.log(`Day ${day} (${cal.monthName} Year ${cal.year}): ${players.length} players`);
