@@ -294,6 +294,16 @@ async function ensureSchema() {
       CREATE INDEX IF NOT EXISTS idx_pcontracts_seller ON player_contracts(seller_id);
       CREATE INDEX IF NOT EXISTS idx_pcontracts_status ON player_contracts(status);
 
+      CREATE TABLE IF NOT EXISTS reddit_comments (
+        id            TEXT PRIMARY KEY,
+        thread_id     TEXT NOT NULL REFERENCES reddit_threads(id),
+        reddit_comment_id TEXT,
+        body          TEXT NOT NULL,
+        posted_by     TEXT,
+        posted_at     TIMESTAMPTZ DEFAULT NOW(),
+        deleted       BOOLEAN DEFAULT false
+      );
+      CREATE INDEX IF NOT EXISTS idx_reddit_comments_thread ON reddit_comments(thread_id);
       CREATE INDEX IF NOT EXISTS idx_reddit_status ON reddit_threads(status);
       CREATE INDEX IF NOT EXISTS idx_reddit_fetched ON reddit_threads(fetched_at DESC);
       CREATE INDEX IF NOT EXISTS idx_referral_code ON referral_events(code);

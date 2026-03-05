@@ -3,6 +3,7 @@ import { adminAuthMiddleware } from '../../middleware/adminAuth.js';
 import { getAllActivePlayers, getGame, saveGame } from '../../db/queries.js';
 import { getWealth } from '../../../shared/helpers/wealth.js';
 import { uid } from '../../../shared/helpers/random.js';
+import { isRedditApiConfigured, postComment as redditPostComment, deleteComment as redditDeleteComment } from '../../services/redditApi.js';
 
 const router = Router();
 router.use(adminAuthMiddleware);
@@ -218,6 +219,82 @@ router.post('/reddit/threads/:id/status', async (req, res) => {
     if (status === 'engaged') { updates.push(`engaged_at = NOW()`); }
 
     await pool.query(`UPDATE reddit_threads SET ${updates.join(', ')} WHERE id = $1`, params);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Reddit Comment Endpoints ──
+
+router.post('/reddit/threads/:id/comment', async (req, res) => {
+  try {
+    if (!isRedditApiConfigured()) {
+      return res.status(400).json({ error: 'Reddit API not configured — set REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, REDDIT_PASSWORD in .env' });
+    }
+    const { text } = req.body;
+    if (!text || !text.trim()) return res.status(400).json({ error: 'Comment text is required' });
+
+    const { pool } = await import('../../db/pool.js');
+    const threadId = req.params.id;
+
+    // Verify thread exists
+    const { rows: [thread] } = await pool.query('SELECT id FROM reddit_threads WHERE id = $1', [threadId]);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+
+    // Post to Reddit
+    const commentData = await redditPostComment(threadId, text.trim());
+    const redditCommentId = commentData?.name || commentData?.id || null;
+
+    // Record in our DB
+    const commentId = uid();
+    await pool.query(
+      `INSERT INTO reddit_comments (id, thread_id, reddit_comment_id, body, posted_by) VALUES ($1,$2,$3,$4,$5)`,
+      [commentId, threadId, redditCommentId, text.trim(), req.adminId || 'admin']
+    );
+
+    // Auto-update thread status to 'engaged'
+    await pool.query(
+      `UPDATE reddit_threads SET status = 'engaged', engaged_at = NOW() WHERE id = $1`,
+      [threadId]
+    );
+
+    await auditLog(req, 'redditComment', threadId, { commentId, redditCommentId });
+    res.json({ ok: true, commentId, redditCommentId });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/reddit/threads/:id/comments', async (req, res) => {
+  try {
+    const { pool } = await import('../../db/pool.js');
+    const { rows } = await pool.query(
+      `SELECT * FROM reddit_comments WHERE thread_id = $1 ORDER BY posted_at DESC`,
+      [req.params.id]
+    );
+    res.json({ ok: true, comments: rows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/reddit/comments/:commentId', async (req, res) => {
+  try {
+    const { pool } = await import('../../db/pool.js');
+    const { rows: [comment] } = await pool.query(
+      'SELECT * FROM reddit_comments WHERE id = $1', [req.params.commentId]
+    );
+    if (!comment) return res.status(404).json({ error: 'Comment not found' });
+    if (comment.deleted) return res.status(400).json({ error: 'Comment already deleted' });
+
+    // Delete from Reddit if we have the Reddit comment ID
+    if (comment.reddit_comment_id && isRedditApiConfigured()) {
+      await redditDeleteComment(comment.reddit_comment_id);
+    }
+
+    await pool.query('UPDATE reddit_comments SET deleted = true WHERE id = $1', [req.params.commentId]);
+    await auditLog(req, 'redditDeleteComment', req.params.commentId, { threadId: comment.thread_id });
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

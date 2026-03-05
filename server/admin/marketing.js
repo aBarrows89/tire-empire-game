@@ -34,8 +34,11 @@ async function loadRedditScout() {
         const rel = Math.round((t.relevance || 0) * 100);
         const relColor = rel >= 70 ? '#66bb6a' : rel >= 40 ? '#ffa726' : '#888';
         const keywords = (t.matched_keywords || []).join(', ');
+        const bodyPreview = t.body ? (t.body.length > 300 ? t.body.slice(0, 300) + '...' : t.body) : '';
+        const safeId = esc(t.id);
+        const escapedNotes = t.notes ? esc(t.notes).replace(/'/g, '&#39;').replace(/\n/g, '\\n') : '';
         return `
-          <div class="thread-card">
+          <div class="thread-card" id="thread-${safeId}">
             <div class="thread-meta">
               <span style="color:${relColor};font-weight:600">${rel}%</span>
               <span style="margin:0 6px">r/${esc(t.subreddit)}</span>
@@ -43,14 +46,26 @@ async function loadRedditScout() {
               ${t.fetched_at ? `<span style="margin-left:8px">${timeAgoMkt(t.fetched_at)}</span>` : ''}
             </div>
             <div class="thread-title">${esc(t.title || 'No title')}</div>
+            ${bodyPreview ? `<div style="font-size:12px;color:#aaa;margin:4px 0;line-height:1.4;max-height:60px;overflow:hidden">${esc(bodyPreview)}</div>` : ''}
             ${keywords ? `<div style="font-size:11px;color:#6ec6ff;margin:2px 0">Keywords: ${esc(keywords)}</div>` : ''}
             ${t.notes ? `<div class="thread-angle">${esc(t.notes)}</div>` : ''}
             <div class="thread-actions">
               <a href="${esc(t.url)}" target="_blank" class="btn btn-outline btn-sm">Open Thread</a>
-              <button class="btn btn-green btn-sm" onclick="updateRedditStatus('${esc(t.id)}', 'engaged')">Mark Engaged</button>
-              <button class="btn btn-outline btn-sm" onclick="updateRedditStatus('${esc(t.id)}', 'reviewed')">Reviewed</button>
-              <button class="btn btn-outline btn-sm" onclick="updateRedditStatus('${esc(t.id)}', 'dismissed')">Dismiss</button>
+              <button class="btn btn-blue btn-sm" onclick="toggleReplyBox('${safeId}', '${escapedNotes}')">Reply</button>
+              <button class="btn btn-outline btn-sm" onclick="toggleCommentHistory('${safeId}')">Comments</button>
+              <button class="btn btn-green btn-sm" onclick="updateRedditStatus('${safeId}', 'engaged')">Mark Engaged</button>
+              <button class="btn btn-outline btn-sm" onclick="updateRedditStatus('${safeId}', 'reviewed')">Reviewed</button>
+              <button class="btn btn-outline btn-sm" onclick="updateRedditStatus('${safeId}', 'dismissed')">Dismiss</button>
             </div>
+            <div id="reply-box-${safeId}" style="display:none;margin-top:8px;padding:8px;background:#1a1a2e;border-radius:6px;border:1px solid #333">
+              <textarea id="reply-text-${safeId}" rows="4" style="width:100%;background:#111;color:#eee;border:1px solid #444;border-radius:4px;padding:6px;font-size:13px;resize:vertical" placeholder="Write your Reddit comment (markdown)..."></textarea>
+              <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+                <button class="btn btn-green btn-sm" onclick="postRedditComment('${safeId}')">Post Comment</button>
+                <button class="btn btn-outline btn-sm" onclick="toggleReplyBox('${safeId}')">Cancel</button>
+                <span id="reply-status-${safeId}" style="font-size:12px"></span>
+              </div>
+            </div>
+            <div id="comments-${safeId}" style="display:none;margin-top:8px"></div>
           </div>
         `;
       }).join('') || '<div style="text-align:center;padding:32px;color:#666">No threads found. Click "Scan Now" to search Reddit.</div>'}
@@ -98,6 +113,97 @@ async function updateRedditStatus(id, status) {
     method: 'POST', headers: AUTH_HEADER, body: JSON.stringify({ status }),
   });
   loadRedditScout();
+}
+
+function toggleReplyBox(threadId, suggestedText) {
+  const box = document.getElementById(`reply-box-${threadId}`);
+  if (!box) return;
+  const isHidden = box.style.display === 'none';
+  box.style.display = isHidden ? 'block' : 'none';
+  if (isHidden) {
+    const textarea = document.getElementById(`reply-text-${threadId}`);
+    if (textarea && !textarea.value && suggestedText) {
+      textarea.value = suggestedText.replace(/&#39;/g, "'").replace(/\\n/g, '\n');
+    }
+    textarea?.focus();
+  }
+}
+
+async function postRedditComment(threadId) {
+  const textarea = document.getElementById(`reply-text-${threadId}`);
+  const statusEl = document.getElementById(`reply-status-${threadId}`);
+  const text = textarea?.value?.trim();
+  if (!text) { statusEl.textContent = 'Comment text is required'; statusEl.style.color = '#ef5350'; return; }
+
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = 'Posting...';
+  statusEl.textContent = '';
+  try {
+    const res = await fetch(`${API}/marketing/reddit/threads/${threadId}/comment`, {
+      method: 'POST', headers: AUTH_HEADER, body: JSON.stringify({ text }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      statusEl.textContent = data.error;
+      statusEl.style.color = '#ef5350';
+    } else {
+      statusEl.textContent = 'Posted successfully!';
+      statusEl.style.color = '#66bb6a';
+      textarea.value = '';
+      setTimeout(() => {
+        document.getElementById(`reply-box-${threadId}`).style.display = 'none';
+        loadRedditScout();
+      }, 1500);
+    }
+  } catch (e) {
+    statusEl.textContent = 'Error: ' + e.message;
+    statusEl.style.color = '#ef5350';
+  }
+  btn.disabled = false;
+  btn.textContent = 'Post Comment';
+}
+
+async function toggleCommentHistory(threadId) {
+  const el = document.getElementById(`comments-${threadId}`);
+  if (!el) return;
+  if (el.style.display !== 'none') { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = '<em style="color:#888;font-size:12px">Loading comments...</em>';
+  try {
+    const res = await fetch(`${API}/marketing/reddit/threads/${threadId}/comments`, { headers: AUTH_HEADER });
+    const data = await res.json();
+    const comments = (data.comments || []).filter(c => !c.deleted);
+    if (comments.length === 0) {
+      el.innerHTML = '<div style="font-size:12px;color:#666;padding:8px;background:#1a1a2e;border-radius:6px;border:1px solid #333">No comments posted on this thread yet.</div>';
+      return;
+    }
+    el.innerHTML = `<div style="padding:8px;background:#1a1a2e;border-radius:6px;border:1px solid #333">
+      <div style="font-size:11px;color:#888;margin-bottom:6px;font-weight:600">Our Comments (${comments.length})</div>
+      ${comments.map(c => `
+        <div style="padding:6px 0;border-top:1px solid #333;font-size:12px">
+          <div style="color:#ddd;white-space:pre-wrap;line-height:1.4;margin-bottom:4px">${esc(c.body)}</div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="color:#888">${c.posted_by || 'admin'} &middot; ${timeAgoMkt(c.posted_at)}</span>
+            <button class="btn btn-red btn-sm" style="font-size:10px;padding:2px 6px" onclick="deleteRedditComment('${esc(c.id)}', '${esc(threadId)}')">Delete</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>`;
+  } catch (e) {
+    el.innerHTML = `<em style="color:#ef5350;font-size:12px">Error: ${esc(e.message)}</em>`;
+  }
+}
+
+async function deleteRedditComment(commentId, threadId) {
+  if (!confirm('Delete this comment from Reddit?')) return;
+  try {
+    const res = await fetch(`${API}/marketing/reddit/comments/${commentId}`, { method: 'DELETE', headers: AUTH_HEADER });
+    const data = await res.json();
+    if (data.error) alert(data.error);
+    else toggleCommentHistory(threadId); // re-hide then re-show to refresh
+    setTimeout(() => toggleCommentHistory(threadId), 100);
+  } catch (e) { alert('Error: ' + e.message); }
 }
 
 // ═══════════════════════════════════════
