@@ -1,5 +1,6 @@
 import { TICK_MS } from '../config.js';
 import { getAllActivePlayers, savePlayerState, getGame, saveGame, upsertLeaderboard, getPlayerListings, updatePlayerListing, getPlayer, removePlayer, addChatMessage, updatePlayerContract } from '../db/queries.js';
+import { uid } from '../../shared/helpers/random.js';
 import { simDay } from '../engine/simDay.js';
 import { simAIPlayerDay, isBotPlayer } from '../engine/aiPlayers.js';
 import { runBotTick, resetBotChatBudget, getPendingBotChats, getBotPhaseOutTargets } from '../engine/botDecision.js';
@@ -1155,14 +1156,33 @@ export async function runTick(clients) {
               newState = { ...state, day: (state.day || 0) + 1, log: [], _events: [] };
             }
 
-            // Bot cash reality — no safety nets. If they're going broke, that's real.
-            // High intensity bots will take loans. Low intensity bots may go bankrupt.
-            // That's the game.
-            if (newState.cash < 0 && (newState.locations || []).length === 0) {
-              // Bot is bankrupt with no shops — mark for potential cleanup
+            // Bot cash reality — no safety nets. Bankruptcy is real and teaches us about balance.
+            if (newState.cash < -50000 && (newState.locations || []).length === 0 && (newState.bankBalance || 0) <= 0) {
+              // Bot is deeply broke with no shops and no savings — true bankruptcy
               if (!newState._botConfig._bankruptDay) {
                 newState._botConfig._bankruptDay = newState.day;
-                console.log(`[Bot] ${newState.companyName} went bankrupt on day ${newState.day} (intensity ${newState._botConfig.intensity})`);
+                newState._botConfig._bankruptReason = {
+                  cash: Math.round(newState.cash),
+                  loans: (newState.loans || []).length,
+                  loanTotal: (newState.loans || []).reduce((a, l) => a + (l.remaining || 0), 0),
+                  shops: 0,
+                  dayRev: newState.dayRev || 0,
+                  dayProfit: newState.dayProfit || 0,
+                  intensity: newState._botConfig.intensity,
+                  personality: newState._botConfig.personality,
+                  day: newState.day,
+                  totalRev: newState.totalRev || 0,
+                  reputation: newState.reputation || 0,
+                };
+                console.log(`[Bot BANKRUPT] "${newState.companyName}" day ${newState.day} | intensity ${newState._botConfig.intensity} | personality: ${newState._botConfig.personality} | cash: $${Math.round(newState.cash)} | loans: ${(newState.loans || []).length}`);
+                // Log to DB for admin analysis
+                try {
+                  const { pool } = await import('../db/pool.js');
+                  await pool.query(
+                    `INSERT INTO revenue_events (id, player_id, event_type, data) VALUES ($1, $2, 'bot_bankruptcy', $3::jsonb)`,
+                    [uid(), player.id, JSON.stringify(newState._botConfig._bankruptReason)]
+                  );
+                } catch (e) { /* non-critical */ }
               }
             }
 
