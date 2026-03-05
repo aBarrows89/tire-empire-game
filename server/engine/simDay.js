@@ -699,8 +699,20 @@ export function simDay(g, shared = {}) {
     for (const loc of s.locations) {
       if (moved >= driverCap) break;
       if (!loc.inventory) loc.inventory = {};
+
+      // ── STOCKING PREFERENCES — filter what gets pushed to this location ──
+      // loc.stockingPrefs: { mode: 'all'|'whitelist'|'blacklist', tireTypes: ['allSeason','performance',...] }
+      const prefs = loc.stockingPrefs || { mode: 'all', tireTypes: [] };
+      const isAllowed = (tireKey) => {
+        if (prefs.mode === 'all') return true;
+        if (prefs.mode === 'whitelist') return (prefs.tireTypes || []).includes(tireKey);
+        if (prefs.mode === 'blacklist') return !(prefs.tireTypes || []).includes(tireKey);
+        return true;
+      };
+
       // Move tires from warehouse to this location (shuffle to avoid always prioritizing same types)
-      const whEntries = Object.entries(s.warehouseInventory || {}).filter(([, q]) => q > 0);
+      const whEntries = Object.entries(s.warehouseInventory || {})
+        .filter(([k, q]) => q > 0 && isAllowed(k));
       for (let i = whEntries.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [whEntries[i], whEntries[j]] = [whEntries[j], whEntries[i]];
