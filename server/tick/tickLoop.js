@@ -1119,8 +1119,14 @@ export async function runTick(clients) {
         try {
           let newState;
           if (state._botConfig) {
-            // New personality-driven bot system
-            newState = runBotTick(state, shared, players);
+            // FIX: Run the REAL economic simulation first (same as real players)
+            // Without this, bots never sell inventory, earn real revenue, or progress
+            applyAutoPrice(state);
+            applyAutoSource(state);
+            if (state.hasAutoRestock || state.isPremium) applyAutoSupplier(state);
+            newState = simDay(state, shared);
+            // Then run personality-driven bot decisions on top of simulated state
+            newState = runBotTick(newState, shared, players);
           } else {
             // Legacy isAI bots (pre-personality system)
             newState = simAIPlayerDay(state);

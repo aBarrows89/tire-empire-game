@@ -182,8 +182,9 @@ export function runBotTick(g, shared, allPlayers) {
   const cfg = g._botConfig;
 
   // Skip if individually paused by admin
+  // Note: simDay already ran before this function, so day is already incremented
+  // and the real economic simulation (sales, revenue, expenses) already happened
   if (cfg.paused) {
-    g.day++;
     return g;
   }
 
@@ -198,13 +199,13 @@ export function runBotTick(g, shared, allPlayers) {
 
   // Check activity schedule
   if (!shouldAct(g)) {
-    // Still do basic upkeep even when not actively playing
-    g.day++;
-    runPassiveUpkeep(g, t);
+    // simDay already handled the economic simulation for this tick
+    // Bot just isn't making active decisions (buying, expanding, etc.)
     return g;
   }
 
-  g.day++;
+  // simDay already ran — day incremented, revenue earned, expenses paid
+  // Now run bot DECISIONS on top of the simulated state
 
   // ═══ PRIORITY 1: SURVIVAL CHECKS ═══
   runSurvival(g, cfg, t);
@@ -228,9 +229,6 @@ export function runBotTick(g, shared, allPlayers) {
 
   // ═══ CHAT MESSAGES ═══
   runChat(g, cfg, pWeights, shared);
-
-  // ═══ PASSIVE SIMULATION ═══
-  runPassiveUpkeep(g, t);
 
   // Whale schedule: extra actions
   const sched = SCHEDULES[cfg.schedule];
