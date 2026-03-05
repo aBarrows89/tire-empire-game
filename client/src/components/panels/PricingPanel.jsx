@@ -42,17 +42,20 @@ export default function PricingPanel() {
   const hasTires = (k) => (g.inventory[k] || 0) > 0;
   const hasAnyNewTires = Object.keys(TIRES).some(k => !TIRES[k].used && hasTires(k));
 
-  // Calculate real cost from supplier pricing if available, otherwise use TIRES constants
+  // Calculate real cost from supplier pricing multipliers × tire base cost
   const getAvgCost = (k, t) => {
-    // Try dynamic supplier prices first (what you'd actually pay today)
+    const baseCost = Math.round((t.bMin + t.bMax) / 2);
+    // _supplierPrices stores MULTIPLIERS (0.70-1.35), not absolute prices
     const supPrices = g._supplierPrices || {};
-    let costs = [];
-    for (const [supIdx, prices] of Object.entries(supPrices)) {
-      if (prices[k] && prices[k] > 0) costs.push(prices[k]);
+    let mults = [];
+    for (const [, prices] of Object.entries(supPrices)) {
+      if (prices[k] && prices[k] > 0) mults.push(prices[k]);
     }
-    if (costs.length > 0) return Math.round(costs.reduce((a, b) => a + b, 0) / costs.length);
-    // Fallback to tire constant range
-    return Math.round((t.bMin + t.bMax) / 2);
+    if (mults.length > 0) {
+      const avgMult = mults.reduce((a, b) => a + b, 0) / mults.length;
+      return Math.round(baseCost * avgMult);
+    }
+    return baseCost;
   };
 
   const visibleTires = Object.entries(TIRES).filter(([k, t]) => {
