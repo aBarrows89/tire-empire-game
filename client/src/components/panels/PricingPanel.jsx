@@ -42,6 +42,19 @@ export default function PricingPanel() {
   const hasTires = (k) => (g.inventory[k] || 0) > 0;
   const hasAnyNewTires = Object.keys(TIRES).some(k => !TIRES[k].used && hasTires(k));
 
+  // Calculate real cost from supplier pricing if available, otherwise use TIRES constants
+  const getAvgCost = (k, t) => {
+    // Try dynamic supplier prices first (what you'd actually pay today)
+    const supPrices = g._supplierPrices || {};
+    let costs = [];
+    for (const [supIdx, prices] of Object.entries(supPrices)) {
+      if (prices[k] && prices[k] > 0) costs.push(prices[k]);
+    }
+    if (costs.length > 0) return Math.round(costs.reduce((a, b) => a + b, 0) / costs.length);
+    // Fallback to tire constant range
+    return Math.round((t.bMin + t.bMax) / 2);
+  };
+
   const visibleTires = Object.entries(TIRES).filter(([k, t]) => {
     if (t.used) return true;
     return hasTires(k) || hasAnyNewTires;
@@ -65,8 +78,9 @@ export default function PricingPanel() {
       {visibleTires.map(([k, t]) => {
         const qty = g.inventory[k] || 0;
         const price = g.prices[k] || t.def;
-        const cost = Math.round((t.bMin + t.bMax) / 2);
+        const cost = getAvgCost(k, t);
         const margin = price - cost;
+        const marginPct = cost > 0 ? Math.round((margin / cost) * 100) : 0;
         const mktAvg = (g.marketPrices && g.marketPrices[k]) || t.def;
         const diff = price - mktAvg;
         const diffLabel = diff > 5 ? 'Above avg' : diff < -5 ? 'Below avg' : 'At avg';
@@ -85,9 +99,9 @@ export default function PricingPanel() {
               <span className="text-xs text-dim">Stock: {qty}</span>
             </div>
             <div className="row-between mb-4">
-              <span className="text-xs text-dim">Cost ~${cost}</span>
+              <span className="text-xs text-dim">Avg cost: ${cost}</span>
               <span className={`font-bold ${margin >= 0 ? 'text-green' : 'text-red'}`}>
-                ${price} ({margin >= 0 ? '+' : ''}{margin})
+                ${price} <span className="text-xs">({margin >= 0 ? '+' : ''}{margin} / {marginPct}%)</span>
               </span>
             </div>
             <div className="row-between mb-4">
