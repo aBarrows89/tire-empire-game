@@ -1079,6 +1079,14 @@ export async function runTick(clients) {
       if (game.economy.rateHistory.length > 52) game.economy.rateHistory.shift();
     }
 
+    // Fetch recent chat messages so bots can reply to other players
+    let recentChatMessages = [];
+    try {
+      recentChatMessages = await getChatMessages(15, 'global');
+    } catch (e) {
+      // Non-critical — bots just won't reply this tick
+    }
+
     const shared = {
       cities: CITIES,
       aiShops: game.ai_shops || [],
@@ -1101,6 +1109,7 @@ export async function runTick(clients) {
       loanRateMult: game.economy.loanRateMult,
       bankState: game.economy.bankState || null,
       exchange: game.economy?.exchange || null,
+      recentChatMessages,
     };
 
     const cal = getCalendar(day);
