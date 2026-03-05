@@ -2,9 +2,8 @@ import { uid } from '../../../shared/helpers/random.js';
 import {
   createFranchiseOffering, getFranchiseOfferingById, updateFranchiseOffering,
   createFranchiseAgreement, getFranchiseAgreements, getFranchiseAgreementById,
-  updateFranchiseAgreement, getPlayer, savePlayerState,
+  updateFranchiseAgreement, getPlayer, savePlayerState, withPlayerLock,
 } from '../../db/queries.js';
-import { withPlayerLock } from '../../db/pgStore.js';
 
 const MIN_REP_TO_FRANCHISE = 75;
 const MIN_LOCATIONS_TO_FRANCHISE = 2;
