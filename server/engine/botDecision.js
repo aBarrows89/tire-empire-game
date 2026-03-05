@@ -910,8 +910,20 @@ function runStockExchange(g, cfg, pw, t, intensity, allPlayers, shared) {
 const _pendingBotChats = [];
 let _botChatBudget = 0;  // Messages remaining for this tick cycle
 
+// Queue of bots that want to chat this tick — collected during runChat(),
+// consumed by generateAIBotChats() call in tickLoop after all bots have run
+const _chatQueue = [];
+
 export function resetBotChatBudget() {
-  _botChatBudget = Ri(8, 20); // 8-20 messages per tick across all bots — enough for real conversations
+  _botChatBudget = Ri(8, 20);
+  _chatQueue.length = 0; // Reset AI queue each tick
+}
+
+/** Return and clear the AI chat queue — called by tickLoop */
+export function getBotChatQueue() {
+  const q = [..._chatQueue];
+  _chatQueue.length = 0;
+  return q;
 }
 
 export function getPendingBotChats() {
@@ -927,45 +939,26 @@ function runChat(g, cfg, pw, shared) {
   const recentMessages = shared.recentChatMessages || [];
   const myName = (g.companyName || g.name || '').toLowerCase();
   const otherMessages = recentMessages.filter(m => m.playerId !== g.id);
+  const realPlayerMessages = otherMessages.filter(m => !m.isBot);
 
-  // ── CHECK FOR @MENTIONS / CALLOUTS — always respond, skip cooldown ──
-  // Only check if bot has a real name (empty string matches everything)
+  // ── Always respond to @mentions — skip cooldown ──
   if (myName.length >= 3) {
     const callouts = otherMessages.filter(m => {
       const txt = (m.text || '').toLowerCase();
       return (txt.includes(myName) || txt.includes(`@${myName}`)) &&
              (m.timestamp || 0) > (cfg._lastChatCheckTime || 0);
     });
-
-  if (callouts.length > 0 && _botChatBudget > 0) {
-    const target = callouts[callouts.length - 1];
-    const result = generateReply(g, cfg, [target], shared);
-    if (result) {
-      if (!result.text.includes('@')) {
-        result.text = `@${target.playerName} ${result.text}`;
-      }
-      _pendingBotChats.push({
-        id: uid(),
-        playerId: g.id,
-        playerName: g.companyName || g.name || 'Unknown',
-        channel: 'global',
-        text: result.text,
-        timestamp: Date.now(),
-        replyTo: result.replyTo ? {
-          id: result.replyTo.id,
-          playerName: result.replyTo.playerName,
-          text: (result.replyTo.text || '').slice(0, 80),
-        } : undefined,
-      });
-      _botChatBudget--;
+    if (callouts.length > 0) {
       cfg._lastChatCheckTime = Date.now();
-      cfg.chatCooldown = Ri(1, 3); // Short cooldown after callout response
+      cfg.chatCooldown = Ri(1, 3);
+      // Queue for AI generation with mention context
+      _queueBotForAIChat(g, cfg, recentMessages, callouts[callouts.length - 1]);
+      _botChatBudget--;
       return;
     }
   }
-  } // end myName.length >= 3 guard
 
-  // ── REGULAR CHAT — cooldown + random chance ──
+  // ── Cooldown check ──
   if (cfg.chatCooldown > 0) {
     cfg.chatCooldown--;
     return;
@@ -975,55 +968,65 @@ function runChat(g, cfg, pw, shared) {
 
   const baseChatChance = intensity <= 3 ? 0.08 : intensity <= 6 ? 0.15 : intensity <= 9 ? 0.25 : 0.35;
   const chatChance = baseChatChance * ((pw && pw.chatFrequency) || 1);
-  if (Math.random() > chatChance) return;
 
-  let msg = null;
-  let replyTo = null;
+  // Boost chance when real players have been chatting recently — bots should engage
+  const hasRealActivity = realPlayerMessages.some(m => (Date.now() - (m.timestamp || 0)) < 120000);
+  const finalChance = hasRealActivity ? Math.min(chatChance * 1.8, 0.5) : chatChance;
 
-  // 50% chance to reply to recent messages (up from 40%)
-  if (otherMessages.length > 0 && Math.random() < 0.50) {
-    const result = generateReply(g, cfg, otherMessages, shared);
-    if (result) {
-      msg = result.text;
-      replyTo = result.replyTo;
-    }
-  }
+  if (Math.random() > finalChance) return;
 
-  // Otherwise generate an original message
-  if (!msg) {
-    msg = generateChatMessage(g, cfg, shared);
-  }
-
-  if (!msg) return;
-
-  const chatMsg = {
-    id: uid(),
-    playerId: g.id,
-    playerName: g.companyName || g.name || 'Unknown',
-    channel: 'global',
-    text: msg,
-    timestamp: Date.now(),
-  };
-
-  // Add reply metadata if replying to someone
-  if (replyTo) {
-    chatMsg.replyTo = {
-      id: replyTo.id,
-      playerName: replyTo.playerName,
-      text: (replyTo.text || '').slice(0, 80),
-    };
-  }
-
-  _pendingBotChats.push(chatMsg);
+  // Queue this bot for AI chat generation
+  _queueBotForAIChat(g, cfg, recentMessages, null);
   _botChatBudget--;
 
-  // Set cooldown (social butterflies chat again sooner)
-  // Cooldown based on personality and intensity
-  // Social butterflies chat in rapid bursts, others space it out
-  // High intensity = more engaged = shorter gaps
+  // Cooldown
   const intensityCooldownMod = Math.max(1, 6 - Math.floor(intensity / 2));
   cfg.chatCooldown = (pw && pw.chatFrequency >= 3) ? Ri(1, 3) : Ri(intensityCooldownMod, intensityCooldownMod + 4);
 }
+
+/**
+ * Push this bot onto the AI chat queue with a compact state snapshot.
+ * The tickLoop will call generateAIBotChats() with all queued bots after ticking.
+ */
+function _queueBotForAIChat(g, cfg, recentMessages, mentionedMsg) {
+  const locCount = (g.locations || []).length;
+  const cash = g.cash || 0;
+  const dayRev = g.dayRev || 0;
+  const rep = g.reputation || 0;
+  const city = g.locations?.[0]
+    ? (CITIES.find(c => c.id === g.locations[0].cityId)?.name || 'unknown city')
+    : 'no shop yet';
+
+  // Summarize what's going on with this bot in plain english
+  let doing = 'ok';
+  if (cash < 5000 || (g.dayProfit || 0) < 0) doing = 'struggling';
+  else if (dayRev > 3000 && cash > 20000) doing = 'well';
+
+  let recentEvent = null;
+  if (g._botConfig?.recentActions?.length > 0) {
+    const last = g._botConfig.recentActions[g._botConfig.recentActions.length - 1];
+    if (last) recentEvent = last.type;
+  }
+
+  _chatQueue.push({
+    botId: g.id,
+    botName: g.companyName || g.name || 'Unknown',
+    personality: cfg.personality || 'conservative',
+    mentionedBy: mentionedMsg ? { id: mentionedMsg.id, name: mentionedMsg.playerName, text: mentionedMsg.text } : null,
+    stateSnippet: {
+      day: g.day || 0,
+      cash,
+      shopCount: locCount,
+      rep,
+      city,
+      doing,
+      hasFactory: !!g.hasFactory,
+      hasWholesale: !!g.hasWholesale,
+      recentEvent,
+    },
+  });
+}
+
 
 function generateReply(g, cfg, recentMessages, shared) {
   // Pick a message to reply to (prefer more recent, prefer real players)

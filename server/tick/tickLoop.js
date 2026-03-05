@@ -3,7 +3,8 @@ import { getAllActivePlayers, savePlayerState, getGame, saveGame, upsertLeaderbo
 import { uid } from '../../shared/helpers/random.js';
 import { simDay } from '../engine/simDay.js';
 import { simAIPlayerDay, isBotPlayer } from '../engine/aiPlayers.js';
-import { runBotTick, resetBotChatBudget, getPendingBotChats, getBotPhaseOutTargets } from '../engine/botDecision.js';
+import { runBotTick, resetBotChatBudget, getPendingBotChats, getBotChatQueue, getBotPhaseOutTargets } from '../engine/botDecision.js';
+import { generateAIBotChats } from '../services/botChatAI.js';
 import { initAIShops } from '../engine/aiShops.js';
 import { getWealth } from '../../shared/helpers/wealth.js';
 import { getStorageCap, getLocInv, getLocCap, rebuildGlobalInv, getCap, getInv } from '../../shared/helpers/inventory.js';
@@ -1269,12 +1270,51 @@ export async function runTick(clients) {
       console.error('Contract payment error:', err);
     }
 
-    // Post bot chat messages accumulated during this tick
+    // Post bot chat messages — try AI generation, fall back to templates
     try {
-      const botChats = getPendingBotChats();
-      if (botChats.length > 0) {
-        console.log(`[Tick] Posting ${botChats.length} bot chat messages`);
+      const chatQueue = getBotChatQueue();
+      const legacyChats = getPendingBotChats(); // fallback template messages
+
+      let botChats = [];
+
+      if (chatQueue.length > 0) {
+        // Pass leaderboard and day into shared for the AI prompt
+        const chatShared = {
+          ...shared,
+          day,
+          leaderboard: await getLeaderboard(5).catch(() => []),
+        };
+        try {
+          const aiMessages = await generateAIBotChats(chatQueue, chatShared);
+          if (aiMessages.length > 0) {
+            // AI succeeded — convert to DB format
+            botChats = aiMessages.map(m => {
+              const msg = {
+                id: uid(),
+                playerId: m.botId,
+                playerName: m.botName,
+                channel: 'global',
+                text: m.text,
+                isBot: true,
+                timestamp: Date.now(),
+              };
+              if (m.replyToId) {
+                msg.replyTo = { id: m.replyToId, playerName: m.replyToName || '', text: '' };
+              }
+              return msg;
+            });
+          } else {
+            // AI returned nothing — use templates
+            botChats = legacyChats;
+          }
+        } catch (aiErr) {
+          console.warn('[Tick] AI chat failed, using templates:', aiErr.message);
+          botChats = legacyChats;
+        }
+      } else {
+        botChats = legacyChats;
       }
+
       for (const msg of botChats) {
         try {
           if (msg && msg.text && msg.playerId) {
