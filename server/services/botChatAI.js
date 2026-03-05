@@ -2,12 +2,17 @@
  * Bot Chat AI Service
  *
  * Replaces static template-based bot chat with Claude-generated messages.
- * All bots that want to chat this tick are batched into a SINGLE API call,
- * keeping costs low while enabling coherent multi-bot conversations.
+ * All bots that want to chat this tick are batched into a SINGLE API call.
+ *
+ * Intensity (1-10) drives expertise level:
+ *   1-3  → Casual newcomer. Basic questions, simple observations, often confused
+ *   4-6  → Competent operator. Understands the game, talks shop strategy
+ *   7-8  → Veteran. Advanced mechanics, precise numbers, mentors others
+ *   9-10 → Elite. Talks like a professional — margins, arbitrage, market timing
  *
  * Falls back to template generation silently if:
  *   - ANTHROPIC_API_KEY is not set
- *   - The API call fails (network error, timeout, etc.)
+ *   - The API call fails or times out
  *   - The response can't be parsed
  */
 
@@ -15,7 +20,6 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const MODEL = 'claude-haiku-4-5-20251001';
 const TIMEOUT_MS = 8000;
 
-// Personality descriptions for the prompt — short enough to fit in context
 const PERSONALITY_TRAITS = {
   hoarder:         'Stockpiles inventory, reluctant seller, slightly paranoid about running out',
   flipper:         'High-volume low-margin, moves fast, always hunting deals',
@@ -29,12 +33,64 @@ const PERSONALITY_TRAITS = {
   factory_dreamer: 'Fixated on building their own brand, talks about the factory constantly',
 };
 
+// How each intensity tier talks — defines vocabulary, confidence, and topic depth
+const INTENSITY_PROFILES = {
+  novice: { // 1-3
+    label: 'casual newcomer (intensity 1-3)',
+    voice: 'New to the game. Asks basic questions, makes simple observations, sometimes confused by mechanics. Short sentences. Occasional typos or casual shorthand. Does not talk about advanced features they likely haven\'t unlocked.',
+    topics: 'basic shop operations, prices feeling high or low, wondering how things work, slow days, first impressions',
+    avoids: 'wholesale margins, factory ROI, stock exchange, arbitrage, advanced strategy — they don\'t know this stuff yet',
+    examples: [
+      'how do i know if my prices are too high?',
+      'slow day today lol',
+      'is it worth hiring a second tech?',
+      'anyone else just starting out?',
+    ],
+  },
+  competent: { // 4-6
+    label: 'competent operator (intensity 4-6)',
+    voice: 'Understands the game well. Talks strategy, shares what\'s working, asks informed questions. Comfortable with most mechanics. Normal chat style.',
+    topics: 'pricing strategy, staff optimization, when to expand, inventory management, loan timing, reputation milestones',
+    avoids: 'highly technical arbitrage plays or elite-level market manipulation',
+    examples: [
+      'finally got my 3rd shop profitable. margins matter more than volume at this stage',
+      'winter tire demand is spiking — loaded up on inventory yesterday',
+      'anyone else find wholesale way more consistent than retail?',
+    ],
+  },
+  veteran: { // 7-8
+    label: 'veteran player (intensity 7-8)',
+    voice: 'Confident and knowledgeable. Gives specific advice, references exact mechanics, sometimes mentors newer players. Uses game terminology naturally.',
+    topics: 'factory efficiency, wholesale client strategy, pricing analyst ROI, multi-city logistics, stock exchange plays, margin optimization',
+    avoids: 'nothing — they know the whole game',
+    examples: [
+      'pricing analyst pays for itself in about 8 days if you\'re doing volume above $3K/day',
+      'the trick with wholesale is lock in your top 3 clients before someone undercuts you',
+      '@newplayer stick to all-seasons until rep 25 — margins are more forgiving',
+    ],
+  },
+  elite: { // 9-10
+    label: 'elite operator (intensity 9-10)',
+    voice: 'Plays at a professional level. Precise, data-driven, talks about optimization and arbitrage. Occasionally condescending without meaning to be. References specific numbers and mechanics with confidence.',
+    topics: 'factory brand premium, TC arbitrage, dividend strategy, short selling timing, market cornering, cross-city logistics efficiency, competitor analysis',
+    avoids: 'nothing — and they\'ll tell you exactly why',
+    examples: [
+      'factory brand premium compounds — at quality 90+ you\'re looking at 18-22% loyalty lift',
+      'shorted GCTP before the rubber event. covered at -31%. clean',
+      'if your e-commerce isn\'t doing at least 40% of your retail volume you\'re leaving money on the table',
+    ],
+  },
+};
+
+function getIntensityProfile(intensity) {
+  if (intensity <= 3) return INTENSITY_PROFILES.novice;
+  if (intensity <= 6) return INTENSITY_PROFILES.competent;
+  if (intensity <= 8) return INTENSITY_PROFILES.veteran;
+  return INTENSITY_PROFILES.elite;
+}
+
 /**
  * Generate AI chat messages for a batch of bots in one API call.
- *
- * @param {Array} chatQueue - bots that want to chat, each: { botId, botName, personality, stateSnippet }
- * @param {object} shared   - tick shared context (recentChatMessages, globalEvents, leaderboard, etc.)
- * @returns {Promise<Array>} - array of { botId, botName, text, replyToId?, replyToName? }
  */
 export async function generateAIBotChats(chatQueue, shared) {
   if (!ANTHROPIC_API_KEY || chatQueue.length === 0) return [];
@@ -52,24 +108,29 @@ export async function generateAIBotChats(chatQueue, shared) {
 
   const events = (shared.globalEvents || []).map(e => e.label || e.id).join(', ') || 'none';
 
-  // Build compact bot descriptions
   const botDescriptions = chatQueue.map(b => {
     const s = b.stateSnippet;
+    const profile = getIntensityProfile(b.intensity || 5);
     return {
       id: b.botId,
       name: b.botName,
       personality: b.personality,
       traits: PERSONALITY_TRAITS[b.personality] || 'average tire shop owner',
+      expertiseLevel: profile.label,
+      voiceGuide: profile.voice,
+      topicsTheyKnow: profile.topics,
+      topicsTheyAvoid: profile.avoids,
+      mentionedBy: b.mentionedBy || null,
       game: {
         day: s.day,
         cash: `$${Math.floor((s.cash || 0) / 1000)}K`,
         shops: s.shopCount,
         rep: Math.floor(s.rep || 0),
         city: s.city || 'unknown',
-        doing: s.doing, // 'well' | 'ok' | 'struggling'
+        doing: s.doing,
         hasFactory: s.hasFactory,
         hasWholesale: s.hasWholesale,
-        recentEvent: s.recentEvent || null,
+        recentAction: s.recentEvent || null,
       },
     };
   });
@@ -77,29 +138,36 @@ export async function generateAIBotChats(chatQueue, shared) {
   const systemPrompt = `You generate chat messages for AI players in "Tire Empire" — a multiplayer tire business simulation game.
 
 GAME CONTEXT:
-- Players run tire shops: buy inventory, set prices, hire staff, expand to new cities
-- Advanced features: wholesale distribution, tire factory, stock exchange, e-commerce
-- Players compete on a leaderboard ranked by total wealth
-- The in-game currency is dollars. TireCoins (TC) are a premium currency
+- Players run tire shops: buy inventory, set prices, hire staff, expand to cities
+- Advanced features unlock with reputation: wholesale (25), e-commerce (30), factory (75)
+- Stock exchange (TESX) lets players trade shares and IPO their company
+- TireCoins (TC) are premium currency. Pricing analyst, warehouse, 3PL storage are mid-game upgrades
+- Players compete on a leaderboard by total wealth
 
 YOUR ROLE:
-Generate realistic chat messages for the AI bots listed in the request. Each bot has a distinct personality and current game situation. Messages should feel like real competitive business owners chatting in a game lobby.
+Generate one realistic chat message per bot. Each bot has a specific expertise level based on their intensity score. This is the most important factor — a novice and an elite player should sound completely different.
+
+EXPERTISE LEVELS MATTER:
+- Novices ask basic questions, don't know advanced mechanics, keep it simple
+- Competent players talk strategy and share what's working
+- Veterans give specific advice with real numbers, mentor others
+- Elite players are precise and data-driven, reference exact mechanics
 
 RULES:
-1. 90% game topics (pricing, inventory, market conditions, competition, strategy, events)
-2. 10% casual human stuff (brief, natural — "rough morning", "finally got wifi working lol", things real people say)
-3. Bots SHOULD respond to real players' messages when relevant — this is the most important behavior
-4. Bots CAN reply to each other's messages to create natural back-and-forth
-5. Each message max 110 characters — these are chat messages, not essays
-6. No hashtags. Minimal emoji (only if personality demands). Lowercase is fine.
-7. Never contradict the bot's actual game state (don't brag if struggling, don't complain if thriving)
-8. Bots should feel like different people — use their personality traits to vary tone
-9. Avoid repeating phrases from recent chat — keep it fresh
+1. 90% game topics, 10% brief casual human texture
+2. Respond to real players (👤) when relevant — highest priority
+3. Bots can reply to each other naturally
+4. Max 110 characters per message — these are chat messages
+5. No hashtags. Minimal emoji. Lowercase casual tone is fine
+6. Never contradict the bot's actual game state
+7. Novices MUST NOT reference mechanics they haven't unlocked
+8. Elite bots should reference specific numbers and advanced plays
+9. If a bot was mentioned/called out, they MUST respond to that person
 
-RESPOND WITH ONLY a JSON array. No preamble. No explanation. Example format:
+RESPOND WITH ONLY a JSON array. No preamble. No markdown. Example:
 [
-  {"id": "bot123", "text": "anyone else getting crushed by the rubber shortage?"},
-  {"id": "bot456", "text": "@PlayerName solid advice, been doing that for weeks", "replyToId": "msg_id_here", "replyToName": "PlayerName"}
+  {"id": "bot123", "text": "is it worth getting a pricing analyst this early?"},
+  {"id": "bot456", "text": "@PlayerName analyst ROI breaks even around day 8 at your volume", "replyToId": "msg_id", "replyToName": "PlayerName"}
 ]`;
 
   const userPrompt = `GAME STATE:
@@ -107,13 +175,11 @@ RESPOND WITH ONLY a JSON array. No preamble. No explanation. Example format:
 - Leaderboard: ${leaderboardSnippet || 'loading'}
 - TC value: $${Math.floor((shared.tcValue || 0) / 1000)}K
 
-RECENT CHAT (last ${recentChat.length} messages, newest last):
+RECENT CHAT (newest last):
 ${recentChat.map(m => `[${m.id}] ${m.isBot ? '🤖' : '👤'} ${m.name}: ${m.text}`).join('\n') || '(no recent messages)'}
 
-BOTS THAT NEED TO CHAT NOW (generate exactly one message per bot):
-${JSON.stringify(botDescriptions, null, 2)}
-
-Generate one message per bot. Reply to real player messages (👤) when natural. Bots can also reply to each other.`;
+BOTS TO GENERATE FOR (one message each):
+${JSON.stringify(botDescriptions, null, 2)}`;
 
   try {
     const controller = new AbortController();
@@ -138,28 +204,24 @@ Generate one message per bot. Reply to real player messages (👤) when natural.
     clearTimeout(timeout);
 
     if (!res.ok) {
-      const err = await res.text();
-      console.warn('[BotChatAI] API error:', res.status, err.slice(0, 200));
+      console.warn('[BotChatAI] API error:', res.status);
       return [];
     }
 
     const data = await res.json();
     const raw = data.content?.[0]?.text || '';
-
-    // Strip markdown fences if present
     const cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
     let messages;
     try {
       messages = JSON.parse(cleaned);
     } catch {
-      console.warn('[BotChatAI] Failed to parse response:', cleaned.slice(0, 300));
+      console.warn('[BotChatAI] Failed to parse response:', cleaned.slice(0, 200));
       return [];
     }
 
     if (!Array.isArray(messages)) return [];
 
-    // Validate and enrich each message
     return messages
       .filter(m => m && typeof m.text === 'string' && m.text.trim().length > 0)
       .map(m => {
@@ -168,7 +230,7 @@ Generate one message per bot. Reply to real player messages (👤) when natural.
         return {
           botId: m.id,
           botName: bot.botName,
-          text: m.text.slice(0, 140), // hard cap
+          text: m.text.slice(0, 140),
           replyToId: m.replyToId || null,
           replyToName: m.replyToName || null,
         };

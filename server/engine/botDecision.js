@@ -1012,6 +1012,7 @@ function _queueBotForAIChat(g, cfg, recentMessages, mentionedMsg) {
     botId: g.id,
     botName: g.companyName || g.name || 'Unknown',
     personality: cfg.personality || 'conservative',
+    intensity: cfg.intensity || 5,
     mentionedBy: mentionedMsg ? { id: mentionedMsg.id, name: mentionedMsg.playerName, text: mentionedMsg.text } : null,
     stateSnippet: {
       day: g.day || 0,
