@@ -324,7 +324,9 @@ export default function ExchangePanel() {
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
                 <UICard style={{ flex: 1, minWidth: 80, textAlign: 'center', padding: 10 }}>
                   <div style={{ fontSize: 9, color: 'var(--text-dim)', letterSpacing: 0.5 }}>TESX INDEX</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--accent)' }}>{fmt(overview.indices?.TESX)}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--accent)' }}>
+                    {overview.indices?.TESX ? (overview.indices.TESX).toFixed(2) : '—'}
+                  </div>
                 </UICard>
                 <UICard style={{ flex: 1, minWidth: 80, textAlign: 'center', padding: 10 }}>
                   <div style={{ fontSize: 9, color: 'var(--text-dim)', letterSpacing: 0.5 }}>SENTIMENT</div>
@@ -406,18 +408,31 @@ export default function ExchangePanel() {
             </div>
           )}
 
-          {/* ETFs */}
+          {/* ETFs & Indices */}
           {overview?.etfs && Object.keys(overview.etfs).length > 0 && (
             <div style={{ marginBottom: 12 }}>
               <h4 style={{ margin: '0 0 6px' }}>Indices & ETFs</h4>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {Object.entries(overview.etfs).map(([ticker, etf]) => (
-                  <div key={ticker} className="card" style={{ flex: '1 0 90px', textAlign: 'center', padding: 8 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>${ticker}</div>
-                    <div style={{ fontSize: 16 }}>{fmt(etf.price)}</div>
-                    <div style={{ fontSize: 11, color: etf.change >= 0 ? 'var(--green)' : 'var(--red)' }}>{pct(etf.change)}</div>
-                  </div>
-                ))}
+                {Object.entries(overview.etfs).map(([ticker, etf]) => {
+                  const hasStocks = (etf.components?.length || 0) > 0;
+                  const changeVal = etf.change || 0;
+                  return (
+                    <div key={ticker} className="card" style={{ flex: '1 0 90px', textAlign: 'center', padding: 8 }}>
+                      <div style={{ fontWeight: 700, fontSize: 11, color: 'var(--text-dim)', marginBottom: 2 }}>${ticker}</div>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>
+                        {hasStocks ? `$${(etf.price || 0).toFixed(2)}` : <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>No stocks</span>}
+                      </div>
+                      {hasStocks && (
+                        <div style={{ fontSize: 10, color: changeVal >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                          {changeVal >= 0 ? '▲' : '▼'} {Math.abs(changeVal).toFixed(2)}%
+                        </div>
+                      )}
+                      <div style={{ fontSize: 9, color: 'var(--text-dim)', marginTop: 2 }}>
+                        {etf.name || ticker} {hasStocks ? `(${etf.components.length})` : ''}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -427,12 +442,20 @@ export default function ExchangePanel() {
             <div style={{ marginBottom: 12 }}>
               <h4 style={{ margin: '0 0 6px' }}>Commodities</h4>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {Object.entries(overview.commodities).map(([ticker, comm]) => (
-                  <div key={ticker} className="card" style={{ flex: '1 0 90px', textAlign: 'center', padding: 8 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{comm.name}</div>
-                    <div style={{ fontSize: 16 }}>{fmt(comm.price)}</div>
-                  </div>
-                ))}
+                {Object.entries(overview.commodities).map(([ticker, comm]) => {
+                  const base = comm.baseValue || 100;
+                  const chg = base > 0 ? ((comm.price - base) / base * 100) : 0;
+                  return (
+                    <div key={ticker} className="card" style={{ flex: '1 0 90px', textAlign: 'center', padding: 8 }}>
+                      <div style={{ fontWeight: 700, fontSize: 11, color: 'var(--text-dim)', marginBottom: 2 }}>{ticker}</div>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>{(comm.price || 100).toFixed(1)}</div>
+                      <div style={{ fontSize: 10, color: chg >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                        {chg >= 0 ? '▲' : '▼'} {Math.abs(chg).toFixed(1)}%
+                      </div>
+                      <div style={{ fontSize: 9, color: 'var(--text-dim)', marginTop: 2 }}>{comm.name}</div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
