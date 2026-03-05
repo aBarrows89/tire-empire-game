@@ -420,6 +420,10 @@ export async function createPlayer(id, name, gameState) {
 }
 
 export async function savePlayerState(id, gameState, expectedVersion = null) {
+  // Hard cap on log size — prevents JSON bloat from crashing saves
+  if (gameState && Array.isArray(gameState.log) && gameState.log.length > 100) {
+    gameState = { ...gameState, log: gameState.log.slice(-100) };
+  }
   if (expectedVersion !== null) {
     // Optimistic locking: only update if version matches
     const { rowCount } = await pool.query(
@@ -529,17 +533,40 @@ export async function getGame(id = 'default') {
 }
 
 export async function saveGame(id, day, economy, aiShops, liquidation) {
+  // Always invalidate cache first — even if save fails, next read must hit DB fresh
+  // so the day doesn't get re-computed from stale cached state
+  invalidateGame();
+
+  // Trim unbounded arrays before serializing to prevent JSON bloat
+  const econClean = economy ? JSON.parse(JSON.stringify(economy)) : {};
+  if (econClean.exchange?.orderBooks) {
+    for (const ob of Object.values(econClean.exchange.orderBooks)) {
+      if (ob.bids?.length > 50) ob.bids = ob.bids.slice(-50);
+      if (ob.asks?.length > 50) ob.asks = ob.asks.slice(-50);
+    }
+  }
+  if (econClean.exchange?.stocks) {
+    for (const s of Object.values(econClean.exchange.stocks)) {
+      if (s.priceHistory?.length > 90) s.priceHistory = s.priceHistory.slice(-90);
+    }
+  }
+
   try {
-    const econStr = JSON.stringify(economy || {});
+    const econStr = JSON.stringify(econClean);
     const shopsStr = JSON.stringify(aiShops || []);
     const liqStr = JSON.stringify(liquidation || []);
+    const econKB = Math.round(econStr.length / 1024);
+    const shopsKB = Math.round(shopsStr.length / 1024);
+    if (econKB > 500) console.warn(`[pgStore] saveGame: economy is ${econKB}KB — consider trimming`);
     await pool.query(
       `UPDATE games SET week = $2, economy = $3::jsonb, ai_shops = $4::jsonb, liquidation = $5::jsonb, updated_at = NOW() WHERE id = $1`,
       [id, day, econStr, shopsStr, liqStr]
     );
-    invalidateGame();
+    console.log(`[pgStore] saveGame day=${day} ok (economy ${econKB}KB, ai_shops ${shopsKB}KB)`);
   } catch (err) {
-    console.error('[pgStore] saveGame error:', err.message);
+    console.error('[pgStore] saveGame FAILED day=' + day + ':', err.message);
+    // Rethrow so the tick loop knows the save failed
+    throw err;
   }
 }
 

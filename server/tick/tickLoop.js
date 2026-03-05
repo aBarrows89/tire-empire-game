@@ -1295,11 +1295,10 @@ export async function runTick(clients) {
               cash: (fs.cash || 0) + cashDelta,
               bankBalance: (fs.bankBalance || 0) + bankDelta,
               loans: freshLoans,
-              log: [...(fs.log || []).slice(-30), ...(newState.log || [])],
+              log: (newState.log || []).slice(-50), // today's tick logs only, capped
             };
             await savePlayerState(player.id, merged);
             Object.assign(newState, merged);
-            console.log(`[Tick] Merge-save for ${player.id}: cash delta ${cashDelta >= 0 ? '+' : ''}${Math.round(cashDelta)}, bank delta ${bankDelta >= 0 ? '+' : ''}${Math.round(bankDelta)}`);
           } else {
             await savePlayerState(player.id, newState);
           }
@@ -1363,7 +1362,15 @@ export async function runTick(clients) {
         // Push notifications (non-blocking)
         checkAndSendPush(player.id, newState, day).catch(() => {});
       } catch (playerErr) {
-        console.error(`[Tick] Error processing player ${player.id}:`, playerErr.message);
+        console.error(`[Tick] Error processing player ${player.id}:`, playerErr.stack || playerErr.message);
+        // Emergency: still advance the day so we don't loop forever at the same day
+        try {
+          const emergencyState = { ...(player.game_state || {}), day: (player.game_state?.day || 0) + 1, log: [] };
+          await savePlayerState(player.id, emergencyState);
+          console.warn(`[Tick] Emergency day-advance saved for ${player.id} (day ${emergencyState.day})`);
+        } catch (emergErr) {
+          console.error(`[Tick] Emergency save also failed for ${player.id}:`, emergErr.message);
+        }
       }
     }
 
@@ -1583,14 +1590,19 @@ export async function runTick(clients) {
       } catch {}
     }
 
-    // Update game day
-    await saveGame(
-      'default',
-      day,
-      game.economy || {},
-      game.ai_shops || [],
-      game.liquidation || []
-    );
+    // Update game day — if this fails, abort the tick (don't broadcast wrong day)
+    try {
+      await saveGame(
+        'default',
+        day,
+        game.economy || {},
+        game.ai_shops || [],
+        game.liquidation || []
+      );
+    } catch (saveErr) {
+      console.error('[Tick] saveGame failed, aborting broadcast for day', day, ':', saveErr.message);
+      return; // exit runTick — next tick will re-read DB at correct day
+    }
 
     // Broadcast tick to all clients
     const exchangeState = game.economy?.exchange;

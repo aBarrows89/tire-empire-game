@@ -95,7 +95,7 @@ function pullFromStock(s, tire, qty) {
 }
 
 export function simDay(g, shared = {}) {
-  let s = { ...g, day: g.day + 1, dayRev: 0, dayProfit: 0, daySold: 0, log: [...(g.log || [])], _events: [], dayRevByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0, services: 0, factoryWholesale: 0 }, daySoldByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0, factoryWholesale: 0 }, daySoldByType: {} };
+  let s = { ...g, day: g.day + 1, dayRev: 0, dayProfit: 0, daySold: 0, log: [], _events: [], dayRevByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0, services: 0, factoryWholesale: 0 }, daySoldByChannel: { shops: 0, flea: 0, carMeets: 0, ecom: 0, wholesale: 0, gov: 0, van: 0, factoryWholesale: 0 }, daySoldByType: {} };
 
   // Save previous day values for trend arrows
   s.prevDayRev = g.dayRev || 0;
