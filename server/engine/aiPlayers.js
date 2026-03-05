@@ -454,7 +454,7 @@ export function createStealthPlayer(name, company, cityId, intensity, adminId) {
         qualityRating: 0.80 + t * 0.1, brandReputation: Math.floor(t * 40),
         rawMaterials: { rubber: 1.0, steel: 1.0, chemicals: 1.0 },
         currentLine: null, switchCooldown: 0,
-        isDistributor: i === 10,
+        isDistributor: i >= 9, // All factory bots are distributors (was i === 10 only)
         discountTiers: [
           { min: 0, disc: 0, label: 'Standard' },
           { min: 50, disc: 0.03, label: 'Bronze' },
