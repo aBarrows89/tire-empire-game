@@ -1306,8 +1306,21 @@ export async function runTick(clients) {
               if (!freshLoans.find(fl => fl.id === sl.id)) freshLoans.push(sl);
             }
 
+            // Merge strategy:
+            // - Start with newState (has all simDay computed fields: prices, reputation, etc.)
+            // - Override with fresh values for structural fields the player may have changed
+            //   during the tick (storage purchases, location opens, inventory moves, etc.)
+            // - Apply economic deltas (cash/bank costs from simDay) on top of fresh values
             const merged = {
               ...newState,
+              // Structural: take from fresh so mid-tick purchases/changes are preserved
+              storage: fs.storage || newState.storage,
+              hasWarehouse: fs.hasWarehouse ?? newState.hasWarehouse,
+              warehouseInventory: fs.warehouseInventory || newState.warehouseInventory,
+              locations: fs.locations || newState.locations,
+              bonusStorage: fs.bonusStorage ?? newState.bonusStorage,
+              tireCoins: fs.tireCoins ?? newState.tireCoins,
+              // Economic: apply simDay deltas onto fresh base values
               cash: (fs.cash || 0) + cashDelta,
               bankBalance: (fs.bankBalance || 0) + bankDelta,
               loans: freshLoans,

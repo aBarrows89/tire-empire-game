@@ -27,6 +27,8 @@ export async function handleSourcing(action, params, g, ctx) {
       if (freeSpace <= 0) return ctx.fail('No storage space');
       g.cash -= src.c;
       const rawQty = R(src.min, src.max);
+      // Rebuild global inventory first so getCap/getInv see fresh state
+      rebuildGlobalInv(g);
       const qty = Math.min(rawQty, freeSpace);
       if (!g.warehouseInventory) g.warehouseInventory = {};
       const whFree = getStorageCap(g) - Object.values(g.warehouseInventory).reduce((a, b) => a + b, 0);
