@@ -400,7 +400,20 @@ export function createStealthPlayer(name, company, cityId, intensity, adminId) {
       inventory: {}, prices,
       marketPrices: { ...prices },
       storage, locations,
-      staff: { techs: 0, sales: 0, managers: 0, drivers: 0, pricingAnalyst: 0 },
+      // Aggregate global staff from per-location staff so simDay can calculate sales capacity
+      staff: (() => {
+        const s = { techs: 0, sales: 0, managers: 0, drivers: i > 3 ? Ri(1, 3) : 0, pricingAnalyst: 0 };
+        for (const loc of locations) {
+          const ls = loc.staff || {};
+          s.techs += (ls.techs || 0);
+          s.sales += (ls.sales || 0);
+          s.managers += (ls.managers || 0);
+        }
+        // Ensure at least 1 tech and 1 sales per shop so simDay generates revenue
+        if (s.techs === 0 && locations.length > 0) s.techs = locations.length;
+        if (s.sales === 0 && locations.length > 0) s.sales = locations.length;
+        return s;
+      })(),
       autoPrice: {}, autoSource: null,
       servicePrices: { flatRepair: 25, balance: 20, install: 35, nitrogen: 10 },
       dayServiceRev: 0, dayServiceJobs: 0,

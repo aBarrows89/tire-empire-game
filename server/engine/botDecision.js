@@ -715,7 +715,7 @@ const _pendingBotChats = [];
 let _botChatBudget = 0;  // Messages remaining for this tick cycle
 
 export function resetBotChatBudget() {
-  _botChatBudget = Ri(3, 8); // 3-8 messages per day across all bots (increased for replies)
+  _botChatBudget = Ri(5, 12); // 5-12 messages per day across all bots
 }
 
 export function getPendingBotChats() {
@@ -731,7 +731,8 @@ function runChat(g, cfg, pw, shared) {
     return;
   }
 
-  const chatChance = 0.02 * pw.chatFrequency;
+  // Higher base chance — bots should chat regularly to feel alive
+  const chatChance = 0.05 * (pw.chatFrequency || 1);
   if (Math.random() > chatChance) return;
 
   // Decide: reply to someone or post original message?
@@ -778,7 +779,7 @@ function runChat(g, cfg, pw, shared) {
   _botChatBudget--;
 
   // Set cooldown (social butterflies chat again sooner)
-  cfg.chatCooldown = pw.chatFrequency >= 3 ? Ri(2, 8) : Ri(8, 30);
+  cfg.chatCooldown = pw.chatFrequency >= 3 ? Ri(1, 4) : Ri(3, 12);
 }
 
 function generateReply(g, cfg, recentMessages, shared) {

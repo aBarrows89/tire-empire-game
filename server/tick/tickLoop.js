@@ -1126,16 +1126,48 @@ export async function runTick(clients) {
         // Skip bot simulation if paused by admin
         if (game.economy?.botsPaused) continue;
         try {
-          let newState;
+          let newState = state;
           if (state._botConfig) {
-            // FIX: Run the REAL economic simulation first (same as real players)
-            // Without this, bots never sell inventory, earn real revenue, or progress
-            applyAutoPrice(state);
-            applyAutoSource(state);
-            if (state.hasAutoRestock || state.isPremium) applyAutoSupplier(state);
-            newState = simDay(state, shared);
-            // Then run personality-driven bot decisions on top of simulated state
-            newState = runBotTick(newState, shared, players);
+            // ── Sync global staff from per-location staff (bots store staff per-location) ──
+            const syncedStaff = { techs: 0, sales: 0, managers: 0, drivers: state.staff?.drivers || 0, pricingAnalyst: state.staff?.pricingAnalyst || 0 };
+            for (const loc of (state.locations || [])) {
+              const ls = loc.staff || {};
+              syncedStaff.techs += (ls.techs || 0);
+              syncedStaff.sales += (ls.sales || 0);
+              syncedStaff.managers += (ls.managers || 0);
+            }
+            // Ensure minimum staff so simDay can generate revenue
+            if (syncedStaff.techs === 0 && (state.locations || []).length > 0) syncedStaff.techs = Math.max(1, (state.locations || []).length);
+            if (syncedStaff.sales === 0 && (state.locations || []).length > 0) syncedStaff.sales = Math.max(1, (state.locations || []).length);
+            state.staff = syncedStaff;
+
+            // Auto-pricing/sourcing — wrap individually so failures don't kill the tick
+            try { applyAutoPrice(state); } catch (e) { /* bot may not have all pricing fields */ }
+            try { applyAutoSource(state); } catch (e) { /* bot may not have sourcing config */ }
+
+            // Run real economic simulation
+            try {
+              newState = simDay(state, shared);
+            } catch (simErr) {
+              console.error(`[Tick] simDay error for bot ${player.id}:`, simErr.message);
+              // If simDay fails, still run bot decisions on the original state
+              newState = { ...state, day: (state.day || 0) + 1, log: [], _events: [] };
+            }
+
+            // Bot cash safety net — inject cash if a bot is going broke
+            // Bots shouldn't go bankrupt from the simulation; they exist to populate the economy
+            if (newState.cash < 5000 && (newState.locations || []).length > 0) {
+              const injection = Math.max(20000, (newState.locations || []).length * 15000);
+              newState.cash += injection;
+              // Don't log this — invisible to players
+            }
+
+            // ALWAYS run bot decisions + chat, even if simDay had issues
+            try {
+              newState = runBotTick(newState, shared, players);
+            } catch (botTickErr) {
+              console.error(`[Tick] runBotTick error for bot ${player.id}:`, botTickErr.message);
+            }
           } else {
             // Legacy isAI bots (pre-personality system)
             newState = simAIPlayerDay(state);
