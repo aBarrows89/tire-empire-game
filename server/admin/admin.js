@@ -597,10 +597,24 @@ document.getElementById('admin-dm-target')?.addEventListener('change', e => {
 
 async function loadChat() {
   try {
+    if (!AUTH_HEADER['Authorization'] && !AUTH_HEADER['X-Player-Id']) {
+      const log = document.getElementById('chat-log');
+      if (log) log.innerHTML = '<div style="color:#888;padding:8px">Waiting for auth...</div>';
+      return;
+    }
     const res = await fetch(`${API}/chat/messages?limit=500`, { headers: AUTH_HEADER });
+    if (!res.ok) {
+      const log = document.getElementById('chat-log');
+      if (log) log.innerHTML = `<div style="color:#ef5350;padding:8px">Chat load failed: ${res.status} ${res.statusText}</div>`;
+      return;
+    }
     const messages = await res.json();
     const log = document.getElementById('chat-log');
     log.innerHTML = '';
+    if (!messages.length) {
+      log.innerHTML = '<div style="color:#888;padding:8px">No messages yet.</div>';
+      return;
+    }
 
     for (const m of messages) {
       const div = document.createElement('div');
@@ -623,7 +637,11 @@ async function loadChat() {
       log.appendChild(div);
     }
     log.scrollTop = log.scrollHeight;
-  } catch (e) { console.error(e); }
+  } catch (e) {
+    console.error(e);
+    const log = document.getElementById('chat-log');
+    if (log) log.innerHTML = `<div style="color:#ef5350;padding:8px">Error: ${e.message}</div>`;
+  }
 }
 
 async function sendAdminChat() {
