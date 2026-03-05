@@ -1,8 +1,8 @@
 import { TICK_MS } from '../config.js';
-import { getAllActivePlayers, savePlayerState, getGame, saveGame, upsertLeaderboard, getPlayerListings, updatePlayerListing, getPlayer, removePlayer, addChatMessage, updatePlayerContract, updateFranchiseAgreement, withPlayerLock, getChatMessages, getLeaderboard } from '../db/queries.js';
+import { getAllActivePlayers, savePlayerState, getGame, saveGame, upsertLeaderboard, getPlayerListings, updatePlayerListing, getPlayer, removePlayer, addChatMessage, updatePlayerContract, updateFranchiseAgreement, withPlayerLock, getChatMessages, getLeaderboard, createPlayer } from '../db/queries.js';
 import { uid } from '../../shared/helpers/random.js';
 import { simDay } from '../engine/simDay.js';
-import { simAIPlayerDay, isBotPlayer } from '../engine/aiPlayers.js';
+import { simAIPlayerDay, isBotPlayer, createStealthPlayer } from '../engine/aiPlayers.js';
 import { runBotTick, resetBotChatBudget, getPendingBotChats, getBotChatQueue, getBotPhaseOutTargets } from '../engine/botDecision.js';
 import { generateAIBotChats } from '../services/botChatAI.js';
 import { initAIShops } from '../engine/aiShops.js';
@@ -590,7 +590,43 @@ export async function runTick(clients) {
       console.log(`[AI Init] Seeded ${game.ai_shops.length} AI shops`);
     }
 
-    // Legacy AI auto-seeding disabled — use admin panel to create stealth bots instead
+    // Auto-spawn stealth bots to maintain a minimum population
+    try {
+      const BOT_TARGET = 15;
+      const currentBots = players.filter(p => isBotPlayer(p.game_state));
+      const botCount = currentBots.length;
+      if (botCount < BOT_TARGET) {
+        const toSpawn = Math.min(3, BOT_TARGET - botCount); // spawn up to 3 per tick
+        const PERSONALITIES = ['conservative', 'hoarder', 'flipper', 'empire_builder', 'speculator', 'regional_king', 'ecom_focused', 'social_butterfly', 'bargain_hunter'];
+        const BOT_NAMES = [
+          ['Dusty Kovacs', 'Kovacs Tire & Auto'], ['Benny Ramirez', 'Ramirez Wheels'], ['Sharon Tully', 'Tully Tire Co'],
+          ['Mac Pruitt', 'Pruitt Performance'], ['Loretta Hicks', 'Hicks Auto Supply'], ['Dale Fenwick', 'Fenwick Tires'],
+          ['Gina Marotta', 'Marotta Motorsport'], ['Vic Espinoza', 'Espinoza Tire Depot'], ['Roy Blanchard', 'Blanchard & Sons'],
+          ['Cass Whitmore', 'Whitmore Auto'], ['Pete Dolan', 'Dolan Tire Barn'], ['Marta Solis', 'Solis Tire Works'],
+          ['Hank Dobbins', 'Dobbins Tire Center'], ['Faye Calloway', 'Calloway Auto Parts'], ['Sid Nakamura', 'Nakamura Speed'],
+          ['Bev Ostrowski', 'Ostrowski Tire'], ['Luther Crane', 'Crane Tire & Lube'], ['Angie Bassett', 'Bassett Auto Group'],
+        ];
+        // Pick names not already used
+        const usedNames = new Set(players.map(p => p.game_state.name));
+        const available = BOT_NAMES.filter(([n]) => !usedNames.has(n));
+        for (let i = 0; i < toSpawn && available.length > 0; i++) {
+          const [name, company] = available.splice(Math.floor(Math.random() * available.length), 1)[0];
+          const intensity = Math.floor(Math.random() * 7) + 2; // 2-8
+          const bot = createStealthPlayer(name, company, null, intensity, 'system');
+          await createPlayer(bot.id, bot.game_state.name, bot.game_state);
+          console.log(`[AutoSpawn] Created bot: ${name} (${company}) intensity=${intensity}`);
+        }
+        // Reload players list if we spawned any
+        if (toSpawn > 0 && available.length >= 0) {
+          const fresh = await getAllActivePlayers();
+          players.length = 0;
+          players.push(...fresh);
+        }
+      }
+    } catch (spawnErr) {
+      console.error('[AutoSpawn] Error:', spawnErr.message);
+    }
+
 
     const playerPriceAvg = aggregatePlayerPrices(players);
     const aiPriceAvg = aggregateAIPrices(game.ai_shops || []);
