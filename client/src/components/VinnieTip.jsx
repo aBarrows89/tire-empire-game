@@ -93,6 +93,26 @@ function collectMatchingTips(g, stateGlobalEvents) {
     if (g.reputation >= 30 && g.cash > 200000) pushTip(tips, 'importGame');
   }
 
+  // ─── ENDGAME (rep 50+ — always show something useful) ───
+  if (g.reputation >= 50) {
+    pushTip(tips, 'endgame_general');
+    if (g.hasFactory) pushTip(tips, 'endgame_factory');
+    if (g.stockExchange?.isPublic) pushTip(tips, 'endgame_stock');
+    if (g.hasWholesale) pushTip(tips, 'endgame_wholesale');
+    if (g.hasEcom) pushTip(tips, 'endgame_ecom');
+    if (g.hasDist) pushTip(tips, 'endgame_distribution');
+    if (!g.hasFactory && g.cash > 2000000) pushTip(tips, 'endgame_factory_nudge');
+    if (!g.stockExchange?.isPublic && g.reputation >= 40) pushTip(tips, 'endgame_ipo_nudge');
+    if (!g.hasDist && g.hasWholesale) pushTip(tips, 'endgame_dist_nudge');
+    if (g.reputation >= 80) pushTip(tips, 'endgame_legend');
+    if (g.cash > 500000 && (g.bankBalance || 0) < 50000) pushTip(tips, 'endgame_bank');
+    if ((g.loans || []).length > 0) pushTip(tips, 'endgame_debt');
+    if (cal.season === 'Fall') pushTip(tips, 'endgame_fall');
+    if (cal.season === 'Winter') pushTip(tips, 'endgame_winter');
+    if (cal.season === 'Spring') pushTip(tips, 'endgame_spring');
+    if (cal.season === 'Summer') pushTip(tips, 'endgame_summer');
+  }
+
   // ─── FACTORY ───
   if (g.hasFactory && g.factory) {
     const factoryStaffCount = Object.values(g.factory.staff || {}).reduce((a, b) => a + b, 0);
