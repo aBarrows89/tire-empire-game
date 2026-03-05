@@ -34,6 +34,7 @@ import EcommercePanel from './components/panels/EcommercePanel.jsx';
 import WholesalePanel from './components/panels/WholesalePanel.jsx';
 import ExchangePanel from './components/panels/ExchangePanel.jsx';
 import MapPanel from './components/panels/MapPanel.jsx';
+import TireCoinStorePanel from './components/panels/TireCoinStorePanel.jsx';
 
 const PANELS = {
   dashboard: DashboardPanel,
@@ -55,6 +56,7 @@ const PANELS = {
   wholesale: WholesalePanel,
   exchange: ExchangePanel,
   map: MapPanel,
+  store: TireCoinStorePanel,
 };
 
 function SplashScreen() {
