@@ -55,7 +55,7 @@ export { API_BASE, getHeaders };
  * @param {number} retries - number of retries (default 2)
  * @returns {Promise<Response>}
  */
-async function fetchWithRetry(url, opts = {}, retries = 2) {
+async function fetchWithRetry(url, opts = {}, retries = 1) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const res = await fetch(url, opts);
@@ -96,7 +96,7 @@ export async function registerPlayer(playerName, companyName, referralCode) {
 // Client-side action queue — serialize requests to prevent race conditions
 let _actionInFlight = false;
 const _actionQueue = [];
-const ACTION_TIMEOUT_MS = 15000;
+const ACTION_TIMEOUT_MS = 6000;
 const MAX_QUEUE_SIZE = 10;
 
 export async function postAction(action, params = {}) {
@@ -146,6 +146,17 @@ async function _executeAction(action, params) {
       _executeAction(next.action, next.params).then(next.resolve).catch(next.reject);
     }
   }
+}
+
+/**
+ * Post action and return the updated state from the response.
+ * Panels should use this instead of postAction + refreshState() to avoid double round trips.
+ */
+export async function postActionFast(action, params = {}) {
+  const result = await postAction(action, params);
+  // The server returns { ok: true, state: updatedGameState }
+  // Return the state directly so the caller can update context without a separate GET
+  return result;
 }
 
 export async function getMarket() {

@@ -769,6 +769,17 @@ export async function handleMisc(action, params, g, ctx) {
       break;
     }
 
+    case 'setAutoRestock': {
+      const { enabled, threshold, maxSpend } = params;
+      g.autoRestock = {
+        enabled: !!enabled,
+        threshold: Math.max(0.1, Math.min(0.8, Number(threshold) || 0.3)),
+        maxSpend: Math.max(5000, Math.min(200000, Number(maxSpend) || 50000)),
+      };
+      g.log.push({ msg: enabled ? 'Auto-restock enabled' : 'Auto-restock disabled', cat: 'source' });
+      break;
+    }
+
     default: return null;
   }
   return g;
