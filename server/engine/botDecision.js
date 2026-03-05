@@ -920,47 +920,22 @@ export function getPendingBotChats() {
 function runChat(g, cfg, pw, shared) {
   if (_botChatBudget <= 0) return;
 
-  // Always decrement cooldown, even on "inactive" ticks
-  if (cfg.chatCooldown > 0) {
-    cfg.chatCooldown--;
-    // UNLESS someone @mentioned us — always respond to that
-    const recentMessages = shared.recentChatMessages || [];
-    const myName = (g.companyName || g.name || '').toLowerCase();
-    const calledOut = recentMessages.some(m =>
-      m.playerId !== g.id &&
-      (m.text || '').toLowerCase().includes(myName) &&
-      m.timestamp > (cfg._lastChatCheckTime || 0)
-    );
-    if (!calledOut) return;
-    // If called out, skip cooldown and respond
-    cfg.chatCooldown = 0;
-  }
-
-  cfg._lastChatCheckTime = Date.now();
-
-  // Base chat chance scales with intensity
   const intensity = cfg.intensity || 5;
-  const baseChatChance = intensity <= 3 ? 0.08 : intensity <= 6 ? 0.15 : intensity <= 9 ? 0.25 : 0.35;
-  const personalityMult = (pw.chatFrequency || 1);
-  const chatChance = baseChatChance * personalityMult;
-
-  // Check for @mentions or callouts FIRST — always respond to those
   const recentMessages = shared.recentChatMessages || [];
   const myName = (g.companyName || g.name || '').toLowerCase();
   const otherMessages = recentMessages.filter(m => m.playerId !== g.id);
 
-  // Find messages that call out this bot specifically
+  // ── CHECK FOR @MENTIONS / CALLOUTS — always respond, skip cooldown ──
   const callouts = otherMessages.filter(m => {
     const txt = (m.text || '').toLowerCase();
-    return txt.includes(myName) || txt.includes(`@${myName}`);
+    return (txt.includes(myName) || txt.includes(`@${myName}`)) &&
+           (m.timestamp || 0) > (cfg._lastChatCheckTime || 0);
   });
 
-  if (callouts.length > 0) {
-    // ALWAYS respond to a direct callout — skip random chance
-    const target = callouts[callouts.length - 1]; // Most recent callout
+  if (callouts.length > 0 && _botChatBudget > 0) {
+    const target = callouts[callouts.length - 1];
     const result = generateReply(g, cfg, [target], shared);
     if (result) {
-      // Always @mention back when responding to a callout
       if (!result.text.includes('@')) {
         result.text = `@${target.playerName} ${result.text}`;
       }
@@ -978,13 +953,22 @@ function runChat(g, cfg, pw, shared) {
         } : undefined,
       });
       _botChatBudget--;
-      const intensityCooldownMod = Math.max(1, 6 - Math.floor(intensity / 2));
-      cfg.chatCooldown = Ri(1, Math.max(2, intensityCooldownMod));
-      return; // Handled the callout
+      cfg._lastChatCheckTime = Date.now();
+      cfg.chatCooldown = Ri(1, 3); // Short cooldown after callout response
+      return;
     }
   }
 
-  // Regular chat — random chance
+  // ── REGULAR CHAT — cooldown + random chance ──
+  if (cfg.chatCooldown > 0) {
+    cfg.chatCooldown--;
+    return;
+  }
+
+  cfg._lastChatCheckTime = Date.now();
+
+  const baseChatChance = intensity <= 3 ? 0.08 : intensity <= 6 ? 0.15 : intensity <= 9 ? 0.25 : 0.35;
+  const chatChance = baseChatChance * (pw.chatFrequency || 1);
   if (Math.random() > chatChance) return;
 
   let msg = null;
@@ -1039,7 +1023,7 @@ function generateReply(g, cfg, recentMessages, shared) {
   // Pick a message to reply to (prefer more recent, prefer real players)
   const weighted = recentMessages.map((m, i) => ({
     msg: m,
-    weight: (recentMessages.length - i) * (m.isBot ? 0.3 : 1.0), // Prefer real players, prefer recent
+    weight: (recentMessages.length - i) * (m.isBot ? 0.3 : 1.0),
   }));
   const totalWeight = weighted.reduce((a, w) => a + w.weight, 0);
   let roll = Math.random() * totalWeight;
@@ -1053,37 +1037,55 @@ function generateReply(g, cfg, recentMessages, shared) {
   const personality = cfg.personality || 'conservative';
   const intensity = cfg.intensity || 5;
 
-  // Classify the message and pick a reply category
+  // ── KEYWORD EXTRACTION — what is this message actually about? ──
+  const topics = [];
+  if (text.match(/pric|cost|margin|markup|cheap|expensive|undercut/)) topics.push('about_pricing');
+  if (text.match(/tire|all.?season|winter|performance|commercial|inventory|stock/)) topics.push('about_tires');
+  if (text.match(/cash|money|revenue|profit|loan|bank|broke|afford|pay/)) topics.push('about_money');
+  if (text.match(/expand|shop|location|city|open|franchise|grow/)) topics.push('about_expansion');
+  if (text.match(/factory|produc|brand|wholesale|manufactur|r&d|quality/)) topics.push('about_factory');
+
+  // ── CLASSIFY the message type ──
   let category = null;
 
   // Is it a question?
-  if (text.includes('?') || text.startsWith('how') || text.startsWith('what') || text.startsWith('when') || text.startsWith('anyone')) {
-    category = 'question_response';
+  if (text.includes('?') || text.match(/^(how|what|when|where|why|anyone|should|is it|do you|does)/)) {
+    // If we detected a topic, use the topic-specific response
+    if (topics.length > 0) {
+      category = pick(topics);
+    } else {
+      category = 'question_response';
+    }
   }
   // Is it bragging / milestone?
-  else if (text.includes('just hit') || text.includes('finally') || text.includes('best month') || text.includes('top 3') || text.includes('going public') || text.includes('revenue')) {
+  else if (text.match(/just hit|finally|best month|top \d|going public|crossed|record|milestone/)) {
     category = Math.random() < 0.6 ? 'congratulate' : 'competitive';
   }
   // Is it a complaint?
-  else if (text.includes('killing') || text.includes('tanked') || text.includes('struggling') || text.includes('can\'t') || text.includes('insane') || text.includes('robbery')) {
-    category = Math.random() < 0.7 ? 'agree' : 'helpful';
+  else if (text.match(/kill|tank|struggl|can't|insane|robber|worst|losing|hate|broke|bankrupt/)) {
+    category = Math.random() < 0.5 ? 'agree' : 'helpful';
+    // If there's a topic, sometimes give topic-specific helpful advice
+    if (topics.length > 0 && Math.random() < 0.4) category = pick(topics);
   }
-  // Generic — just agree or add to the conversation
+  // Has a detectable topic — respond on-topic
+  else if (topics.length > 0) {
+    category = pick(topics);
+  }
+  // Generic
   else {
-    category = pick(['agree', 'helpful', 'disagree']);
+    category = pick(['agree', 'helpful', 'question_response']);
   }
 
-  // Personality adjustments
+  // ── PERSONALITY adjustments ──
   if (personality === 'social_butterfly') {
-    // Social butterflies are more likely to congratulate and agree
     if (category === 'disagree') category = 'agree';
     if (category === 'competitive') category = 'congratulate';
   } else if (personality === 'empire_builder' || personality === 'speculator') {
-    // Competitive types are more likely to talk trash
     if (category === 'congratulate' && Math.random() < 0.4) category = 'competitive';
   } else if (personality === 'conservative') {
-    // Conservatives give helpful advice
     if (category === 'competitive') category = 'helpful';
+  } else if (personality === 'bargain_hunter') {
+    if (topics.includes('about_pricing') || topics.includes('about_money')) category = pick(topics);
   }
 
   const templates = REPLY_TEMPLATES[category];
@@ -1096,85 +1098,99 @@ function generateReply(g, cfg, recentMessages, shared) {
   template = template
     .replace(/{city}/g, city)
     .replace(/{company}/g, g.companyName || 'My company')
-    .replace(/{shopCount}/g, String((g.locations || []).length));
+    .replace(/{shopCount}/g, String((g.locations || []).length))
+    .replace(/{day}/g, String(g.day || 0));
 
-  // Sometimes @mention the person they're replying to
-  if (Math.random() < 0.3) {
+  // @mention ~40% of replies
+  if (Math.random() < 0.4) {
     template = `@${target.playerName} ${template}`;
   }
 
-  // Apply personality voice
+  // Apply personality voice (always — not random)
   template = applyPersonalityVoice(template, personality);
 
   return { text: template, replyTo: target };
 }
 
 function generateChatMessage(g, cfg, shared) {
-  // Pick category based on context
+  const personality = cfg.personality || 'conservative';
+  const intensity = cfg.intensity || 5;
+  const locCount = (g.locations || []).length;
+  const cash = g.cash || 0;
+  const dayRev = g.dayRev || 0;
+  const rep = g.reputation || 0;
+
+  // ── STATE-AWARE category selection — NEVER contradict reality ──
   const categories = [];
 
-  // Milestone messages if near a milestone
-  if (g.reputation >= 24 && g.reputation < 26) categories.push('milestone');
-  if (g.totalRev >= 90000 && g.totalRev < 110000) categories.push('milestone');
-  if ((g.locations || []).length > 0 && g.day < 60) categories.push('milestone');
-  if (g.hasFactory && g.day % 30 < 2) categories.push('milestone');
-  if (g.hasWholesale && g.day % 20 < 2) categories.push('milestone');
+  // Milestones — only if something ACTUALLY just happened
+  if (rep >= 24 && rep < 27) categories.push('milestone');
+  if (rep >= 49 && rep < 52) categories.push('milestone');
+  if (rep >= 74 && rep < 77) categories.push('milestone');
+  if (g.hasFactory && g.day % 30 < 3) categories.push('milestone');
+  if (g.hasWholesale && g.day % 20 < 3) categories.push('milestone');
+  if (locCount > 0 && g.day < 60) categories.push('milestone');
 
-  // Complaints when things are tough
-  if (g.dayRev < g.prevDayRev * 0.6) categories.push('complaint');
-  if (g.cash < 5000) categories.push('complaint');
-  if (g.dayProfit < 0) categories.push('complaint');
+  // Complaints — ONLY if the bot is actually struggling
+  if (cash < 10000 && locCount > 0) categories.push('complaint', 'complaint'); // Weight heavier
+  if (dayRev > 0 && (g.prevDayRev || 0) > 0 && dayRev < (g.prevDayRev || 0) * 0.5) categories.push('complaint');
+  if ((g.dayProfit || 0) < 0) categories.push('complaint');
+
+  // Bragging — ONLY if the bot is actually doing well
+  if (dayRev > 3000 && cash > 20000) categories.push('bragging');
+  if (locCount >= 3 && cash > 50000) categories.push('bragging');
+  if (rep > 50 && dayRev > 5000) categories.push('bragging');
 
   // Reactions to global events
   if ((shared?.globalEvents || []).length > 0) categories.push('reaction');
 
-  // Bragging when doing well
-  if (g.dayRev > 5000) categories.push('bragging');
-  if ((g.locations || []).length >= 3) categories.push('bragging');
-  if (g.reputation > 50) categories.push('bragging');
-
-  // Trash talk from competitive personalities
-  const personality = cfg.personality || 'conservative';
-  if (['empire_builder', 'flipper', 'speculator'].includes(personality)) {
+  // Trash talk — only from competitive personalities who are actually doing well
+  if (['empire_builder', 'flipper', 'speculator'].includes(personality) && cash > 30000) {
     categories.push('trash_talk');
   }
 
-  // Casual messages — always a possibility
-  categories.push('casual');
-  categories.push('casual');
+  // Casual — always available, weighted so it's common
+  categories.push('casual', 'casual', 'casual');
 
-  // Default: questions
-  categories.push('question');
-  categories.push('question');
+  // Questions — weighted by intensity (low intensity asks more, high intensity gives more advice)
+  if (intensity <= 5) categories.push('question', 'question', 'question');
+  else categories.push('question');
 
   const category = pick(categories);
-  const templates = CHAT_TEMPLATES[category] || CHAT_TEMPLATES.question;
+  const templates = CHAT_TEMPLATES[category] || CHAT_TEMPLATES.casual;
   let template = pick(templates);
 
-  // Fill in template variables
+  // ── FILL VARIABLES with actual data ──
   const city = g.locations?.[0] ? CITIES.find(c => c.id === g.locations[0].cityId)?.name || 'my city' : 'the market';
-  const shopOrdinal = ['1st', '2nd', '3rd', '4th', '5th'][(g.locations || []).length - 1] || `${(g.locations || []).length}th`;
-  const nextUnlock = g.reputation < 25 ? 'Wholesale' : g.reputation < 30 ? 'E-commerce' : g.reputation < 75 ? 'Factory' : 'Legend status';
+  const shopOrdinal = ['1st', '2nd', '3rd', '4th', '5th'][locCount - 1] || `${locCount}th`;
+  const nextUnlock = rep < 25 ? 'Wholesale' : rep < 30 ? 'E-commerce' : rep < 75 ? 'Factory' : 'Legend status';
   const ticker = g.stockExchange?.ticker || (g.companyName || 'CO').split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 4);
 
   template = template
     .replace(/{city}/g, city)
-    .replace(/{rep}/g, String(Math.floor(g.reputation)))
-    .replace(/{revenue}/g, formatCash(g.totalRev))
+    .replace(/{rep}/g, String(Math.floor(rep)))
+    .replace(/{revenue}/g, formatCash(g.totalRev || 0))
     .replace(/{company}/g, g.companyName || 'My company')
     .replace(/{shopOrdinal}/g, shopOrdinal)
     .replace(/{nextUnlock}/g, nextUnlock)
     .replace(/{ticker}/g, ticker)
-    .replace(/{weeklyRev}/g, formatCash(g.dayRev * 7))
-    .replace(/{monthlyRev}/g, formatCash(g.dayRev * 30))
-    .replace(/{shopCount}/g, String((g.locations || []).length))
+    .replace(/{weeklyRev}/g, formatCash(dayRev * 7))
+    .replace(/{monthlyRev}/g, formatCash(dayRev * 30))
+    .replace(/{shopCount}/g, String(locCount))
     .replace(/{loyalty}/g, String(Math.floor(g.locations?.[0]?.loyalty || 0)))
-    .replace(/{wsRev}/g, formatCash(Math.floor(R(500, 3000) * (cfg.intensity || 5) / 10)))
+    .replace(/{wsRev}/g, formatCash(Math.floor(R(500, 3000) * intensity / 10)))
     .replace(/{rent}/g, formatCash(7000))
     .replace(/{tcValue}/g, formatCash(shared?.tcValue || 10000))
     .replace(/{day}/g, String(g.day || 0));
 
-  // Apply personality voice
+  // ── SANITY CHECK — if the filled message contradicts state, regenerate ──
+  const lower = template.toLowerCase();
+  // Don't brag about $0 revenue
+  if (category === 'bragging' && (lower.includes('$0') || lower.includes('$0k'))) {
+    template = pick(CHAT_TEMPLATES.casual);
+  }
+
+  // Apply personality voice (always — this is what makes bots sound different)
   template = applyPersonalityVoice(template, personality);
 
   return template;
@@ -1184,22 +1200,22 @@ function applyPersonalityVoice(text, personality) {
   const voice = PERSONALITY_VOICE[personality];
   if (!voice) return text;
 
-  // Sometimes add a personality-specific prefix
-  if (voice.prefix && Math.random() < 0.2) {
+  // Prefix — 50% chance (was 20%) — this is what makes each bot recognizable
+  if (voice.prefix && Math.random() < 0.50) {
     const prefix = pick(voice.prefix);
     if (prefix) text = prefix + text.charAt(0).toLowerCase() + text.slice(1);
   }
 
-  // Sometimes add a personality-specific suffix
-  if (voice.suffix && Math.random() < 0.15) {
+  // Suffix — 35% chance (was 15%)
+  if (voice.suffix && Math.random() < 0.35) {
     const suffix = pick(voice.suffix);
     if (suffix) text = text + suffix;
   }
 
-  // Apply word transforms
+  // Word transforms — 80% chance (was 50%) — these DEFINE the personality
   if (voice.transforms) {
     for (const [from, to] of Object.entries(voice.transforms)) {
-      if (text.toLowerCase().includes(from) && Math.random() < 0.5) {
+      if (text.toLowerCase().includes(from)) {
         text = text.replace(new RegExp(from, 'i'), to);
       }
     }
