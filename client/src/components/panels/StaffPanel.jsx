@@ -17,21 +17,39 @@ const ROLES = [
 export default function StaffPanel() {
   const { state, refreshState } = useGame();
   const g = state.game;
+  const [pending, setPending] = React.useState(null);
+  const [error, setError] = React.useState(null);
 
   const totalPayroll = Object.entries(g.staff).reduce(
     (a, [k, v]) => a + (PAY[k] || 0) * v, 0
   );
 
   const hire = async (role) => {
-    await postAction('hireStaff', { role });
-    hapticsMedium();
-    refreshState();
+    if (pending) return;
+    setPending(role + '_hire');
+    setError(null);
+    try {
+      const res = await postAction('hireStaff', { role });
+      if (res?.error) { setError(res.error); setTimeout(() => setError(null), 3000); return; }
+      hapticsMedium();
+      refreshState();
+    } finally {
+      setPending(null);
+    }
   };
 
   const fire = async (role) => {
-    await postAction('fireStaff', { role });
-    hapticsMedium();
-    refreshState();
+    if (pending) return;
+    setPending(role + '_fire');
+    setError(null);
+    try {
+      const res = await postAction('fireStaff', { role });
+      if (res?.error) { setError(res.error); setTimeout(() => setError(null), 3000); return; }
+      hapticsMedium();
+      refreshState();
+    } finally {
+      setPending(null);
+    }
   };
 
   return (
@@ -41,6 +59,7 @@ export default function StaffPanel() {
         <div className="text-sm text-dim">
           Monthly payroll: <span className="text-red font-bold">${fmt(totalPayroll)}</span>
         </div>
+        {error && <div className="text-xs text-red mt-4">{error}</div>}
         {g.locations.length === 0 && (
           <div className="text-xs text-dim mt-8">Open a shop before hiring staff.</div>
         )}
@@ -61,18 +80,18 @@ export default function StaffPanel() {
             <div className="row-between">
               <button
                 className="btn btn-sm btn-red"
-                disabled={count <= 0}
+                disabled={count <= 0 || !!pending}
                 onClick={() => fire(key)}
               >
-                -
+                {pending === key + '_fire' ? '…' : '-'}
               </button>
               <span className="font-bold" style={{ fontSize: 20 }}>{count}</span>
               <button
                 className="btn btn-sm btn-green"
-                disabled={atMax}
+                disabled={atMax || !!pending}
                 onClick={() => hire(key)}
               >
-                +
+                {pending === key + '_hire' ? '…' : '+'}
               </button>
             </div>
           </div>

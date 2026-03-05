@@ -100,10 +100,10 @@ const ACTION_TIMEOUT_MS = 6000;
 const MAX_QUEUE_SIZE = 10;
 
 export async function postAction(action, params = {}) {
-  if (!navigator.onLine) {
-    await queueAction(action, params);
-    return { ok: true, queued: true };
-  }
+  // Note: navigator.onLine is unreliable — it can be false even when HTTP works fine
+  // (e.g. when WebSocket is disconnecting/reconnecting). We skip the offline check here
+  // and let the actual fetch fail naturally. Actions only queue to IndexedDB if the
+  // fetch itself throws a network error (caught below in _executeAction).
   // If an action is already in flight, queue this one (with overflow protection)
   if (_actionInFlight) {
     if (_actionQueue.length >= MAX_QUEUE_SIZE) {
@@ -136,7 +136,9 @@ async function _executeAction(action, params) {
       if (err.name === 'AbortError') {
         return { ok: false, error: 'Request timed out. Try again.' };
       }
-      throw err;
+      // True network failure (fetch threw) — queue for replay when back online
+      await queueAction(action, params);
+      return { ok: false, queued: true, error: 'Network error — action queued for retry.' };
     }
   } finally {
     _actionInFlight = false;
@@ -223,9 +225,13 @@ export function useWebSocket(onTick, onChat, onChatDelete, onAnnouncement, onCon
       if (destroyed) return;
       let wsUrl;
       if (SERVER_URL) {
+        // Native builds: convert http(s) to ws(s)
         wsUrl = SERVER_URL.replace(/^http/, 'ws');
       } else {
-        wsUrl = `ws://${window.location.hostname}:3000`;
+        // Browser builds served from the same origin (Railway, dev, etc.)
+        // Use current page protocol so https -> wss automatically
+        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = `${proto}//${window.location.host}`;
       }
 
       const ws = new WebSocket(wsUrl);
