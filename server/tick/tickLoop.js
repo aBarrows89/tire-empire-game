@@ -1607,6 +1607,7 @@ export async function runTick(clients) {
       season: cal.season,
       playerCount: players.length,
       timestamp: Date.now(),
+      tickMs: currentTickMs,
       exchange: exchangeState ? {
         indices: exchangeState.indices,
         sentiment: exchangeState.sentiment?.value,

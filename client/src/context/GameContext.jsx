@@ -72,6 +72,8 @@ function gameReducer(state, action) {
         tcValue: action.payload.tcValue || 50000,
         tcMetrics: action.payload.tcMetrics || state.tcMetrics || null,
         tcHistory: action.payload.tcHistory || state.tcHistory || [],
+        lastTickTime: action.payload.timestamp || state.lastTickTime || null,
+        tickDuration: action.payload.tickMs || state.tickDuration || 20000,
       };
     default:
       return state;
@@ -175,6 +177,8 @@ export function GameProvider({ children }) {
         tcValue: tickMsg.tcValue,
         tcMetrics: tickMsg.tcMetrics,
         tcHistory: tickMsg.tcHistory,
+        timestamp: tickMsg.timestamp || Date.now(),
+        tickMs: tickMsg.tickMs || 20000,
       } });
     }
     window.dispatchEvent(new CustomEvent('gameTick'));
