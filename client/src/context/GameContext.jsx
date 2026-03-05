@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
-import { getState, useWebSocket, sendWsMessage } from '../api/client.js';
+import { getState, useWebSocket, sendWsMessage, API_BASE, getHeaders } from '../api/client.js';
 import { cacheGameState, getCachedGameState, getPendingActions, clearPendingActions } from '../services/offlineCache.js';
 import { postAction } from '../api/client.js';
 import { safeSetItem, safeGetItem } from '../services/storage.js';
@@ -126,7 +126,8 @@ export function GameProvider({ children }) {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/chat?limit=100&channel=global');
+        const h = await getHeaders();
+        const res = await fetch(`${API_BASE}/chat?limit=100&channel=global`, { headers: h });
         if (!res.ok) return;
         const msgs = await res.json();
         if (!Array.isArray(msgs)) return;
