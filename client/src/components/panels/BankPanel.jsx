@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { LOANS } from '@shared/constants/loans.js';
+import { LOAN_INDEX_TO_TIER } from '@shared/constants/bank.js';
 import { fmt } from '@shared/helpers/format.js';
 import { postAction } from '../../api/client.js';
 import { hapticsMedium } from '../../api/haptics.js';
@@ -96,6 +97,20 @@ export default function BankPanel() {
         </div>
       </UICard>
 
+      {/* ── BANK RATE INDICATOR ── */}
+      {g._bankState && (
+        <UICard style={{ padding: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+              Bank Rate: <b style={{ color: 'var(--accent)' }}>{((g._bankState.savingsRate || 0.042) * 100).toFixed(1)}%</b>
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--text-dim)' }}>
+              {g._bankState.rateDirection === 'up' ? '\u25B2 Rising' : g._bankState.rateDirection === 'down' ? '\u25BC Falling' : '\u25C6 Holding'}
+            </div>
+          </div>
+        </UICard>
+      )}
+
       {/* ── DAILY P&L ── */}
       <UICard>
         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>{'\u{1F4B3}'} Daily P&L</div>
@@ -126,7 +141,8 @@ export default function BankPanel() {
         <>
           <SectionHeader title={`Active Loans (${loans.length})`} icon={'\u{1F4CB}'}/>
           {loans.map((loan, i) => {
-            const paidPct = loan.amount > 0 ? Math.round(((loan.amount - loan.remaining) / loan.amount) * 100) : 0;
+            const loanAmt = loan.amt || loan.amount || 0;
+            const paidPct = loanAmt > 0 ? Math.round(((loanAmt - (loan.remaining || 0)) / loanAmt) * 100) : 0;
             return (
               <UICard key={loan.id || i}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -143,8 +159,8 @@ export default function BankPanel() {
                 </div>
                 <ProgressBar pct={paidPct} color="var(--accent)"/>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--text-dim)', marginTop: 2 }}>
-                  <span>${fmt(loan.amount - loan.remaining)} paid</span>
-                  <span>${fmt(loan.amount || 0)} total</span>
+                  <span>${fmt(loanAmt - (loan.remaining || 0))} paid</span>
+                  <span>${fmt(loanAmt)} total</span>
                 </div>
                 {/* Extra payment */}
                 <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
@@ -166,15 +182,20 @@ export default function BankPanel() {
       {/* ── AVAILABLE LOANS ── */}
       <SectionHeader title="Available Loans" icon={'\u{1F3E6}'}/>
       {LOANS.map((loan, i) => {
-        const canTake = (g.reputation || 0) >= (loan.minRep || 0) && loans.length < 5;
+        const canTake = (g.reputation || 0) >= (loan.rr || 0) && loans.length < 5;
+        const tierKey = LOAN_INDEX_TO_TIER[i];
+        const bankRates = g._bankState?.loanRates || {};
+        const dynamicRate = tierKey && bankRates[tierKey] ? bankRates[tierKey] : loan.r * (g._loanRateMult || 1);
+        const loanTotal = loan.amt * (1 + dynamicRate);
+        const weeklyPay = Math.round(loanTotal / (loan.t * 4));
         return (
           <UICard key={i} style={{ opacity: canTake ? 1 : 0.5 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>${fmt(loan.amount)}</div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>${fmt(loan.amt)}</div>
                 <div style={{ fontSize: 10, color: 'var(--text-dim)' }}>
-                  {(loan.rate * 100).toFixed(0)}% APR {'\u00B7'} ${fmt(loan.weeklyPayment)}/week
-                  {loan.minRep > 0 && ` \u00B7 Rep ${loan.minRep}+`}
+                  {(dynamicRate * 100).toFixed(1)}% APR {'\u00B7'} ${fmt(weeklyPay)}/week {'\u00B7'} {loan.t} months
+                  {loan.rr > 0 && ` \u00B7 Rep ${loan.rr}+`}
                 </div>
               </div>
               <button onClick={() => take(i)} disabled={busy === `loan-${i}` || !canTake}
