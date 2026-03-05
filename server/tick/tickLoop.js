@@ -663,6 +663,8 @@ export async function runTick(clients) {
     if (!game.economy.tcMarketplace) game.economy.tcMarketplace = { listings: [], tradeHistory: [] };
 
     // Collect economic data from all players
+    // Use ALL players (including bots) for economic calculations — bots hold and spend TC too
+    const allPlayerCount = Math.max(1, players.length);
     const realPlayers = players.filter(p => !isBotPlayer(p.game_state));
     const activePlayerCount = Math.max(1, realPlayers.length);
     const totalCash = players.reduce((sum, p) =>
@@ -734,17 +736,20 @@ export async function runTick(clients) {
       cb.weekStartValue = prevTcValue;
       cb.weekStartDay = day;
 
-      // ── Factor 1: Per-Capita TC Scarcity (power-law) ──
-      const tcPerCapita = totalTC / activePlayerCount;
-      const scarcityBaseline = 10;
+      // ── Factor 1: Per-Capita TC Scarcity (gentler curve) ──
+      // Use ALL players (bots + real) as the denominator — everyone holds TC
+      const tcPerCapita = totalTC / allPlayerCount;
+      // Baseline: 500 TC per player is "neutral" — at this level value is 1.0x
+      // Above 500: value decreases gently. Below 500: value increases.
+      const scarcityBaseline = 500;
       const tcSupplyFactor = totalTC > 0
-        ? Math.max(0.3, Math.min(3.0, Math.pow(scarcityBaseline / Math.max(0.1, tcPerCapita), 0.35)))
+        ? Math.max(0.6, Math.min(2.0, Math.pow(scarcityBaseline / Math.max(1, tcPerCapita), 0.20)))
         : 1.0;
 
       // ── Factor 2: Velocity of Money (Cash Inflation) ──
-      const cashPerCapita = totalCash / activePlayerCount;
-      const cashRatio = cashPerCapita / 50000;
-      const velocityFactor = Math.max(0.5, Math.min(2.0, Math.sqrt(Math.max(0.1, cashRatio))));
+      const cashPerCapita = totalCash / allPlayerCount;
+      const cashRatio = cashPerCapita / 100000; // $100K per player is "neutral"
+      const velocityFactor = Math.max(0.7, Math.min(1.5, Math.sqrt(Math.max(0.1, cashRatio))));
 
       // ── Factor 3: Resource Scarcity (Rubber) ──
       const rubberDemandRatio = totalRubberOutput > 0
