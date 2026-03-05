@@ -192,20 +192,20 @@ export function runBotTick(g, shared, allPlayers) {
   const intensity = cfg.intensity || 5;
   const level = INTENSITY_LEVELS[intensity] || INTENSITY_LEVELS[5];
   const personality = cfg.personality || 'conservative';
-  const pWeights = PERSONALITIES[personality]?.weights || PERSONALITIES.conservative.weights;
+  const pWeights = PERSONALITIES[personality]?.weights || PERSONALITIES.conservative?.weights || { chatFrequency: 1, buyFrequency: 1, expansionDrive: 1, loanWillingness: 0.5, inventoryTarget: 0.7, priceAboveMarket: 0, stockTradeFreq: 1 };
   const t = intensity / 11;
 
   // ═══ PRIORITY 0: ADMIN DIRECTIVES ═══
-  executeBotDirectives(g);
+  try { executeBotDirectives(g); } catch (e) { /* directive error won't kill the bot */ }
 
-  // ═══ ALWAYS: Staff management runs every tick (you don't fire everyone on a day off) ═══
-  runStaffManagement(g, cfg, t, intensity);
+  // ═══ ALWAYS: Staff management runs every tick ═══
+  try { runStaffManagement(g, cfg, t, intensity); } catch (e) { /* staff error won't kill chat */ }
 
-  // ═══ ALWAYS: Loan management (payments happen whether you're active or not) ═══
-  runLoanManagement(g, cfg, t, intensity, shared);
+  // ═══ ALWAYS: Loan management ═══
+  try { runLoanManagement(g, cfg, t, intensity, shared); } catch (e) { /* loan error won't kill chat */ }
 
-  // ═══ ALWAYS: Chat — people chat even on days they're not actively working ═══
-  runChat(g, cfg, pWeights, shared);
+  // ═══ ALWAYS: Chat — MUST run regardless of what happens above ═══
+  try { runChat(g, cfg, pWeights, shared); } catch (e) { /* chat should never crash but if it does, bot keeps going */ }
 
   // Check activity schedule — everything below only runs on "active" ticks
   if (!shouldAct(g)) {
@@ -216,31 +216,33 @@ export function runBotTick(g, shared, allPlayers) {
   // Now run bot DECISIONS on top of the simulated state
 
   // ═══ PRIORITY 1: SURVIVAL CHECKS ═══
-  runSurvival(g, cfg, t);
+  try { runSurvival(g, cfg, t); } catch (e) {}
 
   // ═══ PRIORITY 2: PERSONALITY-DRIVEN ACTIONS (buy inventory, set prices, expand) ═══
-  runPersonalityActions(g, cfg, pWeights, personality, t, intensity, level, shared);
+  try { runPersonalityActions(g, cfg, pWeights, personality, t, intensity, level, shared); } catch (e) {}
 
   // ═══ PRIORITY 3: INTENSITY-SCALED OPTIMIZATION (unlock wholesale, ecom, factory, etc.) ═══
-  runOptimizations(g, cfg, pWeights, t, intensity, level, shared);
+  try { runOptimizations(g, cfg, pWeights, t, intensity, level, shared); } catch (e) {}
 
   // ═══ FRANCHISE & GOV CONTRACTS (high-level mechanics) ═══
-  runFranchise(g, cfg, pWeights, t, intensity);
-  runGovContracts(g, cfg, t, intensity);
-  runEarlyGameHustle(g, cfg, t, intensity);
-  runTCSpending(g, cfg, t, intensity);
-  runWholesaleBuying(g, cfg, t, intensity, allPlayers, shared);
+  try { runFranchise(g, cfg, pWeights, t, intensity); } catch (e) {}
+  try { runGovContracts(g, cfg, t, intensity); } catch (e) {}
+  try { runEarlyGameHustle(g, cfg, t, intensity); } catch (e) {}
+  try { runTCSpending(g, cfg, t, intensity); } catch (e) {}
+  try { runWholesaleBuying(g, cfg, t, intensity, allPlayers, shared); } catch (e) {}
 
   // ═══ PRIORITY 4: HUMAN NOISE (MISTAKES) ═══
-  if (Math.random() < level.mistakeRate) {
-    runMistake(g, cfg, intensity);
-  }
+  try {
+    if (Math.random() < level.mistakeRate) {
+      runMistake(g, cfg, intensity);
+    }
+  } catch (e) {}
 
   // ═══ STOCK EXCHANGE ACTIVITY ═══
-  runStockExchange(g, cfg, pWeights, t, intensity, allPlayers, shared);
+  try { runStockExchange(g, cfg, pWeights, t, intensity, allPlayers, shared); } catch (e) {}
 
   // ═══ P2P CONTRACT DECISIONS ═══
-  botContractDecision(g, shared, allPlayers);
+  try { botContractDecision(g, shared, allPlayers); } catch (e) {}
 
   // Whale schedule: extra actions
   const sched = SCHEDULES[cfg.schedule];
@@ -926,11 +928,13 @@ function runChat(g, cfg, pw, shared) {
   const otherMessages = recentMessages.filter(m => m.playerId !== g.id);
 
   // ── CHECK FOR @MENTIONS / CALLOUTS — always respond, skip cooldown ──
-  const callouts = otherMessages.filter(m => {
-    const txt = (m.text || '').toLowerCase();
-    return (txt.includes(myName) || txt.includes(`@${myName}`)) &&
-           (m.timestamp || 0) > (cfg._lastChatCheckTime || 0);
-  });
+  // Only check if bot has a real name (empty string matches everything)
+  if (myName.length >= 3) {
+    const callouts = otherMessages.filter(m => {
+      const txt = (m.text || '').toLowerCase();
+      return (txt.includes(myName) || txt.includes(`@${myName}`)) &&
+             (m.timestamp || 0) > (cfg._lastChatCheckTime || 0);
+    });
 
   if (callouts.length > 0 && _botChatBudget > 0) {
     const target = callouts[callouts.length - 1];
@@ -958,6 +962,7 @@ function runChat(g, cfg, pw, shared) {
       return;
     }
   }
+  } // end myName.length >= 3 guard
 
   // ── REGULAR CHAT — cooldown + random chance ──
   if (cfg.chatCooldown > 0) {
@@ -968,7 +973,7 @@ function runChat(g, cfg, pw, shared) {
   cfg._lastChatCheckTime = Date.now();
 
   const baseChatChance = intensity <= 3 ? 0.08 : intensity <= 6 ? 0.15 : intensity <= 9 ? 0.25 : 0.35;
-  const chatChance = baseChatChance * (pw.chatFrequency || 1);
+  const chatChance = baseChatChance * ((pw && pw.chatFrequency) || 1);
   if (Math.random() > chatChance) return;
 
   let msg = null;
@@ -1016,7 +1021,7 @@ function runChat(g, cfg, pw, shared) {
   // Social butterflies chat in rapid bursts, others space it out
   // High intensity = more engaged = shorter gaps
   const intensityCooldownMod = Math.max(1, 6 - Math.floor(intensity / 2));
-  cfg.chatCooldown = pw.chatFrequency >= 3 ? Ri(1, 3) : Ri(intensityCooldownMod, intensityCooldownMod + 4);
+  cfg.chatCooldown = (pw && pw.chatFrequency >= 3) ? Ri(1, 3) : Ri(intensityCooldownMod, intensityCooldownMod + 4);
 }
 
 function generateReply(g, cfg, recentMessages, shared) {
