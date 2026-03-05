@@ -70,6 +70,34 @@
 
       <!-- Chat Tab -->
       <section id="tab-chat" class="tab-content">
+        <!-- Admin Message Composer -->
+        <div style="padding:12px;background:#1a1a2e;border-radius:8px;border:1px solid #333;margin-bottom:12px">
+          <h3 style="margin-bottom:8px;font-size:14px">Send Message as ADMIN</h3>
+          <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">
+            <select id="admin-chat-channel" style="width:100px">
+              <option value="global">Global</option>
+              <option value="trade">Trade</option>
+              <option value="help">Help</option>
+            </select>
+            <input id="admin-chat-text" placeholder="Type a message..." style="flex:1;min-width:200px">
+            <button class="btn btn-green btn-sm" onclick="sendAdminChat()">Send</button>
+          </div>
+          <span id="admin-chat-result" style="font-size:12px;margin-top:4px;display:inline-block"></span>
+        </div>
+
+        <!-- Admin DM Panel -->
+        <details id="dm-panel" style="padding:12px;background:#1a1a2e;border-radius:8px;border:1px solid #333;margin-bottom:12px">
+          <summary style="cursor:pointer;font-size:14px;font-weight:600">Direct Message a Player</summary>
+          <div style="margin-top:8px;display:flex;gap:8px;align-items:end;flex-wrap:wrap">
+            <input id="admin-dm-target" placeholder="Player ID" style="width:220px">
+            <input id="admin-dm-text" placeholder="DM message..." style="flex:1;min-width:200px">
+            <button class="btn btn-blue btn-sm" onclick="sendAdminDM()">Send DM</button>
+          </div>
+          <span id="admin-dm-result" style="font-size:12px;margin-top:4px;display:inline-block"></span>
+          <div id="dm-history" style="margin-top:8px;max-height:250px;overflow-y:auto"></div>
+        </details>
+
+        <!-- Mutes -->
         <h3 style="margin-bottom:8px">Active Mutes</h3>
         <div id="mutes-list" style="margin-bottom:12px"><em style="color:#555">None</em></div>
         <div class="mute-form">

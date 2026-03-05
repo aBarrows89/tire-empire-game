@@ -343,6 +343,14 @@ async function loadPlayerDetail(id) {
     `;
     document.getElementById('detail-boosts').innerHTML = boostsHtml;
 
+    // Check if player is admin
+    let isPlayerAdmin = false;
+    try {
+      const settingsRes = await fetch(`${API}/settings`, { headers: AUTH_HEADER });
+      const settingsData = await settingsRes.json();
+      isPlayerAdmin = (settingsData.admins || []).some(a => a.uid === id);
+    } catch {}
+
     const actionsHtml = `
       <h3 style="margin-bottom:8px;font-size:14px">Edit Player</h3>
       <div class="edit-field"><label>Company Name</label><input type="text" id="edit-company-name" value="${esc(g.companyName || '')}" onFocus="this.select()"></div>
@@ -359,6 +367,7 @@ async function loadPlayerDetail(id) {
       <button class="btn btn-green btn-sm" onclick="editPlayer('${esc(id)}')">Save Changes</button>
       <hr style="border-color:#333;margin:12px 0">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn ${isPlayerAdmin ? 'btn-red' : 'btn-blue'} btn-sm" onclick="toggleAdmin('${esc(id)}', ${!isPlayerAdmin})">${isPlayerAdmin ? 'Remove Admin' : 'Make Admin'}</button>
         <button class="btn ${g.isAI ? 'btn-outline' : 'btn-gray'} btn-sm" onclick="toggleAI('${esc(id)}', ${!g.isAI})">${g.isAI ? 'Remove AI Flag' : 'Mark as AI'}</button>
         <button class="btn ${g.isBanned ? 'btn-green' : 'btn-red'} btn-sm" onclick="banPlayer('${esc(id)}', ${!g.isBanned})">${g.isBanned ? 'Unban' : 'Ban'} Player</button>
         <button class="btn ${g.isPremium ? 'btn-outline' : 'btn-yellow'} btn-sm" onclick="setPremium('${esc(id)}', ${!g.isPremium})">${g.isPremium ? 'Revoke Premium' : 'Grant Premium'}</button>
@@ -489,6 +498,24 @@ async function toggleAI(id, isAI) {
   } catch (e) { console.error(e); }
 }
 
+async function toggleAdmin(id, makeAdmin) {
+  const action = makeAdmin ? 'Grant admin access to this player?' : 'Remove admin access from this player?';
+  if (!confirm(action)) return;
+  try {
+    const endpoint = makeAdmin ? `${API}/settings/add-admin` : `${API}/settings/remove-admin`;
+    const res = await fetch(endpoint, {
+      method: 'POST', headers: AUTH_HEADER,
+      body: JSON.stringify({ uid: id }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      loadPlayerDetail(id);
+    } else {
+      alert(data.error || 'Failed');
+    }
+  } catch (e) { console.error(e); }
+}
+
 async function resetPlayer(id) {
   try {
     await fetch(`${API}/players/${id}/reset`, {
@@ -515,6 +542,16 @@ async function deletePlayer(id) {
 
 document.getElementById('refresh-chat-btn').addEventListener('click', loadChat);
 document.getElementById('mute-btn').addEventListener('click', mutePlayer);
+document.getElementById('admin-chat-text').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendAdminChat();
+});
+document.getElementById('admin-dm-text').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendAdminDM();
+});
+document.getElementById('admin-dm-target').addEventListener('change', e => {
+  const pid = e.target.value.trim();
+  if (pid) loadDMHistory(pid);
+});
 
 async function loadChat() {
   try {
@@ -525,17 +562,103 @@ async function loadChat() {
 
     for (const m of messages) {
       const div = document.createElement('div');
-      div.className = 'chat-msg';
+      const isAdmin = m.playerId === 'ADMIN';
+      div.className = 'chat-msg' + (isAdmin ? ' chat-msg-admin' : '');
+      if (isAdmin) div.style.cssText = 'background:#3a2e00;border-left:3px solid #ffd54f';
       const time = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const nameHtml = isAdmin
+        ? `<span class="name" style="color:#ffd54f;font-weight:700">ADMIN</span>`
+        : `<span class="name">${esc(m.playerName)}</span>`;
+      const dmBtn = !isAdmin
+        ? ` <span class="dm-btn" onclick="event.stopPropagation();openDMPanel('${esc(m.playerId)}')" title="DM this player" style="cursor:pointer;color:#4ea8de;font-size:11px;margin-left:4px">[DM]</span>`
+        : '';
       div.innerHTML = `
         <span class="time">${time}</span>
-        <span class="name">${esc(m.playerName)}</span>
+        ${nameHtml}${dmBtn}
         <span class="text">${esc(m.text)}</span>
         <span class="del-btn" onclick="deleteMsg('${esc(m.id)}')" title="Delete message">&#x2715;</span>
       `;
       log.appendChild(div);
     }
     log.scrollTop = log.scrollHeight;
+  } catch (e) { console.error(e); }
+}
+
+async function sendAdminChat() {
+  const text = document.getElementById('admin-chat-text').value.trim();
+  if (!text) return;
+  const channel = document.getElementById('admin-chat-channel').value;
+  const resultEl = document.getElementById('admin-chat-result');
+  try {
+    const res = await fetch(`${API}/chat/send`, {
+      method: 'POST', headers: AUTH_HEADER,
+      body: JSON.stringify({ text, channel }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      document.getElementById('admin-chat-text').value = '';
+      resultEl.textContent = 'Sent!';
+      resultEl.style.color = '#4caf50';
+      loadChat();
+    } else {
+      resultEl.textContent = data.error || 'Failed';
+      resultEl.style.color = '#ef5350';
+    }
+    setTimeout(() => { resultEl.textContent = ''; }, 3000);
+  } catch (e) { console.error(e); }
+}
+
+function openDMPanel(playerId) {
+  const panel = document.getElementById('dm-panel');
+  panel.open = true;
+  document.getElementById('admin-dm-target').value = playerId;
+  loadDMHistory(playerId);
+}
+
+async function sendAdminDM() {
+  const targetPlayerId = document.getElementById('admin-dm-target').value.trim();
+  const text = document.getElementById('admin-dm-text').value.trim();
+  if (!targetPlayerId || !text) return;
+  const resultEl = document.getElementById('admin-dm-result');
+  try {
+    const res = await fetch(`${API}/chat/dm`, {
+      method: 'POST', headers: AUTH_HEADER,
+      body: JSON.stringify({ targetPlayerId, text }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      document.getElementById('admin-dm-text').value = '';
+      resultEl.textContent = 'DM sent!';
+      resultEl.style.color = '#4caf50';
+      loadDMHistory(targetPlayerId);
+    } else {
+      resultEl.textContent = data.error || 'Failed';
+      resultEl.style.color = '#ef5350';
+    }
+    setTimeout(() => { resultEl.textContent = ''; }, 3000);
+  } catch (e) { console.error(e); }
+}
+
+async function loadDMHistory(playerId) {
+  const container = document.getElementById('dm-history');
+  if (!playerId) { container.innerHTML = ''; return; }
+  try {
+    const res = await fetch(`${API}/chat/dm/${encodeURIComponent(playerId)}`, { headers: AUTH_HEADER });
+    const messages = await res.json();
+    if (!messages.length) {
+      container.innerHTML = '<em style="color:#555;font-size:12px">No DM history with this player</em>';
+      return;
+    }
+    container.innerHTML = '';
+    for (const m of messages) {
+      const div = document.createElement('div');
+      const isFromAdmin = m.fromId === 'ADMIN';
+      div.style.cssText = `padding:4px 8px;margin:2px 0;border-radius:4px;font-size:12px;${isFromAdmin ? 'background:#1a2e1a;text-align:right' : 'background:#1a1a2e'}`;
+      const time = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      div.innerHTML = `<span style="color:#666">${time}</span> <strong style="color:${isFromAdmin ? '#ffd54f' : '#4ea8de'}">${isFromAdmin ? 'ADMIN' : esc(m.fromName || m.fromId)}</strong>: ${esc(m.text)}`;
+      container.appendChild(div);
+    }
+    container.scrollTop = container.scrollHeight;
   } catch (e) { console.error(e); }
 }
 

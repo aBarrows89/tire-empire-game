@@ -4,6 +4,7 @@ import {
   getPlayer, createPlayer, savePlayerState, getAllActivePlayers, getGame, saveGame,
   getChatMessages, deleteChatMessage, getChatMutes, setChatMute, removeChatMute,
   removePlayer, saveFile, getFile, getChatReports, updateChatReport,
+  addChatMessage, addDM, getDMs,
 } from '../db/queries.js';
 import { NODE_ENV, STORAGE_TYPE, ADMIN_UIDS } from '../config.js';
 import { getWealth } from '../../shared/helpers/wealth.js';
@@ -388,6 +389,79 @@ router.post('/chat/reports/:id/resolve', async (req, res) => {
   try {
     await updateChatReport(req.params.id, { status: 'resolved' });
     res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Admin Chat Send ──
+router.post('/chat/send', async (req, res) => {
+  try {
+    const text = (req.body.text || '').trim().slice(0, 500);
+    if (!text) return res.status(400).json({ error: 'Missing text' });
+    const channel = ['global', 'trade', 'help'].includes(req.body.channel) ? req.body.channel : 'global';
+
+    const message = {
+      id: `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      playerId: 'ADMIN',
+      playerName: 'ADMIN',
+      channel,
+      text,
+      timestamp: Date.now(),
+    };
+    await addChatMessage(message);
+
+    const clients = req.app.locals.wsClients || new Set();
+    const payload = JSON.stringify({ type: 'chat', message });
+    for (const client of clients) {
+      if (client.readyState === 1) try { client.send(payload); } catch {}
+    }
+
+    await auditLog(req, 'adminChat', null, { channel, text: text.slice(0, 100) });
+    res.json({ ok: true, message });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Admin DM Send ──
+router.post('/chat/dm', async (req, res) => {
+  try {
+    const { targetPlayerId } = req.body;
+    const text = (req.body.text || '').trim().slice(0, 500);
+    if (!targetPlayerId) return res.status(400).json({ error: 'Missing targetPlayerId' });
+    if (!text) return res.status(400).json({ error: 'Missing text' });
+
+    const dmMsg = {
+      id: `dm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      fromId: 'ADMIN',
+      fromName: 'ADMIN',
+      toId: targetPlayerId,
+      text,
+      timestamp: Date.now(),
+    };
+    await addDM(dmMsg);
+
+    // Deliver to target if online
+    const clients = req.app.locals.wsClients || new Set();
+    for (const client of clients) {
+      if (client.playerId === targetPlayerId && client.readyState === 1) {
+        try { client.send(JSON.stringify({ type: 'dm', message: dmMsg })); } catch {}
+      }
+    }
+
+    await auditLog(req, 'adminDM', targetPlayerId, { text: text.slice(0, 100) });
+    res.json({ ok: true, message: dmMsg });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Admin DM History ──
+router.get('/chat/dm/:playerId', async (req, res) => {
+  try {
+    const messages = await getDMs('ADMIN', req.params.playerId);
+    res.json(messages);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
