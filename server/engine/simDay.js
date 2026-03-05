@@ -649,6 +649,7 @@ export function simDay(g, shared = {}) {
             s.log.push({ msg: `${def.icon} Earthquake damage: $${totalDamage.toLocaleString()} in repairs (NO INSURANCE!)`, cat: 'event' });
           }
           s.reputation = Math.max(0, s.reputation - 2);
+          s.log.push({ msg: `⭐ Rep -2 (earthquake damage)`, cat: 'event', day: s.day + (s.startDay || 1) - 1 });
         }
       }
     }
@@ -1029,8 +1030,9 @@ export function simDay(g, shared = {}) {
   }
   if (totalTakeOffs > 0) {
     if (disposalFee > 3) {
-      const repPen = (disposalFee - 3) * 0.01 * totalTakeOffs;
+      const repPen = Math.round((disposalFee - 3) * 0.01 * totalTakeOffs * 100) / 100;
       s.reputation = C(s.reputation - repPen, 0, 100);
+      if (repPen > 0.01) s.log.push({ msg: `⭐ Rep -${repPen} (high disposal fee)`, cat: 'event', day: s.day + (s.startDay || 1) - 1 });
     } else if (disposalFee < 2) {
       const repBoost = (2 - disposalFee) * 0.005 * totalTakeOffs;
       s.reputation = C(s.reputation + repBoost, 0, 100);
@@ -1894,6 +1896,7 @@ export function simDay(g, shared = {}) {
   }
 
   // ── REPUTATION — boosted early game ──
+  const _repBefore = s.reputation;
   if (s.daySold > 0) {
     const earlyBonus = s.day <= 180
       ? Math.max(0, (25 - s.reputation) * 0.025)   // aggressive early: +0.625/day at rep 0
@@ -1905,6 +1908,12 @@ export function simDay(g, shared = {}) {
   // Small passive daily rep for being in business
   if (s.day > 7) {
     s.reputation = C(s.reputation + 0.002, 0, 100);
+  }
+  // Log rep delta so players can see daily changes
+  const _repDelta = Math.round((s.reputation - _repBefore) * 100) / 100;
+  if (Math.abs(_repDelta) >= 0.01) {
+    const sign = _repDelta >= 0 ? '+' : '';
+    s.log.push({ msg: `⭐ Rep: ${sign}${_repDelta} → ${Math.round(s.reputation * 10) / 10}`, cat: 'event', day: s.day + (s.startDay || 1) - 1 });
   }
 
   // ── REVENUE BOOST (referral perk) ──

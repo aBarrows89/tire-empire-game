@@ -254,21 +254,31 @@ export function useWebSocket(onTick, onChat, onChatDelete, onAnnouncement, onCon
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
-      ws.onopen = async () => {
-        backoffMs = 1000; // Reset backoff on successful connection
-        if (connRef.current) connRef.current(true);
-        // Send Firebase token for production auth, or UID for dev
+      // Helper: send subscribe with best available auth
+      const sendSubscribe = async () => {
+        if (!ws || ws.readyState !== 1) return;
         try {
           const token = await getIdToken();
           if (token) {
             ws.send(JSON.stringify({ type: 'subscribe', token }));
-          } else {
-            const uid = getUid();
-            ws.send(JSON.stringify({ type: 'subscribe', playerId: uid || (isDev ? 'dev-player' : '') }));
+            return;
           }
-        } catch {
-          ws.send(JSON.stringify({ type: 'subscribe', playerId: getUid() || (isDev ? 'dev-player' : '') }));
-        }
+        } catch {}
+        // No token yet — subscribe with playerId as fallback
+        // Server will accept this and upgrade to full auth on re-subscribe
+        const uid = getUid();
+        const pid = uid || (isDev ? 'dev-player' : '');
+        if (pid) ws.send(JSON.stringify({ type: 'subscribe', playerId: pid }));
+      };
+
+      ws.onopen = async () => {
+        backoffMs = 1000; // Reset backoff on successful connection
+        if (connRef.current) connRef.current(true);
+        await sendSubscribe();
+        // Re-subscribe after a short delay in case token wasn't ready on open
+        setTimeout(async () => {
+          if (ws.readyState === 1) await sendSubscribe();
+        }, 2000);
         // Flush pending messages queued while disconnected
         while (_pendingWsMessages.length > 0) {
           const pending = _pendingWsMessages.shift();
@@ -281,6 +291,11 @@ export function useWebSocket(onTick, onChat, onChatDelete, onAnnouncement, onCon
           const msg = JSON.parse(e.data);
           if (msg.type === 'ping') {
             ws.send(JSON.stringify({ type: 'pong' }));
+            return;
+          }
+          // If server rejects subscribe, retry with token after a short wait
+          if (msg.type === 'error' && msg.message === 'Authentication required') {
+            setTimeout(async () => { if (ws.readyState === 1) await sendSubscribe(); }, 1500);
             return;
           }
           if (msg.type === 'tick') tickRef.current(msg);
