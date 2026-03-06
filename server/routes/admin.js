@@ -926,13 +926,9 @@ router.post('/trim-economy', async (req, res) => {
     const econ = typeof rows[0].economy === 'string' ? JSON.parse(rows[0].economy) : (rows[0].economy || {});
     const beforeKB = Math.round(JSON.stringify(econ).length / 1024);
 
-    // Pass active player IDs so trimExchange can purge orphaned stocks
+    // Pass ONLY active player IDs so trimExchange purges all orphaned stocks
     const allPlayers = await getAllActivePlayers();
-    const allPlayerIds = allPlayers.map(p => p.id);
-    // Also include any player from the players table (even inactive)
-    const { rows: allRows } = await pgPool.query('SELECT id FROM players');
-    const allDbIds = new Set(allRows.map(r => r.id));
-    econ._activePlayerIds = [...allDbIds];
+    econ._activePlayerIds = allPlayers.map(p => p.id);
 
     // Aggressively trim exchange (biggest contributor — often 10+ MB)
     trimExchange(econ);
