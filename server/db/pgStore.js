@@ -419,7 +419,7 @@ export async function createPlayer(id, name, gameState) {
   return row;
 }
 
-export async function savePlayerState(id, gameState, expectedVersion = null) {
+export async function savePlayerState(id, gameState, expectedVersion = null, { force = false } = {}) {
   // Hard cap on log size — prevents JSON bloat from crashing saves
   if (gameState && Array.isArray(gameState.log) && gameState.log.length > 100) {
     gameState = { ...gameState, log: gameState.log.slice(-100) };
@@ -441,7 +441,7 @@ export async function savePlayerState(id, gameState, expectedVersion = null) {
     // EXCEPTION: if newDay is 0 or undefined (e.g. registration/admin), skip the guard
     const newDay = gameState.day || 0;
     let query, params;
-    if (newDay > 0) {
+    if (newDay > 0 && !force) {
       query = `UPDATE players SET game_state = $2::jsonb, updated_at = NOW(), version = version + 1
                WHERE id = $1 AND COALESCE((game_state->>'day')::int, 0) < $3`; // strict: same-day re-saves blocked
       params = [id, JSON.stringify(gameState), newDay];
@@ -584,8 +584,9 @@ export function trimExchange(econ) {
   }
   // Purge stocks for players that no longer exist (dead bots, removed players)
   // Pass activePlayerIds via econ._activePlayerIds before calling trimExchange
-  if (ex.stocks && ex._activePlayerIds) {
-    const activeIds = new Set(ex._activePlayerIds);
+  const activePlayerIds = econ._activePlayerIds;
+  if (ex.stocks && activePlayerIds) {
+    const activeIds = new Set(activePlayerIds);
     const before = Object.keys(ex.stocks).length;
     for (const [ticker, s] of Object.entries(ex.stocks)) {
       if (!activeIds.has(s.playerId)) {
@@ -593,7 +594,7 @@ export function trimExchange(econ) {
         if (ex.orderBooks?.[ticker]) delete ex.orderBooks[ticker];
       }
     }
-    delete ex._activePlayerIds;
+    delete econ._activePlayerIds;
     // Also purge orphan order books that don't have a matching stock
     if (ex.orderBooks) {
       for (const ticker of Object.keys(ex.orderBooks)) {
@@ -606,12 +607,17 @@ export function trimExchange(econ) {
   // Transaction logs, market reports, etc.
   if (ex.transactionLog?.length > 20) ex.transactionLog = ex.transactionLog.slice(-20);
   if (ex.ipoHistory?.length > 10) ex.ipoHistory = ex.ipoHistory.slice(-10);
-  if (ex.stockTradeLogs?.length > 20) ex.stockTradeLogs = ex.stockTradeLogs.slice(-20);
   delete ex.marketMakerLog;
   // Market report — nuke it (rebuilt each tick)
   delete ex.marketReport;
-  // Stock trade logs
-  if (ex.stockTradeLogs?.length > 10) ex.stockTradeLogs = ex.stockTradeLogs.slice(-10);
+  // Stock trade logs — keyed by ticker, trim each to 10 entries
+  if (ex.stockTradeLogs && typeof ex.stockTradeLogs === 'object') {
+    for (const [ticker, logs] of Object.entries(ex.stockTradeLogs)) {
+      if (Array.isArray(logs) && logs.length > 10) ex.stockTradeLogs[ticker] = logs.slice(0, 10);
+      // Remove trade logs for delisted stocks
+      if (ex.stocks && !ex.stocks[ticker]) delete ex.stockTradeLogs[ticker];
+    }
+  }
   // ETFs
   if (ex.etfs) {
     for (const etf of Object.values(ex.etfs)) {

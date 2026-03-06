@@ -208,7 +208,7 @@ router.post('/players/:id/edit', async (req, res) => {
     g.log = g.log || [];
     g.log.push(`[ADMIN] State edited by admin ${req.adminId}`);
 
-    await savePlayerState(req.params.id, g);
+    await savePlayerState(req.params.id, g, null, { force: true });
     await auditLog(req, 'editPlayer', req.params.id, changes);
     res.json({ ok: true });
   } catch (e) {
@@ -226,7 +226,7 @@ router.post('/players/:id/transfer-from/:sourceId', async (req, res) => {
 
     // Copy source game_state but update the id to the target's id
     const newState = { ...source.game_state, id: req.params.id };
-    await savePlayerState(req.params.id, newState);
+    await savePlayerState(req.params.id, newState, null, { force: true });
     await auditLog(req, 'transferAccount', req.params.id, {
       sourceId: req.params.sourceId,
       targetId: req.params.id,
@@ -248,7 +248,7 @@ router.post('/players/:id/ban', async (req, res) => {
     g.log = g.log || [];
     g.log.push(`[ADMIN] ${banned ? 'Banned' : 'Unbanned'} by admin ${req.adminId}`);
 
-    await savePlayerState(req.params.id, g);
+    await savePlayerState(req.params.id, g, null, { force: true });
     await auditLog(req, banned ? 'ban' : 'unban', req.params.id, {});
 
     if (banned) {
@@ -279,7 +279,7 @@ router.post('/players/:id/reset', async (req, res) => {
     if (oldState._botConfig) freshState._botConfig = oldState._botConfig; // Preserve stealth bot config
     freshState.log = [`[ADMIN] Progress reset by admin ${req.adminId}`];
 
-    await savePlayerState(req.params.id, freshState);
+    await savePlayerState(req.params.id, freshState, null, { force: true });
     await auditLog(req, 'resetPlayer', req.params.id, {});
     res.json({ ok: true });
   } catch (e) {
@@ -316,7 +316,7 @@ router.post('/players/:id/set-premium', async (req, res) => {
     g.log = g.log || [];
     g.log.push(`[ADMIN] Premium ${isPremium ? 'granted' : 'revoked'} by admin ${req.adminId}`);
 
-    await savePlayerState(req.params.id, g);
+    await savePlayerState(req.params.id, g, null, { force: true });
     await auditLog(req, 'setPremium', req.params.id, { isPremium });
     res.json({ ok: true, isPremium });
   } catch (e) {
