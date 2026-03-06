@@ -807,17 +807,6 @@ export function simDay(g, shared = {}) {
     s.commodityContracts = s.commodityContracts.filter(c => c.status === 'active' || (c.status !== 'active' && s.day - (c.endDay || 0) < 30));
   }
 
-  // ── WORLD MARKET COMMODITY SALES (unallocated production) ──
-  if (s.hasFactory && s.factory && s.factory._unallocatedRubber > 0) {
-    const spotRubber = shared.commodityPrices?.rubber ?? 1800;
-    const worldPrice = Math.round(spotRubber * 0.92);
-    const sellQty = s.factory._unallocatedRubber;
-    const proceeds = sellQty * worldPrice;
-    s.cash += proceeds;
-    s.log.push({ msg: `Sold ${sellQty} unallocated rubber to world market at $${worldPrice}/unit ($${proceeds.toLocaleString()})`, cat: 'sale' });
-    delete s.factory._unallocatedRubber;
-  }
-
   // ── FACTORY WHOLESALE ORDERS (AI shops buying from player) ──
   if (s.hasFactory && s.factory?.isDistributor) {
     const allTiresWS = getAllTires(s);
@@ -1146,10 +1135,6 @@ export function simDay(g, shared = {}) {
           }
         }
         if (ordered > 0) {
-          // Deplete supplier stock
-          if (supStock.stock !== undefined) {
-            supStock.stock = Math.max(0, supStock.stock - ordered);
-          }
           s.log.push({ msg: `\u{1F504} Auto-restock: ordered ${ordered} tires ($${Math.round(spent).toLocaleString()}) from ${sup.n}`, cat: 'source' });
           if (stockRatio < 0.3) {
             s.log.push({ msg: `\u26A0\uFE0F ${sup.n} is running low on stock — order quantities limited`, cat: 'source' });

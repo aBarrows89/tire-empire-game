@@ -675,6 +675,13 @@ export async function saveGame(id, day, economy, aiShops, liquidation) {
   // Trim global event history
   if (econClean.globalEventHistory?.length > 30) econClean.globalEventHistory = econClean.globalEventHistory.slice(-30);
 
+  // Trim commodity listings — keep active + last 20 non-active
+  if (econClean.commodityListings?.length > 0) {
+    const active = econClean.commodityListings.filter(l => l.status === 'active');
+    const nonActive = econClean.commodityListings.filter(l => l.status !== 'active').slice(-20);
+    econClean.commodityListings = [...active, ...nonActive];
+  }
+
   // Always trim exchange (the single biggest bloat source)
   trimExchange(econClean);
   if (econClean.adminLog?.length > 50) econClean.adminLog = econClean.adminLog.slice(-50);

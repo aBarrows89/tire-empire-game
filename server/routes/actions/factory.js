@@ -95,6 +95,8 @@ export async function handleFactory(action, params, g, ctx) {
         var syntheticRatio = rubberNeeded > 0 ? synUse / rubberNeeded : 0;
       } else if (g.factory.rubberFarm || g.factory.syntheticLab) {
         return ctx.fail('Build Rubber Storage first to use your rubber production');
+      } else {
+        return ctx.fail(`Need ${rubberNeeded} rubber units. Build a Rubber Farm or buy rubber on the market, then build Rubber Storage.`);
       }
 
       // Multi-line support: determine target line

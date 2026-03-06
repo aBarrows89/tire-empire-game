@@ -136,7 +136,7 @@ const fmt = n => {
 const pct = n => (n > 0 ? '+' : '') + (n || 0).toFixed(2) + '%';
 
 export default function ExchangePanel() {
-  const { state, refreshState } = useGame();
+  const { state, refreshState, applyState } = useGame();
   const g = state.game;
   const se = g.stockExchange || {};
   const [tab, setTab] = useState(0);
@@ -567,7 +567,7 @@ export default function ExchangePanel() {
                               setCommBusy(key);
                               try {
                                 const result = await sellCommodityExchange(key, qty);
-                                if (result.error) { setMsg(result.error); } else { applyState(result); setMsg(`Sold ${qty} ${key} — P&L: $${result.pnl}`); setCommBuyQty(p => ({ ...p, [key]: '' })); }
+                                if (result.error) { setMsg(result.error); } else { applyState(result); setMsg(`Sold ${qty} ${key} — P&L: $${result.pnl}`); setCommSellQty(p => ({ ...p, [key]: '' })); }
                                 load();
                               } catch (e) { setMsg(e.message); }
                               setCommBusy(null);
