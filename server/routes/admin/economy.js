@@ -557,4 +557,42 @@ router.get('/market-watch', async (req, res) => {
   }
 });
 
+// GET /admin/economy/player-debug/:id — inspect a player's raw DB state (key fields only)
+router.get('/player-debug/:id', async (req, res) => {
+  try {
+    const player = await getPlayer(req.params.id);
+    if (!player) return res.status(404).json({ error: 'Player not found' });
+    const g = player.game_state;
+    res.json({
+      id: req.params.id,
+      version: player.version,
+      companyName: g.companyName,
+      day: g.day,
+      cash: g.cash,
+      prevCash: g.prevCash,
+      dayRev: g.dayRev,
+      prevDayRev: g.prevDayRev,
+      staff: g.staff,
+      hasWarehouse: g.hasWarehouse,
+      warehouseInventory: g.warehouseInventory,
+      locationCount: (g.locations || []).length,
+      locations: (g.locations || []).map(l => ({
+        id: l.id,
+        cityId: l.cityId,
+        locStorage: l.locStorage,
+        inventoryTotal: Object.values(l.inventory || {}).reduce((a, b) => a + b, 0),
+        inventory: l.inventory,
+        dailyStats: l.dailyStats,
+      })),
+      warehouseInventoryTotal: Object.values(g.warehouseInventory || {}).reduce((a, b) => a + b, 0),
+      totalInventory: Object.values(g.inventory || {}).reduce((a, b) => a + b, 0),
+      reputation: g.reputation,
+      paused: g.paused,
+      isBanned: g.isBanned,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 export default router;
