@@ -950,6 +950,16 @@ export function simDay(g, shared = {}) {
     }
   }
 
+  // ── DIAGNOSTIC LOG (temporary) ──
+  {
+    const locInvTotals = s.locations.map(l => Object.values(l.inventory || {}).reduce((a,b)=>a+b,0));
+    const whTotal = Object.values(s.warehouseInventory || {}).reduce((a,b)=>a+b,0);
+    const tc = s.staff.techs, sc = s.staff.sales;
+    if (s.dayRev === 0 && s.locations.length > 0) {
+      s.log.push({ msg: `⚠️ $0 revenue: locs=[${locInvTotals.join(',')}] wh=${whTotal} techs=${tc} sales=${sc}`, cat: 'other', day: s.day + (s.startDay||1) - 1 });
+    }
+  }
+
   // ── SHOP SERVICES — daily ──
   s.dayServiceRev = 0;
   s.dayServiceJobs = 0;
