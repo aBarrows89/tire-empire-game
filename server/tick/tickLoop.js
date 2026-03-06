@@ -1281,7 +1281,16 @@ export async function runTick(clients) {
           applyAutoPrice(lockedState);
           applyAutoSource(lockedState);
           if (lockedState.hasAutoRestock || lockedState.isPremium) applyAutoSupplier(lockedState);
-          const newState = simDay(lockedState, shared);
+          let newState;
+          try {
+            newState = simDay(lockedState, shared);
+          } catch (simDayErr) {
+            console.error(`[simDay CRASH] player=${player.id} company="${lockedState.companyName}" day=${lockedState.day}`);
+            console.error(`[simDay CRASH] hasFactory=${lockedState.hasFactory} hasEcom=${lockedState.hasEcom} hasWholesale=${lockedState.hasWholesale} locs=${(lockedState.locations||[]).length}`);
+            console.error(`[simDay CRASH] ecomStaff=${JSON.stringify(lockedState.ecomStaff)} wsClients=${(lockedState.wsClients||[]).length} stockExchange.isPublic=${lockedState.stockExchange?.isPublic}`);
+            console.error(`[simDay CRASH] error:`, simDayErr.stack || simDayErr.message);
+            throw simDayErr;
+          }
 
           // Save with optimistic locking — no merge needed since we hold the lock
           newState.log = (newState.log || []).slice(-50);
