@@ -919,9 +919,11 @@ router.get('/economy-sizes', async (req, res) => {
 // Emergency: trim bloated games row economy JSONB in-place
 router.post('/trim-economy', async (req, res) => {
   try {
-    const game = await getGame();
-    if (!game) return res.status(404).json({ error: 'No game' });
-    const econ = game.economy || {};
+    // Bypass cache — read directly from DB
+    const pgPool = (await import('../db/pool.js')).pool;
+    const { rows } = await pgPool.query('SELECT economy FROM games WHERE id = $1', ['default']);
+    if (!rows[0]) return res.status(404).json({ error: 'No game' });
+    const econ = typeof rows[0].economy === 'string' ? JSON.parse(rows[0].economy) : (rows[0].economy || {});
     const beforeKB = Math.round(JSON.stringify(econ).length / 1024);
 
     // Aggressively trim exchange (biggest contributor — often 10+ MB)
@@ -936,9 +938,8 @@ router.post('/trim-economy', async (req, res) => {
 
     const afterKB = Math.round(JSON.stringify(econ).length / 1024);
     // Force save via direct SQL (bypass the 800KB safety limit for emergency trim)
-    const { pool } = await import('../db/pool.js');
     const econStr = JSON.stringify(econ);
-    await pool.query(
+    await pgPool.query(
       `UPDATE games SET economy = $2::jsonb, updated_at = NOW() WHERE id = $1`,
       ['default', econStr]
     );
