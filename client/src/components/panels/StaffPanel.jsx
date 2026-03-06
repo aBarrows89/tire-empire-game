@@ -30,16 +30,19 @@ export default function StaffPanel() {
     setError(null);
     try {
       const res = await postAction('hireStaff', { role });
+      console.log('[HIRE DEBUG] raw res:', JSON.stringify(res)?.slice(0, 300));
+      console.log('[HIRE DEBUG] res.state?.companyName:', res?.state?.companyName);
+      console.log('[HIRE DEBUG] current g.companyName:', g.companyName);
       if (res?.error) {
         setError(res.error);
         setTimeout(() => setError(null), 3000);
         return;
       }
       hapticsMedium();
-      // Apply authoritative state from server — no optimistic update to avoid
-      // brief welcome screen flash if state shape is unexpected
       if (res?.state) applyState(res);
-    } catch {
+      else console.warn('[HIRE DEBUG] no res.state — not calling applyState');
+    } catch (err) {
+      console.error('[HIRE DEBUG] caught error:', err);
       refreshState();
     } finally {
       setPending(null);
