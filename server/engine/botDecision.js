@@ -1646,17 +1646,21 @@ function runWholesaleBuying(g, cfg, t, intensity, allPlayers, shared) {
   ss.cash += (qty * unitPrice - commission);
 
   // Track on both sides
+  const sellerRevenue = qty * unitPrice - commission;
+  const deliveryCost = 0; // bot-to-player orders have no delivery fee tracked
   if (!g.wholesaleOrdersPlaced) g.wholesaleOrdersPlaced = [];
   g.wholesaleOrdersPlaced.unshift({
-    tireType, qty, unitPrice, day: g.day,
+    tireType, qty, unitPrice, subtotal: qty * unitPrice, day: g.day,
     supplierId: supplier.id, supplierName: ss.companyName || 'Unknown',
+    totalPaid: qty * unitPrice + deliveryCost,
   });
   if (g.wholesaleOrdersPlaced.length > 30) g.wholesaleOrdersPlaced.length = 30;
 
   if (!ss.wholesaleOrdersReceived) ss.wholesaleOrdersReceived = [];
   ss.wholesaleOrdersReceived.unshift({
-    tireType, qty, unitPrice, day: g.day,
+    tireType, qty, unitPrice, subtotal: qty * unitPrice, day: g.day,
     buyerName: g.companyName || 'Unknown',
+    revenue: sellerRevenue,
   });
   if (ss.wholesaleOrdersReceived.length > 30) ss.wholesaleOrdersReceived.length = 30;
 }

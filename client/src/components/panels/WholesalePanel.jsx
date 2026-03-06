@@ -485,7 +485,7 @@ export default function WholesalePanel() {
               <div key={o.id} style={{ marginBottom: 6, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
                 <div className="row-between text-xs">
                   <span className="font-bold">{o.buyerName}</span>
-                  <span className="text-green">+${fmt(o.revenue)}</span>
+                  <span className="text-green">+${fmt(o.revenue ?? o.subtotal ?? 0)}</span>
                 </div>
                 <div className="row-between text-xs text-dim">
                   <span>{o.qty}x {allTires[o.tireType]?.n || o.tireType}</span>
@@ -505,7 +505,7 @@ export default function WholesalePanel() {
               <div key={o.id} style={{ marginBottom: 6, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
                 <div className="row-between text-xs">
                   <span className="font-bold">{o.supplierName}</span>
-                  <span className="text-red">-${fmt(o.totalPaid)}</span>
+                  <span className="text-red">-${fmt(o.totalPaid ?? o.subtotal ?? 0)}</span>
                 </div>
                 <div className="row-between text-xs text-dim">
                   <span>{o.qty}x {allTires[o.tireType]?.n || o.tireType}</span>
