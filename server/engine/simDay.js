@@ -826,8 +826,10 @@ export function simDay(g, shared = {}) {
     const repBoostActive = s.repBoost && s.day < s.repBoost.expiresDay;
     const effectiveRep = s.reputation + (repBoostActive ? (s.repBoost.amount || 5) : 0);
     const demandMult = sDem * (1 + effectiveRep * .01) * (s._tB || 1);
-    // whShortage penalty removed — warehouse staff hire UI not yet implemented,
-    // so applying a shortage penalty would be unfair (players have no way to fix it)
+    // whPenalty intentionally 1 — warehouse staff system (loaders, forklifts, etc.)
+    // exists in getWhStaffReq/getWhShortage but has no player-facing hire UI yet.
+    // TODO: restore penalty when StoragePanel gets warehouse staff hiring:
+    //   const whPenalty = Math.max(0.1, 1 - getWhShortage(s) * .08);
     const whPenalty = 1;
 
     // 16a: Early game boost: logarithmic decay over 270 days (no cliff)
