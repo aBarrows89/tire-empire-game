@@ -275,6 +275,16 @@ export function simDay(g, shared = {}) {
     const fStaff = s.factory.staff;
     const managerBoost = 1 + (fStaff.manager || 0) * 0.20;
 
+    // Commodity-based material cost multiplier (replaces flat commodity system)
+    const rubberPrice = shared.commodityPrices?.rubber ?? 1800;
+    const steelPrice = shared.commodityPrices?.steel ?? 750;
+    const chemPrice = shared.commodityPrices?.chemicals ?? 320;
+    const materialCostMult =
+      (rubberPrice / 1800) * 0.4 +
+      (steelPrice / 750) * 0.3 +
+      (chemPrice / 320) * 0.2 +
+      0.1;
+
     // ── P2P CONTRACT PRODUCTION — runs before general queue ──
     if (s.factory.contractAllocations && Object.keys(s.factory.contractAllocations).length > 0) {
       const dailyCap = (FACTORY.levels.find(l => l.level === s.factory.level) || FACTORY.levels[0]).dailyCapacity + (fStaff.lineWorkers || 0) * 10;
@@ -291,8 +301,8 @@ export function simDay(g, shared = {}) {
         const todayOutput = Math.floor(dailyCap * alloc.percent / 100);
         if (todayOutput <= 0) continue;
 
-        // Check raw material cost
-        const productionCost = (FACTORY.productionCost[alloc.tireType] || 50) * todayOutput;
+        // Check raw material cost (adjusted by commodity prices)
+        const productionCost = Math.round((FACTORY.productionCost[alloc.tireType] || 50) * materialCostMult) * todayOutput;
         if (s.cash < productionCost && s.cash > -500000) {
           // Produce even at a loss if cash > -500k
         } else if (s.cash <= -500000) {
@@ -321,7 +331,7 @@ export function simDay(g, shared = {}) {
           s.factory.syntheticRubber = (s.factory.syntheticRubber || 0) - (rubberUsed - natUse);
         }
 
-        s.cash -= (FACTORY.productionCost[alloc.tireType] || 50) * actualOutput;
+        s.cash -= Math.round((FACTORY.productionCost[alloc.tireType] || 50) * materialCostMult) * actualOutput;
 
         // Add to staging area
         if (!s.factory.contractStaging) s.factory.contractStaging = {};
@@ -498,6 +508,14 @@ export function simDay(g, shared = {}) {
           }
         }
         producedTotal += storeQty;
+
+        // Track commodity demand from production
+        if (goodQty > 0) {
+          if (!s._commodityDemand) s._commodityDemand = {};
+          s._commodityDemand.rubber = (s._commodityDemand.rubber || 0) + Math.round(goodQty * 0.4);
+          s._commodityDemand.steel = (s._commodityDemand.steel || 0) + Math.round(goodQty * 0.3);
+          s._commodityDemand.chemicals = (s._commodityDemand.chemicals || 0) + Math.round(goodQty * 0.2);
+        }
         const tName = allTiresMap[storeKey]?.n || allTiresMap[q.tire]?.n || q.tire;
         const lineLabel = s.factory.lines.length > 1 ? ` [Line ${line.id + 1}]` : '';
         if (overflow > 0) {
@@ -731,6 +749,73 @@ export function simDay(g, shared = {}) {
       s.factory.exclusivityDeals = s.factory.exclusivityDeals.filter(d => d.status === 'active')
         .concat(completed.slice(-10));
     }
+  }
+
+  // ── COMMODITY CONTRACT FULFILLMENT (daily) ──
+  if (s.commodityContracts && s.commodityContracts.length > 0) {
+    for (const contract of s.commodityContracts) {
+      if (contract.status !== 'active') continue;
+      if (s.day > contract.endDay) {
+        contract.status = 'expired';
+        s.log.push({ msg: `Commodity contract for ${contract.commodity} with ${contract.sellerPlayerId === s.id ? contract.buyerName : contract.sellerName} expired`, cat: 'event' });
+        continue;
+      }
+
+      const isSeller = contract.sellerPlayerId === s.id;
+      if (isSeller && s.hasFactory && s.factory) {
+        // Fulfill: deduct from rubber storage, credit cash
+        const qty = contract.qtyPerDay;
+        const price = contract.priceType === 'indexed'
+          ? (shared.commodityPrices?.[contract.commodity] ?? 1800)
+          : contract.pricePerUnit;
+
+        let canFulfill = 0;
+        if (contract.commodity === 'rubber') {
+          canFulfill = Math.min(qty, (s.factory.naturalRubber || 0) + (s.factory.syntheticRubber || 0));
+          // Deduct from natural first, then synthetic
+          let rem = canFulfill;
+          const fromNat = Math.min(s.factory.naturalRubber || 0, rem);
+          s.factory.naturalRubber -= fromNat;
+          rem -= fromNat;
+          if (rem > 0) s.factory.syntheticRubber -= rem;
+        } else if (contract.commodity === 'chemicals') {
+          canFulfill = Math.min(qty, s.factory.syntheticRubber || 0);
+          s.factory.syntheticRubber -= canFulfill;
+        }
+
+        if (canFulfill > 0) {
+          const revenue = canFulfill * price;
+          s.cash += revenue;
+          contract.deliveredQty = (contract.deliveredQty || 0) + canFulfill;
+          contract.totalRevenue = (contract.totalRevenue || 0) + revenue;
+        }
+
+        // Broken contract if can't fulfill for 3+ consecutive days
+        if (canFulfill < qty) {
+          contract._missedDays = (contract._missedDays || 0) + 1;
+          if (contract._missedDays >= 3) {
+            contract.status = 'broken';
+            s.factory.brandReputation = Math.max(0, (s.factory.brandReputation || 0) - 2);
+            s.log.push({ msg: `Commodity contract broken — couldn't deliver ${contract.commodity} for 3 days. Brand rep -2`, cat: 'event' });
+          }
+        } else {
+          contract._missedDays = 0;
+        }
+      }
+    }
+    // Clean up old contracts
+    s.commodityContracts = s.commodityContracts.filter(c => c.status === 'active' || (c.status !== 'active' && s.day - (c.endDay || 0) < 30));
+  }
+
+  // ── WORLD MARKET COMMODITY SALES (unallocated production) ──
+  if (s.hasFactory && s.factory && s.factory._unallocatedRubber > 0) {
+    const spotRubber = shared.commodityPrices?.rubber ?? 1800;
+    const worldPrice = Math.round(spotRubber * 0.92);
+    const sellQty = s.factory._unallocatedRubber;
+    const proceeds = sellQty * worldPrice;
+    s.cash += proceeds;
+    s.log.push({ msg: `Sold ${sellQty} unallocated rubber to world market at $${worldPrice}/unit ($${proceeds.toLocaleString()})`, cat: 'sale' });
+    delete s.factory._unallocatedRubber;
   }
 
   // ── FACTORY WHOLESALE ORDERS (AI shops buying from player) ──
@@ -999,9 +1084,15 @@ export function simDay(g, shared = {}) {
       const supIdx = (s.unlockedSuppliers || [])[0]; // First unlocked
       const sup = SUPPLIERS[supIdx];
       if (sup) {
+        // ── Supplier stock level check (shortage stress) ──
+        const supStock = shared.supplierStockLevels?.[supIdx] || { stock: 1000, maxStock: 1000 };
+        const stockRatio = supStock.stock / supStock.maxStock;
+        // If supplier is very low on stock, cap what we can order
+        const stockLimitMult = stockRatio < 0.3 ? stockRatio / 0.3 : 1;
+
         const budget = Math.min(s.cash * 0.15, s.autoRestock.maxSpend || 50000); // Max 15% of cash or cap
         const freeSpace = whCap - whInv;
-        
+
         // Order tires proportionally based on recent sales history
         const salesHistory = s.salesByType || [];
         // Aggregate last 7 days of sales for a better signal
@@ -1035,14 +1126,17 @@ export function simDay(g, shared = {}) {
         for (const tire of typesToStock) {
           if (spent >= budget || ordered >= freeSpace) break;
           const t = TIRES[tire];
-          const priceMult = shared?.supplierPrices?.[supIdx]?.[tire] || shared?.supplierPricing?.[tire] || 1.0;
+          let priceMult = shared?.supplierPrices?.[supIdx]?.[tire] || shared?.supplierPricing?.[tire] || 1.0;
+          // New player protection: ignore commodity stress for first 90 days
+          if ((s.day || 0) < 90 && priceMult > 1.0) priceMult = Math.min(priceMult, 1.10);
           const unitCost = Math.round(t.bMin * priceMult * (1 - (sup.disc || 0)));
           if (unitCost <= 0) continue;
           // Allocate space proportionally to sales share, capped at MAX_SHARE, min 5 units
           const salesShare = Math.min(MAX_SHARE, (recentSales[tire] || 0) / totalSales);
           const targetQty = Math.max(5, Math.round(freeSpace * salesShare));
           const canAfford = Math.floor((budget - spent) / unitCost);
-          const qty = Math.min(canAfford, targetQty, freeSpace - ordered);
+          const maxFromStock = Math.max(1, Math.floor(targetQty * stockLimitMult));
+          const qty = Math.min(canAfford, maxFromStock, freeSpace - ordered);
           if (qty > 0) {
             const totalCost = qty * unitCost;
             s.cash -= totalCost;
@@ -1052,11 +1146,23 @@ export function simDay(g, shared = {}) {
           }
         }
         if (ordered > 0) {
+          // Deplete supplier stock
+          if (supStock.stock !== undefined) {
+            supStock.stock = Math.max(0, supStock.stock - ordered);
+          }
           s.log.push({ msg: `\u{1F504} Auto-restock: ordered ${ordered} tires ($${Math.round(spent).toLocaleString()}) from ${sup.n}`, cat: 'source' });
+          if (stockRatio < 0.3) {
+            s.log.push({ msg: `\u26A0\uFE0F ${sup.n} is running low on stock — order quantities limited`, cat: 'source' });
+          }
         }
       }
     }
   }
+
+  // ── SHORTAGE DETECTION (used by driver loop + sales) ──
+  const rubberShortage = shared.commodityShortages?.rubber || false;
+  const anyShortage = rubberShortage || shared.commodityShortages?.steel || shared.commodityShortages?.chemicals;
+  const shortageSeverity = rubberShortage ? Math.min(1.0, ((shared.commodityPrices?.rubber || 1800) - 1800) / (1800 * 0.4)) : 0;
 
   // ── AUTO-FILL STORES FROM WAREHOUSE (requires drivers) ──
   const driverCount = s.staff.drivers || 0;
@@ -1138,21 +1244,32 @@ export function simDay(g, shared = {}) {
     }
   }
 
-  // ── CONSOLIDATE USED TIRES FROM SHOPS → WAREHOUSE (requires drivers) ──
+  // ── RETURN USED TIRES FROM SHOPS → WAREHOUSE (policy-aware, requires drivers) ──
   if (driverCount > 0 && s.locations.length > 0) {
     let usedMoved = 0;
     const usedKeys = ['used_junk', 'used_poor', 'used_good', 'used_premium'];
     const whCap = getStorageCap(s);
+    const whUsedCount = usedKeys.reduce((a, k) => a + (s.warehouseInventory[k] || 0), 0);
+    // Soft cap: 200 normally, 400 during shortage (hoard more when they're worth more)
+    const usedSoftCap = anyShortage ? 400 : 200;
 
     for (const loc of s.locations) {
       if (!loc.inventory) continue;
+      const policy = loc.usedTirePolicy || 'auto';
+      if (policy === 'new_only') continue; // Skip — don't touch used inventory
+
       for (const uk of usedKeys) {
         const qty = loc.inventory[uk] || 0;
         if (qty <= 0) continue;
         const whInv = Object.values(s.warehouseInventory || {}).reduce((a, b) => a + b, 0);
         const whFree = whCap - whInv;
         if (whFree <= 0) break;
-        const take = Math.min(qty, whFree);
+        // Check soft cap — stop if warehouse has enough used tires (unless return_used policy)
+        const currentWhUsed = usedKeys.reduce((a, k) => a + (s.warehouseInventory[k] || 0), 0);
+        if (policy !== 'return_used' && currentWhUsed >= usedSoftCap) break;
+        const capRemaining = policy === 'return_used' ? whFree : Math.min(whFree, usedSoftCap - currentWhUsed);
+        if (capRemaining <= 0) break;
+        const take = Math.min(qty, capRemaining);
         loc.inventory[uk] -= take;
         if (loc.inventory[uk] <= 0) delete loc.inventory[uk];
         s.warehouseInventory[uk] = (s.warehouseInventory[uk] || 0) + take;
@@ -1162,6 +1279,26 @@ export function simDay(g, shared = {}) {
     if (usedMoved > 0) {
       s.log.push({ msg: `♻️ Drivers consolidated ${usedMoved} used tires from shops to warehouse`, cat: 'source' });
     }
+    // Vinnie soft cap warning
+    const finalWhUsed = usedKeys.reduce((a, k) => a + (s.warehouseInventory[k] || 0), 0);
+    if (finalWhUsed >= usedSoftCap && s.day % 7 === 0) {
+      s.log.push({ msg: `Vinnie: "You've got ${finalWhUsed} used tires in the warehouse. Route your van to move them before they eat your storage."`, cat: 'vinnie' });
+    }
+  }
+
+  // ── SHORTAGE EFFECTS (price adjustments) ──
+  // Used tires increase in value during shortage (up to +50%)
+  const usedTirePriceBoost = anyShortage ? 1 + shortageSeverity * 0.5 : 1;
+  // Apply shortage boost to used tire prices in player pricing
+  if (anyShortage && usedTirePriceBoost > 1.02) {
+    for (const k of Object.keys(s.prices || {})) {
+      if (k.startsWith('used_') && !s._shortageUsedPriceApplied) {
+        s.prices[k] = Math.round((s.prices[k] || 0) * usedTirePriceBoost);
+      }
+    }
+    s._shortageUsedPriceApplied = true;
+  } else {
+    delete s._shortageUsedPriceApplied;
   }
 
   // ── RETAIL SALES (per-location inventory) — daily ──
@@ -1421,7 +1558,8 @@ export function simDay(g, shared = {}) {
       const earlyBoost = 1 + Math.exp(-s.day / 120);
       // Base demand scales with rep (8 base → grows)
       const baseDemand = 8 + s.reputation * 0.4;
-      const vanDemand = Math.max(2, Math.floor(baseDemand * sDem * (s._tB || 1) * earlyBoost * holidayMult * vanScale));
+      const shortageVanBoost = anyShortage ? 1.25 : 1; // Used tires more in demand from van during shortage
+      const vanDemand = Math.max(2, Math.floor(baseDemand * sDem * (s._tB || 1) * earlyBoost * holidayMult * vanScale * shortageVanBoost));
       let sold = 0;
       for (const [k, t] of Object.entries(TIRES)) {
         if ((wh[k] || 0) <= 0) continue;
@@ -1469,7 +1607,8 @@ export function simDay(g, shared = {}) {
       const city = (shared.cities || []).find(c => c.id === stand.cityId) || { dem: 50 };
 
       let standSold = 0;
-      const standDemand = Math.max(1, Math.floor(city.dem * 0.05 * sDem * market.demandMult * holidayMult));
+      const shortageFlealBoost = anyShortage ? 1.3 : 1; // Used tires in demand during shortage
+      const standDemand = Math.max(1, Math.floor(city.dem * 0.05 * sDem * market.demandMult * holidayMult * shortageFlealBoost));
 
       for (const [k, t] of Object.entries(TIRES)) {
         if (standSold >= capsPerStand) break;

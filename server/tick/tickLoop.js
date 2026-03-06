@@ -1080,6 +1080,40 @@ export async function runTick(clients) {
       }
     }
 
+    // ── Supplier Stock Levels (shortage stress) ──
+    if (!game.economy.supplierStockLevels) {
+      game.economy.supplierStockLevels = {};
+      for (let si = 0; si < SUPPLIERS.length; si++) {
+        game.economy.supplierStockLevels[si] = { stock: 1000, maxStock: 1000 };
+      }
+    }
+    const rubShortageNow = game.economy.exchange?.commodities?.rubber?.shortage || false;
+    const stlShortageNow = game.economy.exchange?.commodities?.steel?.shortage || false;
+    const chmShortageNow = game.economy.exchange?.commodities?.chemicals?.shortage || false;
+    const anyShortageNow = rubShortageNow || stlShortageNow || chmShortageNow;
+    const shortSev = anyShortageNow
+      ? Math.min(1.0, ((game.economy.exchange?.commodities?.rubber?.price || 1800) - 1800) / (1800 * 0.4))
+      : 0;
+
+    for (let si = 0; si < SUPPLIERS.length; si++) {
+      const sl = game.economy.supplierStockLevels[si] || { stock: 1000, maxStock: 1000 };
+      // Daily replenishment: 200/day normally, reduced during shortage
+      const replenishRate = anyShortageNow ? Math.max(50, 200 * (1 - shortSev * 0.7)) : 200;
+      sl.stock = Math.min(sl.maxStock, sl.stock + replenishRate);
+      game.economy.supplierStockLevels[si] = sl;
+    }
+
+    // Commodity stress multiplier on supplier prices during shortage
+    if (anyShortageNow) {
+      const stressMult = 1 + shortSev * 0.15; // 5-15% increase depending on severity
+      for (let si = 0; si < SUPPLIERS.length; si++) {
+        for (const tireKey of Object.keys(TIRES)) {
+          const cur = game.economy.supplierPrices[si]?.[tireKey] || 1.0;
+          game.economy.supplierPrices[si][tireKey] = Math.round(Math.min(1.50, cur * stressMult) * 1000) / 1000;
+        }
+      }
+    }
+
     // ── Dynamic Interest Rates (Bank Bot) — intelligent rate adjustments ──
     if (!game.economy.bankRate) game.economy.bankRate = 0.042;
     if (!game.economy.loanRateMult) game.economy.loanRateMult = 1.0;
@@ -1213,6 +1247,17 @@ export async function runTick(clients) {
       bankState: game.economy.bankState || null,
       exchange: game.economy?.exchange || null,
       recentChatMessages,
+      commodityPrices: {
+        rubber: game.economy?.exchange?.commodities?.rubber?.price ?? 1800,
+        steel: game.economy?.exchange?.commodities?.steel?.price ?? 750,
+        chemicals: game.economy?.exchange?.commodities?.chemicals?.price ?? 320,
+      },
+      commodityShortages: {
+        rubber: game.economy?.exchange?.commodities?.rubber?.shortage || false,
+        steel: game.economy?.exchange?.commodities?.steel?.shortage || false,
+        chemicals: game.economy?.exchange?.commodities?.chemicals?.shortage || false,
+      },
+      supplierStockLevels: game.economy.supplierStockLevels || {},
     };
 
     const cal = getCalendar(day);
@@ -1550,10 +1595,22 @@ export async function runTick(clients) {
         const { initExchange } = await import('../engine/exchange.js');
         game.economy.exchange = initExchange();
       }
+      // Aggregate factory commodity demand from all players
+      game.economy.factoryDemand = { rubber: 0, steel: 0, chemicals: 0 };
+      game.economy.aiSupplierDemand = { rubber: 50, steel: 80, chemicals: 60 };
+      for (const p of players) {
+        const d = p.game_state._commodityDemand || {};
+        for (const k of ['rubber', 'steel', 'chemicals']) {
+          game.economy.factoryDemand[k] += d[k] || 0;
+        }
+        delete p.game_state._commodityDemand;
+      }
+
       const exchangeResult = runExchangeTick(
         game.economy.exchange,
         players,
-        day
+        day,
+        game.economy
       );
       // Save updated player states from exchange operations (dividends, taxes, fees)
       for (const p of exchangeResult.modifiedPlayers) {

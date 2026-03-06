@@ -6,6 +6,7 @@ import {
   applyForIPO, setDividendRatio, unlockExchangeFeature,
   requestVinnieTip, shortSell, coverShort, setAlert,
   buyScratchTicket, claimScratchPrize,
+  buyCommodityExchange, sellCommodityExchange,
 } from '../../api/client.js';
 import PriceChart from '../PriceChart.jsx';
 import OrderBook from '../OrderBook.jsx';
@@ -152,6 +153,9 @@ export default function ExchangePanel() {
   const [scratchRevealed, setScratchRevealed] = useState(new Set());
   const [scratchClaimed, setScratchClaimed] = useState(false);
   const [stockSearch, setStockSearch] = useState('');
+  const [commBuyQty, setCommBuyQty] = useState({});
+  const [commSellQty, setCommSellQty] = useState({});
+  const [commBusy, setCommBusy] = useState(null);
   const [divRatio, setDivRatio] = useState(Math.round((se.dividendPayoutRatio || 0.25) * 100));
   const [ipoDivRatio, setIpoDivRatio] = useState(25);
   const [showExchangeInfo, setShowExchangeInfo] = useState(false);
@@ -454,22 +458,122 @@ export default function ExchangePanel() {
             </div>
           )}
 
-          {/* Commodities */}
+          {/* Commodities Trading */}
           {overview?.commodities && Object.keys(overview.commodities).length > 0 && (
             <div style={{ marginBottom: 12 }}>
-              <h4 style={{ margin: '0 0 6px' }}>Commodities</h4>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {Object.entries(overview.commodities).map(([ticker, comm]) => {
-                  const base = comm.baseValue || 100;
-                  const chg = base > 0 ? ((comm.price - base) / base * 100) : 0;
+              <h4 style={{ margin: '0 0 8px' }}>Commodities</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {Object.entries(overview.commodities).map(([key, comm]) => {
+                  const base = comm.basePrice || comm.baseValue || 100;
+                  const price = comm.price || base;
+                  const chg = base > 0 ? ((price - base) / base * 100) : 0;
+                  const isShortage = comm.shortage;
+                  const history = (comm.priceHistory || []).slice(-14).map(h => h?.close ?? h ?? price);
+                  const pos = se.commodityPositions?.[key];
+                  const pnl = pos ? (price - pos.avgCost) * pos.qty : 0;
+                  const supplyPct = comm.totalDemand > 0 ? Math.min(100, Math.round((comm.worldSupply || 0) / comm.totalDemand * 100)) : 100;
+                  const icons = { rubber: '\u{1F33F}', steel: '\u2699\uFE0F', chemicals: '\u{1F9EA}' };
+                  const tickers = { rubber: 'RBR', steel: 'STL', chemicals: 'CHM' };
+                  const units = { rubber: 'ton', steel: 'ton', chemicals: 'barrel' };
+
+                  // Driver tags
+                  let driverTag = null;
+                  if (isShortage) driverTag = { text: '\u26A0\uFE0F Shortage', color: '#ef5350' };
+                  else if (chg > 10) driverTag = { text: '\u{1F3ED} High factory demand', color: '#ff9800' };
+                  else if (chg < -5) driverTag = { text: '\u21A9\uFE0F Mean reverting', color: '#66bb6a' };
+                  else {
+                    const cal = getCalendar(g.day + (g.startDay || 1) - 1);
+                    if (key === 'rubber' && (cal?.season === 'Winter' || cal?.season === 'Fall')) driverTag = { text: '\u2744\uFE0F Winter premium', color: '#42a5f5' };
+                  }
+
                   return (
-                    <div key={ticker} className="card" style={{ flex: '1 0 90px', textAlign: 'center', padding: 8 }}>
-                      <div style={{ fontWeight: 700, fontSize: 11, color: 'var(--text-dim)', marginBottom: 2 }}>{ticker}</div>
-                      <div style={{ fontSize: 15, fontWeight: 700 }}>{(comm.price || 100).toFixed(1)}</div>
-                      <div style={{ fontSize: 10, color: chg >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                        {chg >= 0 ? '▲' : '▼'} {Math.abs(chg).toFixed(1)}%
+                    <div key={key} className="card" style={{ padding: 10 }}>
+                      {isShortage && (
+                        <div style={{ background: 'rgba(239,83,80,0.12)', border: '1px solid rgba(239,83,80,0.3)', borderRadius: 6, padding: '4px 8px', marginBottom: 6, fontSize: 10, color: '#ef5350', fontWeight: 700 }}>
+                          SHORTAGE — supplier tire prices elevated
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <span style={{ fontSize: 20 }}>{icons[key] || ''}</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13 }}>{comm.name || key} <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>{tickers[key]}</span></div>
+                          <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>${price.toLocaleString()} / {units[key] || 'unit'}</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 15, fontWeight: 700 }}>${price.toLocaleString()}</div>
+                          <div style={{ fontSize: 10, color: chg >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                            {chg >= 0 ? '\u25B2' : '\u25BC'} {Math.abs(chg).toFixed(1)}%
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ fontSize: 9, color: 'var(--text-dim)', marginTop: 2 }}>{comm.name}</div>
+
+                      {/* Sparkline */}
+                      {history.length > 1 && (
+                        <div style={{ marginBottom: 6 }}>
+                          <MiniSparkline data={history} width={200} height={24} color={chg >= 0 ? '#66bb6a' : '#ef5350'} />
+                        </div>
+                      )}
+
+                      {/* Supply/Demand bar */}
+                      <div style={{ marginBottom: 6 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--text-dim)', marginBottom: 2 }}>
+                          <span>Supply vs Demand</span>
+                          <span>{supplyPct}%</span>
+                        </div>
+                        <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${Math.min(100, supplyPct)}%`, borderRadius: 3, background: supplyPct < 80 ? '#ef5350' : supplyPct < 100 ? '#ff9800' : '#66bb6a' }} />
+                        </div>
+                      </div>
+
+                      {driverTag && (
+                        <div style={{ display: 'inline-block', fontSize: 9, padding: '2px 6px', borderRadius: 4, background: `${driverTag.color}15`, color: driverTag.color, border: `1px solid ${driverTag.color}30`, marginBottom: 6 }}>
+                          {driverTag.text}
+                        </div>
+                      )}
+
+                      {/* Player position */}
+                      {pos && pos.qty > 0 && (
+                        <div style={{ fontSize: 10, color: 'var(--text-dim)', marginBottom: 6, padding: '4px 8px', background: 'rgba(255,255,255,0.04)', borderRadius: 4 }}>
+                          You hold <b>{pos.qty}</b> contracts · Avg ${Math.round(pos.avgCost).toLocaleString()} · P&L <span style={{ color: pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>{pnl >= 0 ? '+' : ''}${Math.round(pnl).toLocaleString()}</span>
+                        </div>
+                      )}
+
+                      {/* Buy/Sell controls */}
+                      {se.hasBrokerage && (
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input type="number" min="1" max="500" placeholder="Qty"
+                            value={commBuyQty[key] || ''}
+                            onChange={e => setCommBuyQty(prev => ({ ...prev, [key]: e.target.value }))}
+                            style={{ width: 60, padding: '4px 6px', fontSize: 11, borderRadius: 4, background: 'var(--card-bg)', color: 'var(--text)', border: '1px solid var(--border)' }}
+                          />
+                          <button className="btn btn-sm" disabled={commBusy === key}
+                            style={{ fontSize: 10, padding: '4px 10px', background: 'rgba(102,187,106,0.15)', color: 'var(--green)', border: '1px solid rgba(102,187,106,0.3)' }}
+                            onClick={async () => {
+                              const qty = parseInt(commBuyQty[key]);
+                              if (!qty || qty < 1) return;
+                              setCommBusy(key);
+                              try {
+                                const result = await buyCommodityExchange(key, qty);
+                                if (result.error) { setMsg(result.error); } else { applyState(result); setMsg(`Bought ${qty} ${key} @ $${result.price}`); setCommBuyQty(p => ({ ...p, [key]: '' })); }
+                                load();
+                              } catch (e) { setMsg(e.message); }
+                              setCommBusy(null);
+                            }}>Buy</button>
+                          <button className="btn btn-sm" disabled={commBusy === key || !pos?.qty}
+                            style={{ fontSize: 10, padding: '4px 10px', background: 'rgba(239,83,80,0.15)', color: 'var(--red)', border: '1px solid rgba(239,83,80,0.3)' }}
+                            onClick={async () => {
+                              const qty = parseInt(commSellQty[key] || commBuyQty[key]);
+                              if (!qty || qty < 1) return;
+                              setCommBusy(key);
+                              try {
+                                const result = await sellCommodityExchange(key, qty);
+                                if (result.error) { setMsg(result.error); } else { applyState(result); setMsg(`Sold ${qty} ${key} — P&L: $${result.pnl}`); setCommBuyQty(p => ({ ...p, [key]: '' })); }
+                                load();
+                              } catch (e) { setMsg(e.message); }
+                              setCommBusy(null);
+                            }}>Sell</button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -478,7 +582,6 @@ export default function ExchangePanel() {
           )}
 
           {/* Stocks List */}
-          <h4 style={{ margin: '12px 0 6px' }}>Listed Stocks</h4>
           <input
             type="text"
             placeholder="Search by ticker or company name..."
@@ -486,48 +589,65 @@ export default function ExchangePanel() {
             onChange={e => setStockSearch(e.target.value)}
             style={{ width: '100%', padding: 8, borderRadius: 8, background: 'var(--card-bg)', color: 'var(--text)', border: '1px solid var(--border)', marginBottom: 8, fontSize: 13 }}
           />
-          {stocks.length === 0 ? (
-            <div className="card" style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 16 }}>
-              No companies listed yet. Be the first to IPO!
-            </div>
-          ) : (
-            <div>
-              {stocks.filter(s => {
-                if (!stockSearch) return true;
-                const q = stockSearch.toLowerCase();
-                return s.ticker.toLowerCase().includes(q) || s.companyName.toLowerCase().includes(q);
-              }).map(s => {
-                const riskColor = { 'Very Low': '#4caf50', 'Low': '#44aa99', 'Moderate': '#ff9800', 'High': '#f44336', 'Very High': '#d32f2f' }[s.riskRating] || '#7a8599';
-                return (
-                  <UICard key={s.ticker} onClick={() => { selectStock(s.ticker); setTab(2); }}
-                    style={{ padding: '10px 12px', marginBottom: 6, cursor: 'pointer' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--accent)' }}>${s.ticker}</span>
-                          <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>{s.companyName}</span>
-                        </div>
-                        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                          <Tag color={riskColor} bg={riskColor + '18'}>{s.riskRating}</Tag>
-                          {s.dividendYield > 0 && <Tag color="var(--green)" bg="rgba(76,175,80,0.1)">Div {(s.dividendYield * 100).toFixed(1)}%</Tag>}
-                          <Tag>{s.locations} shops</Tag>
-                        </div>
+          {(() => {
+            const filtered = stocks.filter(s => {
+              if (!stockSearch) return true;
+              const q = stockSearch.toLowerCase();
+              return s.ticker.toLowerCase().includes(q) || (s.companyName || '').toLowerCase().includes(q);
+            });
+            const playerCompanies = filtered.filter(s => !s.isNPC);
+            const npcCompanies = filtered.filter(s => s.isNPC);
+
+            const StockCard = ({ s }) => {
+              const riskColor = { 'Very Low': '#4caf50', 'Low': '#44aa99', 'Moderate': '#ff9800', 'High': '#f44336', 'Very High': '#d32f2f' }[s.riskRating || 'Unknown'] || '#7a8599';
+              return (
+                <UICard key={s.ticker} onClick={() => { selectStock(s.ticker); setTab(2); }}
+                  style={{ padding: '10px 12px', marginBottom: 6, cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--accent)' }}>${s.ticker}</span>
+                        <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>{s.companyName || 'Unknown'}</span>
                       </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 18, fontWeight: 700 }}>{fmt(s.price)}</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
-                          <MiniSparkline data={s.priceHistory || [s.price * 0.95, s.price * 0.97, s.price * 0.99, s.price]} color={s.change >= 0 ? 'var(--green)' : 'var(--red)'} width={50} height={16}/>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: s.change >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                            {s.change >= 0 ? '\u25B2' : '\u25BC'}{Math.abs(s.change || 0).toFixed(1)}%
-                          </span>
-                        </div>
+                      <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                        {s.riskRating && <Tag color={riskColor} bg={riskColor + '18'}>{s.riskRating}</Tag>}
+                        {(s.dividendYield || 0) > 0 && <Tag color="var(--green)" bg="rgba(76,175,80,0.1)">Div {((s.dividendYield || 0) * 100).toFixed(1)}%</Tag>}
+                        {(s.locations || 0) > 0 && <Tag>{s.locations} shops</Tag>}
                       </div>
                     </div>
-                  </UICard>
-                );
-              })}
-            </div>
-          )}
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 18, fontWeight: 700 }}>{fmt(s.price)}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+                        <MiniSparkline data={s.priceHistory || [s.price * 0.95, s.price * 0.97, s.price * 0.99, s.price]} color={(s.change || 0) >= 0 ? 'var(--green)' : 'var(--red)'} width={50} height={16}/>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: (s.change || 0) >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                          {(s.change || 0) >= 0 ? '\u25B2' : '\u25BC'}{Math.abs(s.change || 0).toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </UICard>
+              );
+            };
+
+            return (
+              <>
+                <h4 style={{ margin: '12px 0 6px' }}>Player Companies</h4>
+                {playerCompanies.length === 0 ? (
+                  <div className="card" style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 16 }}>
+                    No player companies have gone public yet.
+                  </div>
+                ) : (
+                  <div>{playerCompanies.map(s => <StockCard key={s.ticker} s={s} />)}</div>
+                )}
+                {npcCompanies.length > 0 && (
+                  <>
+                    <h4 style={{ margin: '12px 0 6px' }}>NPC Companies</h4>
+                    <div>{npcCompanies.map(s => <StockCard key={s.ticker} s={s} />)}</div>
+                  </>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 

@@ -117,3 +117,34 @@ export const LOTTERY_PRIZES = [
 ];
 export const LOTTERY_SCRATCH_CELLS = 9; // 3x3 grid
 export const LOTTERY_WIN_MATCH = 3;     // match 3 to win
+
+/** Real tradable commodities — driven by factory consumption and world supply */
+export const COMMODITIES = {
+  rubber: {
+    id: 'rubber', name: 'Natural Rubber', unit: 'ton',
+    basePrice: 1800, volatility: 0.03,
+    supplyDrivers: ['weather', 'factory_demand', 'season'],
+    ticker: 'RBR', icon: '\u{1F33F}',
+    worldProductionPerDay: 80,
+    worldProductionRampDays: 8,
+  },
+  steel: {
+    id: 'steel', name: 'Steel', unit: 'ton',
+    basePrice: 750, volatility: 0.02,
+    supplyDrivers: ['factory_demand', 'global_events'],
+    ticker: 'STL', icon: '\u2699\uFE0F',
+    worldProductionPerDay: 120,
+    worldProductionRampDays: 10,
+  },
+  chemicals: {
+    id: 'chemicals', name: 'Synthetic Compounds', unit: 'barrel',
+    basePrice: 320, volatility: 0.025,
+    supplyDrivers: ['factory_demand', 'global_events'],
+    ticker: 'CHM', icon: '\u{1F9EA}',
+    worldProductionPerDay: 100,
+    worldProductionRampDays: 6,
+  },
+};
+
+export const COMMODITY_MAX_POSITION = 500;
+export const COMMODITY_PRICE_CLAMP = 0.60; // ±60% of basePrice

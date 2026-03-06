@@ -7,9 +7,10 @@ import {
 } from './exchange.js';
 import {
   DIVIDEND_FREQUENCY, IPO_MIN_REP, IPO_MIN_REVENUE, IPO_MIN_LOCATIONS,
-  IPO_MIN_AGE, IPO_MIN_CASH, IPO_TOTAL_SHARES,
+  IPO_MIN_AGE, IPO_MIN_CASH, IPO_TOTAL_SHARES, COMMODITIES,
 } from '../../shared/constants/exchange.js';
 import { uid } from '../../shared/helpers/random.js';
+import { getCalendar } from '../../shared/helpers/calendar.js';
 
 /**
  * Generate daily market report with basic summary (all players) and premium-only analysis.
@@ -70,13 +71,33 @@ function generateMarketReport(exchangeState, day) {
  * @param {number} day — current game day
  * @returns {{ exchangeState, modifiedPlayers: [{id, game_state}] }}
  */
-export function runExchangeTick(exchangeState, players, day) {
+export function runExchangeTick(exchangeState, players, day, economy) {
   // Initialize on first run
   if (!exchangeState) {
     exchangeState = initExchange();
   }
 
   const modifiedPlayers = [];
+
+  // One-time dedup scan: for any playerId with multiple stocks, keep highest listedDay
+  if (!exchangeState._dedupDone) {
+    const playerStocks = {};
+    for (const [ticker, stock] of Object.entries(exchangeState.stocks)) {
+      const pid = stock.playerId;
+      if (!playerStocks[pid]) playerStocks[pid] = [];
+      playerStocks[pid].push({ ticker, ipoDay: stock.ipoDay || 0 });
+    }
+    for (const entries of Object.values(playerStocks)) {
+      if (entries.length <= 1) continue;
+      entries.sort((a, b) => b.ipoDay - a.ipoDay);
+      // Keep first (highest ipoDay), delete rest
+      for (let i = 1; i < entries.length; i++) {
+        delete exchangeState.stocks[entries[i].ticker];
+        delete exchangeState.orderBooks[entries[i].ticker];
+      }
+    }
+    exchangeState._dedupDone = true;
+  }
 
   // 1. Update fundamentals for all listed stocks (remove orphaned stocks)
   for (const [ticker, stock] of Object.entries(exchangeState.stocks)) {
@@ -113,11 +134,28 @@ export function runExchangeTick(exchangeState, players, day) {
   }
 
   // 2b. Bot IPOs — eligible bot companies go public
+  // Count current NPC stocks (cap at 10)
+  const npcStockCount = Object.values(exchangeState.stocks).filter(s => s.isNPC).length;
+  let npcIPOsThisTick = 0;
+
   for (const p of players) {
     const g = p.game_state;
     const isBot = g.isAI || g._botConfig;
     if (!isBot || !g.stockExchange) continue;
     if (g.stockExchange.isPublic) continue; // Already listed
+
+    // Pre-check: if stock already exists for this player, restore and skip
+    const existingStock = Object.values(exchangeState.stocks).find(s => s.playerId === g.id);
+    if (existingStock) {
+      g.stockExchange.isPublic = true;
+      g.stockExchange.ticker = existingStock.ticker;
+      delete g.stockExchange._pendingIPO;
+      if (!modifiedPlayers.includes(p)) modifiedPlayers.push(p);
+      continue;
+    }
+
+    // Cap NPC stocks at 10
+    if (npcStockCount + npcIPOsThisTick >= 10) continue;
 
     // Check for pending IPO flag (set by botDecision.js) OR meet requirements directly
     const wantsIPO = g.stockExchange._pendingIPO;
@@ -129,8 +167,13 @@ export function runExchangeTick(exchangeState, players, day) {
 
     if (wantsIPO || meetsReqs) {
       try {
-        processIPO(g, exchangeState, day);
-        delete g.stockExchange._pendingIPO; // Clean up the flag
+        const result = processIPO(g, exchangeState, day);
+        if (!result.restored) {
+          // Mark new NPC stock
+          exchangeState.stocks[result.ticker].isNPC = true;
+          npcIPOsThisTick++;
+        }
+        delete g.stockExchange._pendingIPO;
         if (!modifiedPlayers.includes(p)) modifiedPlayers.push(p);
       } catch (e) { /* skip failed IPO */ }
     }
@@ -278,8 +321,28 @@ export function runExchangeTick(exchangeState, players, day) {
     recalculateETF(etf, exchangeState.stocks);
   }
 
-  // 6. Update commodity indices
-  updateCommodityIndices(exchangeState.commodities);
+  // 6. Update commodity indices — real supply/demand simulation
+  // Migrate legacy commodities (RUBR/STEL/CHEM) to new format if needed
+  if (exchangeState.commodities.RUBR && !exchangeState.commodities.rubber) {
+    const newComm = {};
+    for (const [id, def] of Object.entries(COMMODITIES)) {
+      newComm[id] = {
+        name: def.name, ticker: def.ticker, icon: def.icon, unit: def.unit,
+        price: def.basePrice, basePrice: def.basePrice, change: 0,
+        priceHistory: [], dailyVolume: 0,
+        worldSupply: def.worldProductionPerDay,
+        worldSupplyTarget: def.worldProductionPerDay,
+        playerSupply: 0, totalDemand: 0,
+        shortage: false, shortageDay: 0,
+      };
+    }
+    exchangeState.commodities = newComm;
+  }
+  const factoryDemand = economy?.factoryDemand || { rubber: 0, steel: 0, chemicals: 0 };
+  const aiSupplierDemand = economy?.aiSupplierDemand || { rubber: 50, steel: 80, chemicals: 60 };
+  const activeGlobalEvents = economy?.activeGlobalEvents || [];
+  const calendar = getCalendar(day);
+  updateCommodityIndices(exchangeState.commodities, day, factoryDemand, aiSupplierDemand, activeGlobalEvents, calendar);
 
   // 7. Update sentiment, detect/apply crashes (bankruptcies factor into stability)
   updateSentiment(exchangeState.sentiment, exchangeState.stocks, day, exchangeState.bankruptcies);

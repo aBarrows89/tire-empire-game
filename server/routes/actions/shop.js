@@ -154,6 +154,17 @@ export async function handleShop(action, params, g, ctx) {
       break;
     }
 
+    case 'setUsedTirePolicy': {
+      const { locationId, policy } = params;
+      const policyLoc = g.locations.find(l => l.id === locationId);
+      if (!policyLoc) return ctx.fail('Invalid location');
+      if (!['auto', 'new_only', 'return_used'].includes(policy)) return ctx.fail('Policy must be auto, new_only, or return_used');
+      policyLoc.usedTirePolicy = policy;
+      const labels = { auto: 'Auto (balanced)', new_only: 'New only', return_used: 'Return used' };
+      g.log.push({ msg: `Set used tire policy to "${labels[policy]}" for this location`, cat: 'source' });
+      break;
+    }
+
     case 'sellShop': {
       const { locationId } = params;
       const locIdx = g.locations.findIndex(l => l.id === locationId);

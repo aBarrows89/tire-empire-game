@@ -4,7 +4,7 @@ import { authMiddleware } from '../middleware/auth.js';
 import { DAYS_PER_YEAR } from '../../shared/helpers/calendar.js';
 import { CITIES } from '../../shared/constants/cities.js';
 import { uid } from '../../shared/helpers/random.js';
-import pool from '../db/pool.js';
+import { pool } from '../db/pool.js';
 
 const router = Router();
 

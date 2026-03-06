@@ -33,6 +33,7 @@ import adminRetentionRouter from './routes/admin/retention.js';
 import adminMarketingRouter from './routes/admin/marketing.js';
 import adminEconomyToolsRouter from './routes/admin/economy.js';
 import rubberMarketRouter from './routes/rubberMarket.js';
+import commodityMarketRouter from './routes/commodityMarket.js';
 import { startAnalytics } from './analytics/tracker.js';
 import { startRedditScanner } from './services/redditScanner.js';
 import path from 'path';
@@ -124,6 +125,7 @@ app.use('/api/admin/retention', adminRetentionRouter);
 app.use('/api/admin/marketing', adminMarketingRouter);
 app.use('/api/admin/economy', adminEconomyToolsRouter);
 app.use('/api/rubber-market', rubberMarketRouter);
+app.use('/api/commodity-market', commodityMarketRouter);
 
 // ── Admin Dashboard (static HTML) ──
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

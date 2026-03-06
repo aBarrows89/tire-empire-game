@@ -580,6 +580,74 @@ export async function cancelRubberListing(listingId) {
   return res.json();
 }
 
+// Commodity Market API
+export async function getCommodityListings() {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/commodity-market/listings`, { headers });
+  return res.json();
+}
+
+export async function getCommodityPrices() {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/commodity-market/prices`, { headers });
+  return res.json();
+}
+
+export async function listCommodity(commodity, qtyPerDay, pricePerUnit, priceType, durationDays) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/commodity-market/list`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ commodity, qtyPerDay, pricePerUnit, priceType, durationDays }),
+  });
+  return res.json();
+}
+
+export async function buyCommodityListing(listingId) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/commodity-market/buy`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ listingId }),
+  });
+  return res.json();
+}
+
+export async function cancelCommodityListing(listingId) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/commodity-market/cancel`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ listingId }),
+  });
+  return res.json();
+}
+
+export async function sellCommodityToWorld(commodity, qty) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/commodity-market/sell-world`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ commodity, qty }),
+  });
+  return res.json();
+}
+
+// Exchange Commodity Trading API
+export async function buyCommodityExchange(commodity, qty) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/commodity/buy`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ commodity, qty }),
+  });
+  return res.json();
+}
+
+export async function sellCommodityExchange(commodity, qty) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/exchange/commodity/sell`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ commodity, qty }),
+  });
+  return res.json();
+}
+
 // Profile interaction API
 export async function sendCashToPlayer(playerId, amount) {
   const headers = await getHeaders();

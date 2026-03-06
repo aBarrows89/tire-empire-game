@@ -12,6 +12,7 @@ import {
   IPO_MIN_AGE, IPO_MIN_CASH, MAX_OPEN_ORDERS, MAX_ORDER_PCT_FLOAT,
   TC_FEATURES, VINNIE_TIP_COST, LOTTERY_TICKET_COST,
   DIVIDEND_MAX_PAYOUT, CAP_GAINS_HOLD_THRESHOLD,
+  COMMODITIES, COMMODITY_MAX_POSITION, COMMODITY_PRICE_CLAMP,
 } from '../../shared/constants/exchange.js';
 import { MONET } from '../../shared/constants/monetization.js';
 
@@ -90,10 +91,31 @@ router.get('/overview', authMiddleware, async (req, res) => {
         taxesPaid: g.stockExchange.taxesPaid || 0,
       };
     }
+    // Enrich commodities with player positions + structured data
+    const enrichedCommodities = {};
+    for (const [key, comm] of Object.entries(exchangeState.commodities || {})) {
+      const pos = g.stockExchange?.commodityPositions?.[key];
+      enrichedCommodities[key] = {
+        ...comm,
+        playerPosition: pos?.qty || 0,
+        playerAvgCost: pos?.avgCost || 0,
+      };
+      // Strip internal fields from client response
+      delete enrichedCommodities[key]._lastDemand;
+    }
+
+    // TESX index with commodity weighting (20%)
+    const stockIndex = exchangeState.indices?.TESX || 100;
+    const commDeviation = Object.values(exchangeState.commodities || {}).reduce((acc, c) => {
+      const base = c.basePrice || 100;
+      return acc + (c.price - base) / base;
+    }, 0) / Math.max(1, Object.keys(exchangeState.commodities || {}).length);
+    const adjustedIndex = Math.round((stockIndex * 0.8 + stockIndex * (1 + commDeviation) * 0.2) * 100) / 100;
+
     res.json({
       stocks, topMovers: sorted.slice(0, 5), etfs: exchangeState.etfs,
-      commodities: exchangeState.commodities, sentiment: exchangeState.sentiment.value,
-      crashActive: exchangeState.sentiment.crashActive, indices: exchangeState.indices,
+      commodities: enrichedCommodities, sentiment: exchangeState.sentiment.value,
+      crashActive: exchangeState.sentiment.crashActive, indices: { ...exchangeState.indices, TESX: adjustedIndex },
       dayVolume: exchangeState.dayVolume, portfolio,
       marketReport: exchangeState.marketReport || null,
     });
@@ -104,14 +126,27 @@ router.get('/stocks', authMiddleware, async (req, res) => {
   try {
     const exchangeState = await getExchangeState();
     if (!exchangeState) return res.json({ stocks: [] });
-    const stocks = Object.values(exchangeState.stocks).map(s => ({
+    // Only return stocks where isPublic (player has active listing)
+    const allStocks = Object.values(exchangeState.stocks).filter(s => s.isPublic !== false);
+    const playerStocks = allStocks.filter(s => !s.isNPC).map(s => ({
       ticker: s.ticker, companyName: s.companyName, price: s.price, change: s.change,
       sector: s.sector, eps: s.eps, totalShares: s.totalShares, floatShares: s.floatShares,
-      revenue: s.revenue, profit: s.profit, locations: s.locations, reputation: s.reputation,
+      revenue: s.revenue, profit: s.profit, locations: s.locations || 0, reputation: s.reputation || 0,
       riskRating: s.riskRating || 'Unknown', dividendYield: s.dividendYield || 0,
-      weeklyGrowth: s.weeklyGrowth || 0, companyAge: s.companyAge || 0,
+      weeklyGrowth: s.weeklyGrowth || 0, companyAge: s.companyAge || 0, isNPC: false,
     }));
-    res.json({ stocks });
+    // Cap NPC stocks at 10, sorted by market cap descending
+    const npcStocks = allStocks.filter(s => s.isNPC)
+      .sort((a, b) => (b.price * b.totalShares) - (a.price * a.totalShares))
+      .slice(0, 10)
+      .map(s => ({
+        ticker: s.ticker, companyName: s.companyName, price: s.price, change: s.change,
+        sector: s.sector, eps: s.eps, totalShares: s.totalShares, floatShares: s.floatShares,
+        revenue: s.revenue, profit: s.profit, locations: s.locations || 0, reputation: s.reputation || 0,
+        riskRating: s.riskRating || 'Unknown', dividendYield: s.dividendYield || 0,
+        weeklyGrowth: s.weeklyGrowth || 0, companyAge: s.companyAge || 0, isNPC: true,
+      }));
+    res.json({ stocks: [...playerStocks, ...npcStocks] });
   } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
 });
 
@@ -843,6 +878,113 @@ router.post('/tc-market/cancel', authMiddleware, async (req, res) => {
     await savePlayerState(req.playerId, g, null, { force: true });
     res.json({ ok: true, state: g });
   } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// ── Commodity Trading (Part 8) ──
+
+router.post('/commodity/buy', authMiddleware, async (req, res) => {
+  try {
+    const player = await getPlayer(req.playerId);
+    if (!player) return res.status(404).json({ error: 'Player not found' });
+    const g = player.game_state;
+    if (!g.stockExchange?.hasBrokerage) return res.status(400).json({ error: 'Open a brokerage account first' });
+    const { commodity, qty: rawQty } = req.body;
+    if (!COMMODITIES[commodity]) return res.status(400).json({ error: 'Invalid commodity' });
+    const qty = Math.max(1, Math.floor(Number(rawQty) || 0));
+    if (qty <= 0) return res.status(400).json({ error: 'Quantity must be positive' });
+
+    const exchangeState = await getExchangeState();
+    if (!exchangeState?.commodities?.[commodity]) return res.status(400).json({ error: 'Commodity not available' });
+    const comm = exchangeState.commodities[commodity];
+    const currentPrice = comm.price || COMMODITIES[commodity].basePrice;
+
+    // Position limit
+    if (!g.stockExchange.commodityPositions) g.stockExchange.commodityPositions = {};
+    const pos = g.stockExchange.commodityPositions[commodity] || { qty: 0, avgCost: 0 };
+    if (pos.qty + qty > COMMODITY_MAX_POSITION) return res.status(400).json({ error: `Max ${COMMODITY_MAX_POSITION} contracts per commodity` });
+
+    const totalCost = currentPrice * qty;
+    const commission = Math.round(totalCost * 0.015);
+    if (g.cash < totalCost + commission) return res.status(400).json({ error: 'Not enough cash' });
+
+    // Execute buy
+    g.cash -= totalCost + commission;
+    const prevTotal = pos.qty * pos.avgCost;
+    pos.qty += qty;
+    pos.avgCost = pos.qty > 0 ? (prevTotal + totalCost) / pos.qty : 0;
+    g.stockExchange.commodityPositions[commodity] = pos;
+
+    // Price impact
+    const dailyVol = comm.dailyVolume || 0;
+    const impact = qty / Math.max(qty + dailyVol, 100) * 0.1;
+    const basePrice = COMMODITIES[commodity].basePrice;
+    comm.price = Math.min(basePrice * (1 + COMMODITY_PRICE_CLAMP), Math.round(currentPrice * (1 + impact)));
+    comm.dailyVolume = (comm.dailyVolume || 0) + qty;
+
+    // Log
+    g.stockExchange.tradeHistory = g.stockExchange.tradeHistory || [];
+    g.stockExchange.tradeHistory.unshift({
+      id: uid(), ticker: COMMODITIES[commodity].ticker, side: 'buy', qty,
+      avgPrice: currentPrice, commission, day: g.day, type: 'commodity',
+    });
+    if (g.stockExchange.tradeHistory.length > 50) g.stockExchange.tradeHistory.pop();
+    g.log = g.log || [];
+    g.log.push({ msg: `Bought ${qty} ${COMMODITIES[commodity].name} contracts @ $${currentPrice}/${COMMODITIES[commodity].unit}`, cat: 'exchange' });
+
+    await savePlayerState(req.playerId, g, null, { force: true });
+    await saveExchangeState(exchangeState);
+    res.json({ ok: true, price: comm.price, qty, totalCost, commission, state: g });
+  } catch (err) { console.error('Commodity buy error:', err); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+router.post('/commodity/sell', authMiddleware, async (req, res) => {
+  try {
+    const player = await getPlayer(req.playerId);
+    if (!player) return res.status(404).json({ error: 'Player not found' });
+    const g = player.game_state;
+    if (!g.stockExchange?.hasBrokerage) return res.status(400).json({ error: 'Open a brokerage account first' });
+    const { commodity, qty: rawQty } = req.body;
+    if (!COMMODITIES[commodity]) return res.status(400).json({ error: 'Invalid commodity' });
+    const qty = Math.max(1, Math.floor(Number(rawQty) || 0));
+
+    const pos = g.stockExchange?.commodityPositions?.[commodity];
+    if (!pos || pos.qty < qty) return res.status(400).json({ error: 'Not enough contracts to sell' });
+
+    const exchangeState = await getExchangeState();
+    if (!exchangeState?.commodities?.[commodity]) return res.status(400).json({ error: 'Commodity not available' });
+    const comm = exchangeState.commodities[commodity];
+    const currentPrice = comm.price || COMMODITIES[commodity].basePrice;
+
+    const proceeds = currentPrice * qty;
+    const commission = Math.round(proceeds * 0.015);
+    const pnl = (currentPrice - pos.avgCost) * qty;
+
+    // Execute sell
+    g.cash += proceeds - commission;
+    pos.qty -= qty;
+    if (pos.qty <= 0) delete g.stockExchange.commodityPositions[commodity];
+
+    // Price impact (downward)
+    const dailyVol = comm.dailyVolume || 0;
+    const impact = qty / Math.max(qty + dailyVol, 100) * 0.1;
+    const basePrice = COMMODITIES[commodity].basePrice;
+    comm.price = Math.max(basePrice * (1 - COMMODITY_PRICE_CLAMP), Math.round(currentPrice * (1 - impact)));
+    comm.dailyVolume = (comm.dailyVolume || 0) + qty;
+
+    // Log
+    g.stockExchange.tradeHistory = g.stockExchange.tradeHistory || [];
+    g.stockExchange.tradeHistory.unshift({
+      id: uid(), ticker: COMMODITIES[commodity].ticker, side: 'sell', qty,
+      avgPrice: currentPrice, commission, pnl: Math.round(pnl), day: g.day, type: 'commodity',
+    });
+    if (g.stockExchange.tradeHistory.length > 50) g.stockExchange.tradeHistory.pop();
+    g.log = g.log || [];
+    g.log.push({ msg: `Sold ${qty} ${COMMODITIES[commodity].name} contracts @ $${currentPrice}/${COMMODITIES[commodity].unit} (P&L: ${pnl >= 0 ? '+' : ''}$${Math.round(pnl)})`, cat: 'exchange' });
+
+    await savePlayerState(req.playerId, g, null, { force: true });
+    await saveExchangeState(exchangeState);
+    res.json({ ok: true, price: comm.price, qty, proceeds, commission, pnl: Math.round(pnl), state: g });
+  } catch (err) { console.error('Commodity sell error:', err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 export default router;

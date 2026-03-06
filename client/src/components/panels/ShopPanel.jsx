@@ -374,6 +374,26 @@ export default function ShopPanel() {
                         )}
                       </div>
 
+                      {/* Used Tire Policy */}
+                      <div>
+                        <div className="row-between" style={{ marginBottom: 4 }}>
+                          <span className="text-xs text-dim">Used Tire Policy</span>
+                          <select className="autoprice-select" style={{ width: 'auto', fontSize: 10, minHeight: 28, padding: '2px 6px' }}
+                            value={loc.usedTirePolicy || 'auto'}
+                            onChange={async (e) => { setBusy(`used-${loc.id}`); const result = await postAction('setUsedTirePolicy', { locationId: loc.id, policy: e.target.value }); applyState(result); setBusy(null); }}
+                            disabled={busy === `used-${loc.id}`}>
+                            <option value="auto">Auto (balanced)</option>
+                            <option value="new_only">New Only</option>
+                            <option value="return_used">Return Used</option>
+                          </select>
+                        </div>
+                        <div style={{ fontSize: 9, color: 'var(--text-dim)' }}>
+                          {(loc.usedTirePolicy || 'auto') === 'auto' && 'Drivers bring new tires in and return used tires when there\'s space'}
+                          {loc.usedTirePolicy === 'new_only' && 'Drivers only deliver new tires — used tires stay on the floor'}
+                          {loc.usedTirePolicy === 'return_used' && 'Drivers prioritize pulling used tires back to warehouse'}
+                        </div>
+                      </div>
+
                       {/* Shop Sale section */}
                       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
                         {!isListed ? (

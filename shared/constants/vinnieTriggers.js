@@ -105,6 +105,33 @@ export const VINNIE_TRIGGERS = [
     cooldown: 60, priority: 'high',
   },
 
+  // ── COMMODITY SHORTAGE ALERTS ──
+  {
+    id: 'commodity_shortage_suppliers',
+    condition: (g, shared) => (g.hasFactory || g.stockExchange?.hasBrokerage) && (shared.commodityShortages?.rubber || shared.commodityShortages?.steel || shared.commodityShortages?.chemicals),
+    message: "Rubber shortage is hitting suppliers hard. Your restock orders are being delayed. Consider your used tire stock — it's worth more right now.",
+    cooldown: 30, priority: 'critical',
+  },
+  {
+    id: 'used_tire_hoard_shortage',
+    condition: (g, shared) => {
+      if (!g.hasFactory && !g.stockExchange?.hasBrokerage) return false;
+      if (!shared.commodityShortages?.rubber && !shared.commodityShortages?.steel) return false;
+      const usedCount = Object.keys(g.warehouseInventory || {})
+        .filter(k => k.startsWith('used_'))
+        .reduce((a, k) => a + (g.warehouseInventory[k] || 0), 0);
+      return usedCount >= 50;
+    },
+    message: "Shortage is on. Those used tires in your warehouse are worth more than usual. Don't dump them cheap — raise your used tire prices.",
+    cooldown: 30, priority: 'high',
+  },
+  {
+    id: 'factory_rubber_advantage',
+    condition: (g, shared) => g.hasFactory && (shared.commodityShortages?.rubber) && ((g.factory?.naturalRubber || 0) + (g.factory?.syntheticRubber || 0)) > 20,
+    message: "While everyone's scrambling for rubber, your farm is still producing. Your production costs are locked in. Time to undercut the competition.",
+    cooldown: 30, priority: 'high',
+  },
+
   // ── RETENTION / RE-ENGAGEMENT ──
   {
     id: 'idle_nudge',

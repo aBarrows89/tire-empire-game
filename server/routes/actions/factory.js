@@ -43,6 +43,7 @@ export async function handleFactory(action, params, g, ctx) {
         syntheticRubber: 0,
         rubberPreference: 'auto',
       };
+      g.commodityContracts = [];
       break;
     }
 

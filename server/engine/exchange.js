@@ -14,14 +14,25 @@ import {
   LOTTERY_TICKET_COST, LOTTERY_PRIZES, LOTTERY_SCRATCH_CELLS, LOTTERY_WIN_MATCH,
   MARGIN_MAINTENANCE, MARGIN_CALL_DAYS, MARGIN_FORCE_LIQUIDATION_FEE,
   SHORT_MAX_DAYS, SHORT_BORROW_FEE_DAILY,
+  COMMODITIES, COMMODITY_PRICE_CLAMP,
 } from '../../shared/constants/exchange.js';
 
 export function initExchange() {
-  const commodities = {
-    RUBR: { name: 'Rubber', price: 100, baseValue: 100 },
-    STEL: { name: 'Steel', price: 100, baseValue: 100 },
-    CHEM: { name: 'Chemicals', price: 100, baseValue: 100 },
-  };
+  const commodities = {};
+  for (const [id, def] of Object.entries(COMMODITIES)) {
+    commodities[id] = {
+      name: def.name, ticker: def.ticker, icon: def.icon, unit: def.unit,
+      price: def.basePrice, basePrice: def.basePrice, change: 0,
+      priceHistory: [],
+      dailyVolume: 0,
+      worldSupply: def.worldProductionPerDay,
+      worldSupplyTarget: def.worldProductionPerDay,
+      playerSupply: 0,
+      totalDemand: 0,
+      shortage: false,
+      shortageDay: 0,
+    };
+  }
   const etfs = {};
   for (const def of ETF_DEFS) {
     etfs[def.ticker] = { name: def.name, price: 100, change: 0, divisor: 1, components: [], sectorFilter: def.sectorFilter };
@@ -266,6 +277,15 @@ export function refreshMarketMakerQuotes(mm, stock, orderBook) {
 
 export function processIPO(playerState, exchangeState, day) {
   const g = playerState;
+
+  // Guard: if a stock already exists for this player, restore state and skip
+  const existingStock = Object.values(exchangeState.stocks).find(s => s.playerId === g.id);
+  if (existingStock) {
+    g.stockExchange.isPublic = true;
+    g.stockExchange.ticker = existingStock.ticker;
+    return { ticker: existingStock.ticker, initialPrice: existingStock.price, proceeds: 0, listingFee: 0, publicShares: 0, restored: true };
+  }
+
   const ticker = generateTicker(g.companyName, new Set(Object.keys(exchangeState.stocks)));
   const sector = getPlayerSector(g);
   const totalShares = IPO_TOTAL_SHARES;
@@ -336,11 +356,97 @@ export function recalculateETF(etf, stocks) {
   etf.change = prevPrice > 0 ? +((etf.price - prevPrice) / prevPrice * 100).toFixed(2) : 0;
 }
 
-export function updateCommodityIndices(commodities) {
-  for (const [key, comm] of Object.entries(commodities)) {
-    const drift = (Math.random() - 0.48) * 0.03;
-    const pull = (comm.baseValue - comm.price) / comm.baseValue * 0.02;
-    comm.price = Math.max(10, +(comm.price * (1 + drift + pull)).toFixed(2));
+export function updateCommodityIndices(commodities, day, factoryDemand, aiSupplierDemand, activeGlobalEvents, calendar) {
+  for (const [id, comm] of Object.entries(commodities)) {
+    const def = COMMODITIES[id];
+    if (!def) continue; // Legacy commodity — skip
+    const prevPrice = comm.price;
+
+    // Calculate total demand
+    const fDemand = (factoryDemand && factoryDemand[id]) || 0;
+    const aiDemand = (aiSupplierDemand && aiSupplierDemand[id]) || 0;
+    comm.totalDemand = fDemand + aiDemand;
+
+    // Calculate total supply
+    const totalSupply = (comm.worldSupply || def.worldProductionPerDay) + (comm.playerSupply || 0);
+
+    // Shortage detection
+    if (totalSupply < comm.totalDemand * 0.85) {
+      if (!comm.shortage) {
+        comm.shortage = true;
+        comm.shortageDay = day;
+      }
+    } else {
+      comm.shortage = false;
+      comm.shortageDay = 0;
+    }
+
+    // World market ramp: inelastic response
+    if (comm.shortage) {
+      comm.worldSupplyTarget = Math.min(def.worldProductionPerDay * 2, (comm.worldSupplyTarget || def.worldProductionPerDay) * 1.10);
+    } else {
+      // Decay toward baseline
+      comm.worldSupplyTarget = comm.worldSupplyTarget + (def.worldProductionPerDay - comm.worldSupplyTarget) * 0.05;
+    }
+    // Move worldSupply 10% toward target each tick
+    comm.worldSupply = comm.worldSupply + (comm.worldSupplyTarget - comm.worldSupply) * 0.10;
+    // New player protection: world supply never drops below baseline for first 90 days
+    if (day < 90) comm.worldSupply = Math.max(comm.worldSupply, def.worldProductionPerDay);
+
+    // Price simulation
+    let price = comm.price;
+
+    // 1. Random walk
+    price *= (1 + (Math.random() - 0.5) * def.volatility);
+
+    // 2. Demand pressure: +0.5% per 10 units above baseline 50
+    const demandExcess = Math.max(0, comm.totalDemand - 50);
+    price *= (1 + demandExcess * 0.0005);
+
+    // 3. Season modifier
+    const season = calendar?.season || 'Spring';
+    if (id === 'rubber') {
+      if (season === 'Winter' || season === 'Fall') price *= 1.08;
+      else if (season === 'Summer') price *= 0.96;
+    } else {
+      if (season === 'Winter') price *= 1.03;
+    }
+
+    // 4. Global event modifier
+    if (activeGlobalEvents && activeGlobalEvents.length > 0) {
+      for (const ge of activeGlobalEvents) {
+        if (ge.id === 'rubber_shortage' && id === 'rubber') price *= 1.12;
+        if (ge.id === 'plantation_fire' && id === 'rubber') price *= 1.15;
+        if (ge.id === 'synthetic_chemical_shortage' && id === 'chemicals') price *= 1.10;
+        if (ge.id === 'trade_embargo') price *= 1.05;
+        if (ge.id === 'monsoon_season' && id === 'rubber') price *= 1.08;
+        if (ge.id === 'steel_surplus' && id === 'steel') price *= 0.88;
+        if (ge.id === 'new_rubber_source' && id === 'rubber') price *= 0.85;
+      }
+    }
+
+    // 5. Shortage pressure: +3% per day of shortage, capped at +40%
+    if (comm.shortage && comm.shortageDay > 0) {
+      const shortageDays = day - comm.shortageDay;
+      const shortageMult = Math.min(0.40, shortageDays * 0.03);
+      price *= (1 + shortageMult);
+    }
+
+    // 6. Mean reversion: pull 2% toward basePrice
+    price += (def.basePrice - price) * 0.02;
+
+    // 7. Clamp to ±60% of basePrice
+    const minPrice = def.basePrice * (1 - COMMODITY_PRICE_CLAMP);
+    const maxPrice = def.basePrice * (1 + COMMODITY_PRICE_CLAMP);
+    price = Math.max(minPrice, Math.min(maxPrice, price));
+
+    comm.price = Math.round(price * 100) / 100;
+    comm.change = prevPrice > 0 ? +((comm.price - prevPrice) / prevPrice * 100).toFixed(2) : 0;
+
+    // Append to history (keep last 30)
+    comm.priceHistory = comm.priceHistory || [];
+    comm.priceHistory.push({ day, price: comm.price });
+    if (comm.priceHistory.length > 30) comm.priceHistory = comm.priceHistory.slice(-30);
   }
 }
 
