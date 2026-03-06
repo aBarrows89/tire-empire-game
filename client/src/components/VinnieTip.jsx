@@ -103,7 +103,7 @@ function collectMatchingTips(g, stateGlobalEvents) {
     if (g.hasDist) pushTip(tips, 'endgame_distribution');
     if (!g.hasFactory && g.cash > 2000000) pushTip(tips, 'endgame_factory_nudge');
     if (!g.stockExchange?.isPublic && g.reputation >= 40) pushTip(tips, 'endgame_ipo_nudge');
-    if (!g.hasDist && g.hasWholesale) pushTip(tips, 'endgame_dist_nudge');
+    if (!g.hasDist && g.hasWholesale && !(g.storage || []).some(s => s.type === 'distCenter')) pushTip(tips, 'endgame_dist_nudge');
     if (g.reputation >= 80) pushTip(tips, 'endgame_legend');
     if (g.cash > 500000 && (g.bankBalance || 0) < 50000) pushTip(tips, 'endgame_bank');
     if ((g.loans || []).length > 0) pushTip(tips, 'endgame_debt');

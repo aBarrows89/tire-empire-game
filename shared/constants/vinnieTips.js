@@ -180,7 +180,7 @@ export const VINNIE_TIPS = [
   { condKey: "endgame_distribution", tip: "Distribution centers reduce shipping times to nearby regions. More DCs = faster delivery = more orders. Think geographic coverage." },
   { condKey: "endgame_factory_nudge", tip: "You're sitting on $2M+ with no factory. A factory gives you branded product with zero supplier markup. That's pure margin." },
   { condKey: "endgame_ipo_nudge", tip: "You haven't gone public yet. An IPO raises capital, builds brand awareness, and lets other players invest in your success." },
-  { condKey: "endgame_dist_nudge", tip: "You're doing wholesale without distribution centers. That's like selling pizza without delivery — you're leaving money on the table." },
+  { condKey: "endgame_dist_nudge", tip: "You're doing wholesale without a Distribution Network. Unlock it in the Wholesale tab — it cuts delivery costs and lets you open regional distribution centers for better coverage." },
   { condKey: "endgame_legend", tip: "Rep 80+. You're a legend in the tire game. At this point, it's about building a legacy. Franchise, go public, dominate the market." },
   { condKey: "endgame_legend", tip: "I've been in this business 40 years and I've never seen someone build what you've built. Keep pushing — the ceiling is higher than you think." },
   { condKey: "endgame_bank", tip: "You've got half a million in cash but barely anything in the bank. That savings account earns interest every day. Park some cash." },
