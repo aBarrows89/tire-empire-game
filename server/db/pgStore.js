@@ -594,6 +594,12 @@ export function trimExchange(econ) {
       }
     }
     delete ex._activePlayerIds;
+    // Also purge orphan order books that don't have a matching stock
+    if (ex.orderBooks) {
+      for (const ticker of Object.keys(ex.orderBooks)) {
+        if (!ex.stocks[ticker]) delete ex.orderBooks[ticker];
+      }
+    }
     const after = Object.keys(ex.stocks).length;
     if (before !== after) console.log(`[trimExchange] Purged ${before - after} orphan stocks (${before} → ${after})`);
   }
