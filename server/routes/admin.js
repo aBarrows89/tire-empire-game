@@ -4,7 +4,7 @@ import {
   getPlayer, createPlayer, savePlayerState, getAllActivePlayers, getGame, saveGame,
   getChatMessages, deleteChatMessage, getChatMutes, setChatMute, removeChatMute,
   removePlayer, saveFile, getFile, getChatReports, updateChatReport,
-  addChatMessage, addDM, getDMs,
+  addChatMessage, addDM, getDMs, trimExchange,
 } from '../db/queries.js';
 import { NODE_ENV, STORAGE_TYPE, ADMIN_UIDS } from '../config.js';
 import { getWealth } from '../../shared/helpers/wealth.js';
@@ -911,35 +911,15 @@ router.post('/trim-economy', async (req, res) => {
     const econ = game.economy || {};
     const beforeKB = Math.round(JSON.stringify(econ).length / 1024);
 
-    // Aggressively trim all known bloat sources
-    if (econ.exchange?.orderBooks) {
-      for (const ob of Object.values(econ.exchange.orderBooks)) {
-        if (ob.bids?.length > 5) ob.bids = ob.bids.slice(-5);
-        if (ob.asks?.length > 5) ob.asks = ob.asks.slice(-5);
-        delete ob.fills;
-      }
-    }
-    if (econ.exchange?.stocks) {
-      for (const s of Object.values(econ.exchange.stocks)) {
-        if (s.priceHistory?.length > 14) s.priceHistory = s.priceHistory.slice(-14);
-        delete s.revenueHistory;
-        delete s.revenueBySegment;
-        delete s.riskRating;
-        delete s.weeklyGrowth;
-        delete s.profitMargin;
-        delete s.dividendYield;
-        delete s.holders;
-      }
-    }
-    if (econ.exchange?.transactionLog?.length > 20) econ.exchange.transactionLog = econ.exchange.transactionLog.slice(-20);
-    if (econ.exchange?.ipoHistory?.length > 10) econ.exchange.ipoHistory = econ.exchange.ipoHistory.slice(-10);
-    delete econ.exchange?.marketMakerLog;
+    // Aggressively trim exchange (biggest contributor — often 10+ MB)
+    trimExchange(econ);
     if (econ.rateHistory?.length > 12) econ.rateHistory = econ.rateHistory.slice(-12);
     if (econ.tcHistory?.length > 14) econ.tcHistory = econ.tcHistory.slice(-14);
     if (econ.tcMarketplace?.tradeHistory?.length > 20) econ.tcMarketplace.tradeHistory = econ.tcMarketplace.tradeHistory.slice(-20);
     if (econ.tournamentHistory?.length > 10) econ.tournamentHistory = econ.tournamentHistory.slice(-10);
     if (econ.globalEventHistory?.length > 10) econ.globalEventHistory = econ.globalEventHistory.slice(-10);
     delete econ.tcReserve?.history;
+    if (econ.adminLog?.length > 50) econ.adminLog = econ.adminLog.slice(-50);
 
     const afterKB = Math.round(JSON.stringify(econ).length / 1024);
     await saveGame('default', game.day, econ, game.ai_shops || [], game.liquidation || []);

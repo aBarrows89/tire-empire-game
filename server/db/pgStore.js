@@ -547,6 +547,52 @@ export async function getGame(id = 'default') {
   return row;
 }
 
+/** Aggressively trim exchange data — the single biggest bloat source */
+export function trimExchange(econ) {
+  if (!econ.exchange) return;
+  const ex = econ.exchange;
+  // Order books — keep only 5 bids/asks per stock
+  if (ex.orderBooks) {
+    for (const ob of Object.values(ex.orderBooks)) {
+      if (ob.bids?.length > 5) ob.bids = ob.bids.slice(-5);
+      if (ob.asks?.length > 5) ob.asks = ob.asks.slice(-5);
+      delete ob.fills;
+    }
+  }
+  // Stocks — strip rebuilable fields, trim histories
+  if (ex.stocks) {
+    for (const s of Object.values(ex.stocks)) {
+      if (s.priceHistory?.length > 14) s.priceHistory = s.priceHistory.slice(-14);
+      if (s.dividendHistory?.length > 10) s.dividendHistory = s.dividendHistory.slice(-10);
+      if (s.earningsHistory?.length > 10) s.earningsHistory = s.earningsHistory.slice(-10);
+      if (s.tradeLog?.length > 10) s.tradeLog = s.tradeLog.slice(-10);
+      delete s.revenueHistory;
+      delete s.revenueBySegment;
+      delete s.riskRating;
+      delete s.weeklyGrowth;
+      delete s.profitMargin;
+      delete s.dividendYield;
+      delete s.holders;
+    }
+  }
+  // Transaction logs, market reports, etc.
+  if (ex.transactionLog?.length > 20) ex.transactionLog = ex.transactionLog.slice(-20);
+  if (ex.ipoHistory?.length > 10) ex.ipoHistory = ex.ipoHistory.slice(-10);
+  if (ex.stockTradeLogs?.length > 20) ex.stockTradeLogs = ex.stockTradeLogs.slice(-20);
+  delete ex.marketMakerLog;
+  // Market report — keep only latest
+  if (ex.marketReport && typeof ex.marketReport === 'object') {
+    delete ex.marketReport.historical;
+  }
+  // ETFs
+  if (ex.etfs) {
+    for (const etf of Object.values(ex.etfs)) {
+      if (etf.priceHistory?.length > 14) etf.priceHistory = etf.priceHistory.slice(-14);
+      if (etf.navHistory?.length > 14) etf.navHistory = etf.navHistory.slice(-14);
+    }
+  }
+}
+
 export async function saveGame(id, day, economy, aiShops, liquidation) {
   // Always invalidate cache first — even if save fails, next read must hit DB fresh
   // so the day doesn't get re-computed from stale cached state
@@ -595,36 +641,15 @@ export async function saveGame(id, day, economy, aiShops, liquidation) {
   // Trim global event history
   if (econClean.globalEventHistory?.length > 30) econClean.globalEventHistory = econClean.globalEventHistory.slice(-30);
 
-  // Emergency deep trim if still oversized
+  // Always trim exchange (the single biggest bloat source)
+  trimExchange(econClean);
+  if (econClean.adminLog?.length > 50) econClean.adminLog = econClean.adminLog.slice(-50);
+  delete econClean.tcReserve?.history;
+
   let econStr = JSON.stringify(econClean);
   if (econStr.length > 500 * 1024) {
-    console.warn(`[pgStore] Economy ${Math.round(econStr.length/1024)}KB — running emergency trim`);
-    // Aggressively trim exchange data (biggest contributor)
-    if (econClean.exchange?.orderBooks) {
-      for (const ob of Object.values(econClean.exchange.orderBooks)) {
-        if (ob.bids?.length > 5) ob.bids = ob.bids.slice(-5);
-        if (ob.asks?.length > 5) ob.asks = ob.asks.slice(-5);
-      }
-    }
-    if (econClean.exchange?.stocks) {
-      for (const s of Object.values(econClean.exchange.stocks)) {
-        if (s.priceHistory?.length > 14) s.priceHistory = s.priceHistory.slice(-14);
-        delete s.holders;
-      }
-    }
-    if (econClean.exchange?.transactionLog?.length > 20) {
-      econClean.exchange.transactionLog = econClean.exchange.transactionLog.slice(-20);
-    }
-    if (econClean.exchange?.ipoHistory?.length > 10) {
-      econClean.exchange.ipoHistory = econClean.exchange.ipoHistory.slice(-10);
-    }
-    // Trim any large arrays we haven't caught
-    delete econClean.exchange?.marketMakerLog;
-    delete econClean.tcReserve?.history;
-    if (econClean.rateHistory?.length > 12) econClean.rateHistory = econClean.rateHistory.slice(-12);
-    if (econClean.tcHistory?.length > 14) econClean.tcHistory = econClean.tcHistory.slice(-14);
+    console.warn(`[pgStore] Economy still ${Math.round(econStr.length/1024)}KB after trim`);
     econStr = JSON.stringify(econClean);
-    console.log(`[pgStore] After emergency trim: economy ${Math.round(econStr.length/1024)}KB`);
   }
 
   try {
