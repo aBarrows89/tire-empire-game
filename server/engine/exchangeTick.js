@@ -200,6 +200,8 @@ export function runExchangeTick(exchangeState, players, day, economy) {
     const stock = exchangeState.stocks[ticker];
     const orderBook = exchangeState.orderBooks[ticker];
     if (!stock || !orderBook || stock.playerId === p.id) continue;
+    if (!orderBook.bids) orderBook.bids = [];
+    if (!orderBook.asks) orderBook.asks = [];
 
     if (intent.action === 'buy' && intent.budget > 0 && stock.price > 0) {
       const qty = Math.max(1, Math.floor(intent.budget / stock.price));
@@ -239,6 +241,7 @@ export function runExchangeTick(exchangeState, players, day, economy) {
       const buyer = players.find(p => p.id === fill.buyerId);
       if (buyer && buyer.game_state.stockExchange) {
         const bg = buyer.game_state;
+        if (!bg.stockExchange.portfolio) bg.stockExchange.portfolio = {};
         const port = bg.stockExchange.portfolio;
         if (!port[ticker]) port[ticker] = { qty: 0, avgCost: 0, acquiredDay: day };
         const prev = port[ticker];
@@ -252,6 +255,7 @@ export function runExchangeTick(exchangeState, players, day, economy) {
       const seller = players.find(p => p.id === fill.sellerId);
       if (seller && seller.game_state.stockExchange) {
         const sg = seller.game_state;
+        if (!sg.stockExchange.portfolio) sg.stockExchange.portfolio = {};
         const port = sg.stockExchange.portfolio;
         if (port[ticker]) {
           port[ticker].qty -= fill.qty;
@@ -297,6 +301,7 @@ export function runExchangeTick(exchangeState, players, day, economy) {
   // 4. Update daily prices + OHLCV
   for (const [ticker, stock] of Object.entries(exchangeState.stocks)) {
     const orderBook = exchangeState.orderBooks[ticker];
+    if (!exchangeState.sentiment) exchangeState.sentiment = { value: 1, trend: 0 };
     updateDailyPrice(stock, orderBook, exchangeState.sentiment.value);
   }
 
@@ -345,6 +350,7 @@ export function runExchangeTick(exchangeState, players, day, economy) {
   updateCommodityIndices(exchangeState.commodities, day, factoryDemand, aiSupplierDemand, activeGlobalEvents, calendar);
 
   // 7. Update sentiment, detect/apply crashes (bankruptcies factor into stability)
+  if (!exchangeState.sentiment) exchangeState.sentiment = { value: 1, trend: 0 };
   updateSentiment(exchangeState.sentiment, exchangeState.stocks, day, exchangeState.bankruptcies);
 
   // 8. Weekly: distribute dividends

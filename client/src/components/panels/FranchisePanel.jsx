@@ -3,6 +3,7 @@ import { useGame } from '../../context/GameContext.jsx';
 import { postAction, getHeaders, API_BASE } from '../../api/client.js';
 import { fmt } from '@shared/helpers/format.js';
 import { FRANCHISE_PERKS, FRANCHISE_REQUIREMENTS } from '@shared/constants/franchise.js';
+import { CITIES } from '@shared/constants/cities.js';
 import InfoBubble from '../ui/InfoBubble.jsx';
 
 const { MIN_REP_TO_FRANCHISE, MIN_LOCATIONS_TO_FRANCHISE } = FRANCHISE_REQUIREMENTS;
@@ -181,9 +182,11 @@ function FranchiseListing({ listing, g, isSelected, onSelect, availableLocs, buy
             style={{ width: '100%', fontSize: 13 }}
           >
             <option value="">— Choose location —</option>
-            {availableLocs.map(l => (
-              <option key={l.id} value={l.id}>{l.name || 'Shop'} (current rev: ${fmt(l.dailyStats?.rev || 0)}/day)</option>
-            ))}
+            {availableLocs.map(l => {
+              const city = CITIES.find(c => c.id === l.cityId);
+              const locLabel = city ? `${l.name || 'Shop'} — ${city.name}, ${city.state}` : (l.name || 'Shop');
+              return <option key={l.id} value={l.id}>{locLabel} (rev: ${fmt(l.dailyStats?.rev || 0)}/day)</option>;
+            })}
           </select>
           <div className="text-xs text-dim mb-8">
             This location will display as: <strong>{listing.brand_name} (DBA {g.companyName})</strong>
@@ -211,8 +214,11 @@ function MyFranchises({ g, applyState }) {
   const activeFranchises = (g.franchises || []).filter(f => f.status === 'active');
   const franchisedLocs = (g.locations || []).filter(l => l.franchise);
 
+  const [confirmTerminate, setConfirmTerminate] = useState(null);
+
   const terminate = async (agreementId, brandName) => {
-    if (!confirm(`Terminate ${brandName} franchise? This cannot be undone.`)) return;
+    if (confirmTerminate !== agreementId) { setConfirmTerminate(agreementId); return; }
+    setConfirmTerminate(null);
     setPending(agreementId);
     setError(null);
     try {
@@ -279,7 +285,7 @@ function MyFranchises({ g, applyState }) {
                 disabled={!!pending}
                 onClick={() => terminate(agreement.agreementId, franchise.brandName)}
               >
-                {pending === agreement.agreementId ? 'Terminating…' : 'Terminate Agreement'}
+                {pending === agreement.agreementId ? 'Terminating…' : confirmTerminate === agreement.agreementId ? 'Tap Again to Confirm' : 'Terminate Agreement'}
               </button>
             </div>
           </div>
@@ -309,6 +315,7 @@ function FranchisorPanel({ g, applyState }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const togglePerk = (perk) => {
     setForm(f => ({
@@ -344,9 +351,10 @@ function FranchisorPanel({ g, applyState }) {
   };
 
   const handleDelete = async () => {
-    if (!confirm('Delete your franchise offering permanently? This cannot be undone.')) return;
+    if (!confirmDelete) { setConfirmDelete(true); return; }
     setPending(true);
     setError(null);
+    setConfirmDelete(false);
     try {
       const res = await postAction('deleteFranchiseOffering', {});
       if (res?.ok) {
@@ -431,8 +439,12 @@ function FranchisorPanel({ g, applyState }) {
             disabled={pending}
             onClick={handleDelete}
           >
-            Delete Offering Permanently
+            {confirmDelete ? 'Tap Again to Confirm Delete' : 'Delete Offering Permanently'}
           </button>
+          {confirmDelete && (
+            <button className="btn btn-sm btn-outline" style={{ width: '100%', marginTop: 4, fontSize: 11 }}
+              onClick={() => setConfirmDelete(false)}>Cancel</button>
+          )}
           {error && <div className="text-xs text-red" style={{ marginTop: 6 }}>{error}</div>}
           {success && <div className="text-xs text-green" style={{ marginTop: 6 }}>{success}</div>}
         </div>

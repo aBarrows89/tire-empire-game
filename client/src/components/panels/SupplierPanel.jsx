@@ -360,6 +360,9 @@ export default function SupplierPanel() {
                         <option value="50000">$50K</option>
                         <option value="100000">$100K</option>
                         <option value="200000">$200K</option>
+                        <option value="500000">$500K</option>
+                        <option value="1000000">$1M</option>
+                        <option value="2000000">$2M</option>
                       </select>
                     </div>
                   </div>

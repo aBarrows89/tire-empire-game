@@ -779,8 +779,8 @@ export function simDay(g, shared = {}) {
           rem -= fromNat;
           if (rem > 0) s.factory.syntheticRubber -= rem;
         } else if (contract.commodity === 'chemicals') {
-          canFulfill = Math.min(qty, s.factory.syntheticRubber || 0);
-          s.factory.syntheticRubber -= canFulfill;
+          // No chemicals storage system yet — skip fulfillment
+          canFulfill = 0;
         }
 
         if (canFulfill > 0) {
@@ -1079,7 +1079,7 @@ export function simDay(g, shared = {}) {
         // If supplier is very low on stock, cap what we can order
         const stockLimitMult = stockRatio < 0.3 ? stockRatio / 0.3 : 1;
 
-        const budget = Math.min(s.cash * 0.15, s.autoRestock.maxSpend || 50000); // Max 15% of cash or cap
+        const budget = Math.min(s.cash * 0.25, s.autoRestock.maxSpend || 50000); // Max 25% of cash or cap
         const freeSpace = whCap - whInv;
 
         // Order tires proportionally based on recent sales history
@@ -1112,15 +1112,15 @@ export function simDay(g, shared = {}) {
         const MAX_SHARE = 0.40;
         let spent = 0;
         let ordered = 0;
+        // Franchise supply_chain perk: 10% discount on sourcing if any location has it
+        const hasSupplyChainPerk = (s.franchises || []).some(f => f.status === 'active' && (s.locations || []).find(l => l.id === f.locationId)?.franchise?.perks?.includes('supply_chain'));
+        const supplyChainDisc = hasSupplyChainPerk ? 0.10 : 0;
         for (const tire of typesToStock) {
           if (spent >= budget || ordered >= freeSpace) break;
           const t = TIRES[tire];
           let priceMult = shared?.supplierPrices?.[supIdx]?.[tire] || shared?.supplierPricing?.[tire] || 1.0;
           // New player protection: ignore commodity stress for first 90 days
           if ((s.day || 0) < 90 && priceMult > 1.0) priceMult = Math.min(priceMult, 1.10);
-          // Franchise supply_chain perk: 10% discount on sourcing if any location has it
-          const hasSupplyChainPerk = (s.franchises || []).some(f => f.status === 'active' && (s.locations || []).find(l => l.id === f.locationId)?.franchise?.perks?.includes('supply_chain'));
-          const supplyChainDisc = hasSupplyChainPerk ? 0.10 : 0;
           const unitCost = Math.round(t.bMin * priceMult * (1 - (sup.disc || 0)) * (1 - supplyChainDisc));
           if (unitCost <= 0) continue;
           // Allocate space proportionally to sales share, capped at MAX_SHARE, min 5 units
@@ -1430,8 +1430,9 @@ export function simDay(g, shared = {}) {
         locDemand -= qty;
         remainingStaffCap -= qty;
       }
-      // Sync staff capacity back to global pool
-      remainingStaffCapGlobal = remainingStaffCap;
+      // Sync staff capacity: subtract actual tires sold (not boosted value) from global pool
+      const soldAtLoc = Math.floor(remainingStaffCapGlobal * locTrainingBoost) - remainingStaffCap;
+      remainingStaffCapGlobal = Math.max(0, remainingStaffCapGlobal - soldAtLoc);
       locTakeOffSources[loc.id] = locNewSold;
     }
   }

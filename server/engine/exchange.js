@@ -362,6 +362,9 @@ export function updateCommodityIndices(commodities, day, factoryDemand, aiSuppli
     if (!def) continue; // Legacy commodity — skip
     const prevPrice = comm.price;
 
+    // Reset daily volume each tick (prevents stale accumulation from weakening trade impact)
+    comm.dailyVolume = 0;
+
     // Calculate total demand
     const fDemand = (factoryDemand && factoryDemand[id]) || 0;
     const aiDemand = (aiSupplierDemand && aiSupplierDemand[id]) || 0;

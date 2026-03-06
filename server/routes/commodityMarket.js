@@ -197,7 +197,8 @@ router.post('/sell-world', authMiddleware, async (req, res) => {
     if (commodity === 'rubber') {
       available = (g.factory.naturalRubber || 0) + (g.factory.syntheticRubber || 0);
     } else if (commodity === 'chemicals') {
-      available = g.factory.syntheticRubber || 0; // synthetic lab produces chemicals-equivalent
+      // No chemicals storage system yet — can't sell chemicals
+      available = 0;
     }
     if (sellQty > available) return res.status(400).json({ error: `Only ${available} available` });
 
@@ -214,7 +215,7 @@ router.post('/sell-world', authMiddleware, async (req, res) => {
       remaining -= fromNatural;
       if (remaining > 0) g.factory.syntheticRubber -= remaining;
     } else if (commodity === 'chemicals') {
-      g.factory.syntheticRubber -= sellQty;
+      // No chemicals storage — shouldn't reach here due to available=0 check above
     }
 
     g.cash += proceeds;

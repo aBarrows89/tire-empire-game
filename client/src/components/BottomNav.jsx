@@ -38,10 +38,10 @@ function getUnlockedTabs(g) {
   const unlocked = new Set(['dashboard', 'source', 'pricing', 'log', 'profile', 'leaderboard']);
 
   // Storage: as soon as you have any tires
-  if (inv > 0 || g.storage.length > 1 || g.totalSold > 0) unlocked.add('storage');
+  if (inv > 0 || (g.storage || []).length > 1 || g.totalSold > 0) unlocked.add('storage');
 
   // Bank: once you have some reputation or need cash
-  if (g.reputation >= 3 || g.cash < 50 || g.loans.length > 0) unlocked.add('bank');
+  if (g.reputation >= 3 || g.cash < 50 || (g.loans || []).length > 0) unlocked.add('bank');
 
   // Shop: once you're getting established
   if (g.cash >= 20000 || g.reputation >= 15 || g.locations.length > 0) unlocked.add('shop');
@@ -50,7 +50,7 @@ function getUnlockedTabs(g) {
   if (g.locations.length > 0 || g.cash >= 50000) unlocked.add('staff');
 
   // Supplier: once you have rep
-  if (g.reputation >= 8 || g.unlockedSuppliers.length > 0) unlocked.add('supplier');
+  if (g.reputation >= 8 || (g.unlockedSuppliers || []).length > 0) unlocked.add('supplier');
 
   // Marketplace & Trade
   if (g.locations.length > 0 || g.reputation >= 10 || g.cash >= 50000) {

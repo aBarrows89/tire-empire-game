@@ -94,9 +94,10 @@ export async function handleFactory(action, params, g, ctx) {
         // Store synthetic ratio on the batch for defect calculation
         var syntheticRatio = rubberNeeded > 0 ? synUse / rubberNeeded : 0;
       } else if (g.factory.rubberFarm || g.factory.syntheticLab) {
-        return ctx.fail('Build Rubber Storage first to use your rubber production');
+        // Has production facilities but no storage — warn but allow production
+        // (rubber is wasted since there's nowhere to store it)
       } else {
-        return ctx.fail(`Need ${rubberNeeded} rubber units. Build a Rubber Farm or buy rubber on the market, then build Rubber Storage.`);
+        // No rubber infrastructure at all — allow production (rubber cost baked into unitCost)
       }
 
       // Multi-line support: determine target line

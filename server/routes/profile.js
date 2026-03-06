@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getPlayer, savePlayerState } from '../db/queries.js';
+import { getPlayer, savePlayerState, withPlayerLock } from '../db/queries.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { DAYS_PER_YEAR } from '../../shared/helpers/calendar.js';
 import { CITIES } from '../../shared/constants/cities.js';
@@ -64,27 +64,39 @@ router.post('/:playerId/send-cash', authMiddleware, async (req, res) => {
     if (targetId === req.playerId) return res.status(400).json({ error: 'Cannot send cash to yourself' });
     if (amount > 10000000) return res.status(400).json({ error: 'Max transfer $10,000,000' });
 
-    const sender = await getPlayer(req.playerId);
-    if (!sender) return res.status(404).json({ error: 'Sender not found' });
-    const sg = sender.game_state;
+    // Lock both players in consistent order to prevent deadlocks and race conditions
+    const [firstId, secondId] = [req.playerId, targetId].sort();
+    let result = null;
+    let error = null;
 
-    if (sg.cash < amount) return res.status(400).json({ error: `Not enough cash (have $${Math.floor(sg.cash).toLocaleString()})` });
+    await withPlayerLock(firstId, async () => {
+      await withPlayerLock(secondId, async () => {
+        const sender = await getPlayer(req.playerId);
+        if (!sender) { error = { status: 404, msg: 'Sender not found' }; return; }
+        const sg = sender.game_state;
 
-    const target = await getPlayer(targetId);
-    if (!target) return res.status(404).json({ error: 'Player not found' });
-    const tg = target.game_state;
+        if (sg.cash < amount) { error = { status: 400, msg: `Not enough cash (have $${Math.floor(sg.cash).toLocaleString()})` }; return; }
 
-    sg.cash -= amount;
-    sg.log = sg.log || [];
-    sg.log.push({ msg: `Sent $${amount.toLocaleString()} to ${tg.companyName}`, cat: 'sale' });
-    await savePlayerState(req.playerId, sg);
+        const target = await getPlayer(targetId);
+        if (!target) { error = { status: 404, msg: 'Player not found' }; return; }
+        const tg = target.game_state;
 
-    tg.cash = (tg.cash || 0) + amount;
-    tg.log = tg.log || [];
-    tg.log.push({ msg: `Received $${amount.toLocaleString()} from ${sg.companyName}`, cat: 'sale' });
-    await savePlayerState(targetId, tg);
+        sg.cash -= amount;
+        sg.log = sg.log || [];
+        sg.log.push({ msg: `Sent $${amount.toLocaleString()} to ${tg.companyName}`, cat: 'sale' });
+        await savePlayerState(req.playerId, sg);
 
-    res.json({ ok: true, sent: amount });
+        tg.cash = (tg.cash || 0) + amount;
+        tg.log = tg.log || [];
+        tg.log.push({ msg: `Received $${amount.toLocaleString()} from ${sg.companyName}`, cat: 'sale' });
+        await savePlayerState(targetId, tg);
+
+        result = { ok: true, sent: amount };
+      });
+    });
+
+    if (error) return res.status(error.status).json({ error: error.msg });
+    res.json(result);
   } catch (err) {
     console.error('POST /api/profile/send-cash error:', err);
     res.status(500).json({ error: 'Internal server error' });

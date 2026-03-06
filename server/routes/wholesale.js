@@ -96,6 +96,7 @@ router.post('/order', authMiddleware, async (req, res) => {
 
     const qty = Math.max(1, Math.floor(Number(rawQty) || 0));
     if (qty <= 0) return res.status(400).json({ error: 'Invalid quantity' });
+    if (supplierId === req.playerId) return res.status(400).json({ error: 'Cannot buy from yourself' });
 
     // Lock buyer first, then seller inside — consistent order prevents deadlocks
     // (always lock lower playerId first to avoid A→B / B→A deadlock)
