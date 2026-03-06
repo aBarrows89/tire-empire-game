@@ -1,6 +1,6 @@
 import { fmt, R, Rf, C } from '../../shared/helpers/format.js';
 import { getSeason, getSI } from '../../shared/helpers/season.js';
-import { getCap, getInv, getLocInv, getLocCap, rebuildGlobalInv } from '../../shared/helpers/inventory.js';
+import { getCap, getInv, getLocInv, getLocCap, getStorageCap, rebuildGlobalInv } from '../../shared/helpers/inventory.js';
 import { getWealth } from '../../shared/helpers/wealth.js';
 import { getVolTier, getWsVolBonus, getWsMargin, getWsAvailSpace } from '../../shared/helpers/wholesale.js';
 import { getEcomTier } from '../../shared/helpers/ecommerce.js';

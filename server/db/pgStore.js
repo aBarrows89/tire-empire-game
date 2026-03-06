@@ -586,15 +586,54 @@ export async function saveGame(id, day, economy, aiShops, liquidation) {
     econClean.tcMarketplace.tradeHistory = econClean.tcMarketplace.tradeHistory.slice(0, 50);
   }
 
+  // Trim rate history
+  if (econClean.rateHistory?.length > 52) econClean.rateHistory = econClean.rateHistory.slice(-52);
+  // Trim tcHistory
+  if (econClean.tcHistory?.length > 60) econClean.tcHistory = econClean.tcHistory.slice(-60);
+  // Trim tournament history
+  if (econClean.tournamentHistory?.length > 20) econClean.tournamentHistory = econClean.tournamentHistory.slice(-20);
+  // Trim global event history
+  if (econClean.globalEventHistory?.length > 30) econClean.globalEventHistory = econClean.globalEventHistory.slice(-30);
+
+  // Emergency deep trim if still oversized
+  let econStr = JSON.stringify(econClean);
+  if (econStr.length > 500 * 1024) {
+    console.warn(`[pgStore] Economy ${Math.round(econStr.length/1024)}KB — running emergency trim`);
+    // Aggressively trim exchange data (biggest contributor)
+    if (econClean.exchange?.orderBooks) {
+      for (const ob of Object.values(econClean.exchange.orderBooks)) {
+        if (ob.bids?.length > 5) ob.bids = ob.bids.slice(-5);
+        if (ob.asks?.length > 5) ob.asks = ob.asks.slice(-5);
+      }
+    }
+    if (econClean.exchange?.stocks) {
+      for (const s of Object.values(econClean.exchange.stocks)) {
+        if (s.priceHistory?.length > 14) s.priceHistory = s.priceHistory.slice(-14);
+        delete s.holders;
+      }
+    }
+    if (econClean.exchange?.transactionLog?.length > 20) {
+      econClean.exchange.transactionLog = econClean.exchange.transactionLog.slice(-20);
+    }
+    if (econClean.exchange?.ipoHistory?.length > 10) {
+      econClean.exchange.ipoHistory = econClean.exchange.ipoHistory.slice(-10);
+    }
+    // Trim any large arrays we haven't caught
+    delete econClean.exchange?.marketMakerLog;
+    delete econClean.tcReserve?.history;
+    if (econClean.rateHistory?.length > 12) econClean.rateHistory = econClean.rateHistory.slice(-12);
+    if (econClean.tcHistory?.length > 14) econClean.tcHistory = econClean.tcHistory.slice(-14);
+    econStr = JSON.stringify(econClean);
+    console.log(`[pgStore] After emergency trim: economy ${Math.round(econStr.length/1024)}KB`);
+  }
+
   try {
-    const econStr = JSON.stringify(econClean);
     const shopsStr = JSON.stringify(aiShops || []);
     const liqStr = JSON.stringify(liquidation || []);
     const econKB = Math.round(econStr.length / 1024);
     const shopsKB = Math.round(shopsStr.length / 1024);
     if (econKB > 200) console.warn(`[pgStore] saveGame: economy is ${econKB}KB — approaching timeout risk`);
     if (econKB > 800) {
-      // Economy blob is dangerously large — log and skip save to avoid locking DB
       console.error(`[pgStore] saveGame ABORTED: economy ${econKB}KB exceeds 800KB safety limit. Tick will retry next cycle.`);
       return;
     }
