@@ -873,6 +873,36 @@ router.get('/download-apk', async (req, res) => {
   }
 });
 
+// Diagnose economy bloat — show top keys by size
+router.get('/economy-sizes', async (req, res) => {
+  try {
+    const game = await getGame();
+    if (!game) return res.status(404).json({ error: 'No game' });
+    const econ = game.economy || {};
+    const sizes = {};
+    for (const [k, v] of Object.entries(econ)) {
+      const sz = JSON.stringify(v || '').length;
+      sizes[k] = Math.round(sz / 1024) + 'KB';
+      // Go one level deeper for large keys
+      if (sz > 50000 && v && typeof v === 'object' && !Array.isArray(v)) {
+        sizes[k + ' (children)'] = {};
+        for (const [ck, cv] of Object.entries(v)) {
+          const csz = JSON.stringify(cv || '').length;
+          if (csz > 5000) sizes[k + ' (children)'][ck] = Math.round(csz / 1024) + 'KB';
+        }
+      }
+    }
+    const aiShopsKB = Math.round(JSON.stringify(game.ai_shops || []).length / 1024);
+    const liqKB = Math.round(JSON.stringify(game.liquidation || []).length / 1024);
+    sizes._ai_shops = aiShopsKB + 'KB';
+    sizes._liquidation = liqKB + 'KB';
+    sizes._total = Math.round(JSON.stringify(econ).length / 1024) + 'KB';
+    res.json(sizes);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Emergency: trim bloated games row economy JSONB in-place
 router.post('/trim-economy', async (req, res) => {
   try {
