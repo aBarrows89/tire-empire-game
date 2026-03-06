@@ -392,8 +392,9 @@ export function simDay(g, shared = {}) {
     // Effective daily capacity = level base + line workers
     s.factory.dailyCapacity = (FACTORY.levels.find(l => l.level === s.factory.level) || FACTORY.levels[0]).dailyCapacity + (fStaff.lineWorkers || 0) * 10;
 
-    // Factory overhead
-    s.cash -= (FACTORY.monthlyOverhead || 50000) / 30;
+    // Factory overhead — scales with factory level
+    const overhead = (FACTORY.monthlyOverheadByLevel?.[s.factory.level] ?? FACTORY.monthlyOverhead ?? 50000) / 30;
+    s.cash -= overhead;
 
     // Factory staff payroll (including CFO if hired)
     let factoryPayroll = Object.entries(fStaff).reduce((a, [role, count]) => {
@@ -825,8 +826,9 @@ export function simDay(g, shared = {}) {
     const repBoostActive = s.repBoost && s.day < s.repBoost.expiresDay;
     const effectiveRep = s.reputation + (repBoostActive ? (s.repBoost.amount || 5) : 0);
     const demandMult = sDem * (1 + effectiveRep * .01) * (s._tB || 1);
-    // Clamp to 0.1 floor — shortage reduces demand but can never kill it entirely
-    const whPenalty = Math.max(0.1, 1 - getWhShortage(s) * .08);
+    // whShortage penalty removed — warehouse staff hire UI not yet implemented,
+    // so applying a shortage penalty would be unfair (players have no way to fix it)
+    const whPenalty = 1;
 
     // 16a: Early game boost: logarithmic decay over 270 days (no cliff)
     const earlyBoostShop = s.day < 270
