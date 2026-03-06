@@ -25,6 +25,9 @@ export const RD_PROJECTS = [
   { id: 'evOptimized',    name: 'EV Range Optimized',        cost: 1000000, days: 60, unlocksExclusive: 'brand_evPremium' },
   { id: 'commercialHD',   name: 'Heavy-Duty Commercial',     cost: 1200000, days: 60, unlocksExclusive: 'brand_commercialHD' },
   { id: 'allTerrainElite', name: 'All-Terrain Elite',        cost: 800000,  days: 45, unlocksExclusive: 'brand_allTerrainElite' },
+  { id: 'mudKing',        name: 'Mud King Compound',         cost: 900000,  days: 50, unlocksExclusive: 'brand_mudKingElite' },
+  { id: 'trackDay',       name: 'Track Day Formula',         cost: 1500000, days: 60, unlocksExclusive: 'brand_trackDayPro' },
+  { id: 'greenTech',      name: 'Green Tech Initiative',     cost: 600000,  days: 40, qualityBoost: 0.03, wasteReduction: 0.15 },
 ];
 
 export const CERTIFICATIONS = [
@@ -32,6 +35,7 @@ export const CERTIFICATIONS = [
   { id: 'speed_h',   name: 'H Speed Rating',  cost: 250000, days: 21, repBoost: 8,  qualityReq: 0.90 },
   { id: 'speed_v',   name: 'V Speed Rating',  cost: 500000, days: 30, repBoost: 12, qualityReq: 0.95 },
   { id: 'iso_9001',  name: 'ISO 9001',        cost: 400000, days: 45, repBoost: 15, qualityReq: 0.88 },
+  { id: 'motorsport', name: 'Motorsport Homologation', cost: 750000, days: 60, repBoost: 18, qualityReq: 0.95 },
 ];
 
 export const SHIPPING_ZONES = [
@@ -54,6 +58,8 @@ export const EXCLUSIVE_TIRES = {
   brand_evPremium:       { n: 'EV Premium',         baseCost: 95,  def: 260, lo: 180, hi: 380 },
   brand_commercialHD:    { n: 'Commercial HD',      baseCost: 120, def: 310, lo: 220, hi: 450 },
   brand_allTerrainElite: { n: 'All-Terrain Elite',   baseCost: 85,  def: 220, lo: 150, hi: 330 },
+  brand_mudKingElite:   { n: 'Mud King Elite',      baseCost: 95,  def: 260, lo: 180, hi: 400 },
+  brand_trackDayPro:    { n: 'Track Day Pro',       baseCost: 150, def: 380, lo: 280, hi: 600 },
 };
 
 /** CFO staff role — blocks Vinnie schemes 50% of the time */
@@ -74,6 +80,11 @@ export const TIRE_ATTR_WEIGHTS = {
   evTire:       { grip: 0.15, durability: 0.15, comfort: 0.20, treadLife: 0.15, efficiency: 0.35 },
   luxuryTouring:{ grip: 0.10, durability: 0.15, comfort: 0.40, treadLife: 0.20, efficiency: 0.15 },
   runFlat:      { grip: 0.20, durability: 0.30, comfort: 0.10, treadLife: 0.25, efficiency: 0.15 },
+  motorcycle:   { grip: 0.35, durability: 0.15, comfort: 0.10, treadLife: 0.15, efficiency: 0.25 },
+  mudTerrain:   { grip: 0.40, durability: 0.30, comfort: 0.05, treadLife: 0.15, efficiency: 0.10 },
+  racingSlick:  { grip: 0.50, durability: 0.10, comfort: 0.05, treadLife: 0.10, efficiency: 0.25 },
+  trailer:      { grip: 0.15, durability: 0.35, comfort: 0.05, treadLife: 0.35, efficiency: 0.10 },
+  premiumAllWeather: { grip: 0.25, durability: 0.20, comfort: 0.20, treadLife: 0.20, efficiency: 0.15 },
   default:      { grip: 0.20, durability: 0.25, comfort: 0.20, treadLife: 0.20, efficiency: 0.15 },
 };
 
@@ -103,4 +114,18 @@ export const SYNTHETIC_LAB = {
   minRubberIndex: 0.50,
   chemicalIndexIncrease: 0.05,
   operatingCost: 800, // daily
+};
+
+/** Material supplier tiers — price/quality/reliability tradeoffs */
+export const MATERIAL_SUPPLIERS = {
+  steel: [
+    { id: 'steel_budget',   label: 'Budget Steel Co',    qualityMod: 1.03, priceMod: 0.80, reliability: 0.85, minRep: 0 },
+    { id: 'steel_standard', label: 'Standard Metals',    qualityMod: 1.00, priceMod: 1.00, reliability: 0.95, minRep: 0 },
+    { id: 'steel_premium',  label: 'Premium Alloys Inc', qualityMod: 0.97, priceMod: 1.25, reliability: 0.99, minRep: 50 },
+  ],
+  chemicals: [
+    { id: 'chem_budget',   label: 'Discount Chemicals', qualityMod: 1.04, priceMod: 0.75, reliability: 0.80, minRep: 0 },
+    { id: 'chem_standard', label: 'ChemCorp',           qualityMod: 1.00, priceMod: 1.00, reliability: 0.95, minRep: 0 },
+    { id: 'chem_premium',  label: 'Advanced Polymers',  qualityMod: 0.96, priceMod: 1.30, reliability: 0.99, minRep: 60 },
+  ],
 };

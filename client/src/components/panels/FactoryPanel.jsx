@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { postAction } from '../../api/client.js';
 import { FACTORY } from '@shared/constants/factory.js';
-import { RAW_MATERIALS, RD_PROJECTS, CERTIFICATIONS, FACTORY_DISCOUNT_TIERS_DEFAULT, EXCLUSIVE_TIRES, CFO_ROLE, RUBBER_FARM, SYNTHETIC_LAB } from '@shared/constants/factoryBrand.js';
+import { RAW_MATERIALS, RD_PROJECTS, CERTIFICATIONS, FACTORY_DISCOUNT_TIERS_DEFAULT, EXCLUSIVE_TIRES, CFO_ROLE, RUBBER_FARM, SYNTHETIC_LAB, MATERIAL_SUPPLIERS } from '@shared/constants/factoryBrand.js';
 import { TIRES } from '@shared/constants/tires.js';
 import { SUPPLIERS } from '@shared/constants/suppliers.js';
 import { fmt } from '@shared/helpers/format.js';
@@ -20,6 +20,7 @@ export default function FactoryPanel() {
   const [qty, setQty] = useState(10);
   const [brandName, setBrandName] = useState('');
   const [tab, setTab] = useState('dashboard');
+  const [selectedLine, setSelectedLine] = useState(0);
 
   const factory = g.factory || null;
   const hasFactory = !!g.hasFactory;
@@ -277,6 +278,95 @@ export default function FactoryPanel() {
             </div>
           </div>
 
+          {/* Quality & Warranty Dashboard */}
+          <div className="card">
+            <div className="card-title">Quality & Warranty</div>
+            {(() => {
+              const defectHistory = factory?.defectHistory || [];
+              const last30 = defectHistory.filter(d => (g.day || 0) - (d.day || 0) <= 30);
+              const avgDefect = last30.length > 0
+                ? last30.reduce((sum, d) => sum + (d.defectRate || 0), 0) / last30.length
+                : 0;
+              const avgDefectPct = Math.round(avgDefect * 100);
+              const defectColor = avgDefectPct < 5 ? 'text-green' : avgDefectPct <= 10 ? 'text-accent' : 'text-red';
+
+              // Breakdown by type
+              const cosmetic = last30.reduce((s, d) => s + (d.cosmetic || 0), 0);
+              const structural = last30.reduce((s, d) => s + (d.structural || 0), 0);
+              const critical = last30.reduce((s, d) => s + (d.critical || 0), 0);
+
+              const totalClaims = factory?.totalWarrantyClaims || 0;
+              const totalWarrantyCost = factory?.totalWarrantyCost || 0;
+
+              const recentBatches = defectHistory.slice(-5).reverse();
+
+              return (
+                <>
+                  <div className="row-between mb-4">
+                    <span className="text-sm text-dim">Avg Defect Rate (30d)</span>
+                    <span className={`font-bold ${defectColor}`}>{avgDefectPct}%</span>
+                  </div>
+
+                  {last30.length > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                      <div className="text-xs text-dim mb-4">Defect Breakdown (30d)</div>
+                      <div className="row gap-8 text-xs mb-4">
+                        <span>Cosmetic: <strong>{cosmetic}</strong></span>
+                        <span>Structural: <strong>{structural}</strong></span>
+                        <span style={{ color: critical > 0 ? 'var(--red)' : undefined }}>Critical: <strong>{critical}</strong></span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="row-between mb-4">
+                    <span className="text-sm text-dim">Total Warranty Claims</span>
+                    <span className="font-bold">{totalClaims}</span>
+                  </div>
+                  <div className="row-between mb-4">
+                    <span className="text-sm text-dim">Total Warranty Cost</span>
+                    <span className="font-bold text-red">${fmt(totalWarrantyCost)}</span>
+                  </div>
+
+                  {recentBatches.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <div className="text-xs text-dim mb-4">Recent Defect Batches</div>
+                      {recentBatches.map((batch, bi) => {
+                        const batchIdx = defectHistory.length - 1 - bi;
+                        const tName = tireName(batch.tire, g);
+                        const batchDefectPct = Math.round((batch.defectRate || 0) * 100);
+                        const batchColor = batchDefectPct < 5 ? 'text-green' : batchDefectPct <= 10 ? 'text-accent' : 'text-red';
+                        return (
+                          <div key={bi} className="row-between text-sm mb-4" style={{ padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
+                            <div>
+                              <span className="font-bold">{tName}</span>
+                              <span className="text-dim" style={{ marginLeft: 6 }}>{batch.qty} tires</span>
+                            </div>
+                            <div className="row gap-8" style={{ alignItems: 'center' }}>
+                              <span className={batchColor}>{batchDefectPct}%</span>
+                              {!batch.recalled && (
+                                <button className="btn btn-sm btn-red" disabled={busy}
+                                  onClick={() => doAction('recallBatch', { batchIndex: batchIdx })}>
+                                  Recall
+                                </button>
+                              )}
+                              {batch.recalled && (
+                                <span className="text-xs text-dim">Recalled</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {defectHistory.length === 0 && (
+                    <div className="text-xs text-dim">No defect data yet. Start producing to track quality.</div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+
           {/* Vinnie's Adventures */}
           {(Object.keys(vinnieInv).length > 0 || vinnieTotalLoss > 0) && (
             <div className="card" style={{ borderLeft: '3px solid var(--red)' }}>
@@ -333,46 +423,109 @@ export default function FactoryPanel() {
       )}
 
       {/* ═══ PRODUCTION TAB ═══ */}
-      {tab === 'production' && (
+      {tab === 'production' && (() => {
+        const maxLines = FACTORY.productionLines.byLevel[currentLevel - 1] || 1;
+        const lines = factory?.lines || [];
+        const maintCost = FACTORY.productionLines.maintenance.cost[currentLevel - 1] || 15000;
+        return (
         <>
-          {/* Current Production Line */}
-          {factory?.currentLine && (
-            <div className="card">
-              <div className="card-title">Current Line</div>
-              <div className="row-between mb-4">
-                <span className="text-sm text-dim">Active Type</span>
-                <span className="font-bold">{tireName(factory.currentLine, g)}</span>
-              </div>
-              {(factory.switchCooldown || 0) > 0 && (
-                <div className="text-xs text-red mb-4">Line switching cooldown: {factory.switchCooldown} day(s)</div>
-              )}
-            </div>
-          )}
+          {/* Production Lines */}
+          {Array.from({ length: Math.max(maxLines, 3) }, (_, idx) => {
+            const isAvailable = idx < maxLines;
+            const line = lines[idx];
+            if (!isAvailable) {
+              return (
+                <div key={idx} className="card" style={{ opacity: 0.4 }}>
+                  <div className="card-title" style={{ color: 'var(--text-dim)' }}>Line {idx + 1} — Locked</div>
+                  <div className="text-sm text-dim">Upgrade factory to unlock this production line.</div>
+                </div>
+              );
+            }
 
-          {/* Production Queue */}
-          {queue.length > 0 && (
-            <div className="card">
-              <div className="card-title">Production Queue</div>
-              {queue.map((job, i) => {
-                const baseKey = job.tire.replace('brand_', '');
-                const displayName = tireName(job.tire, g);
-                const daysLeft = Math.max(0, (job.completionDay || 0) - (g.day || 0));
-                const totalDays = Math.max(1, (job.completionDay || 0) - (job.startDay || 0));
-                const progress = Math.round(((totalDays - daysLeft) / totalDays) * 100);
-                return (
-                  <div key={i} style={{ marginBottom: i < queue.length - 1 ? 8 : 0 }}>
-                    <div className="row-between text-sm mb-4">
-                      <span className="font-bold">{displayName}</span>
-                      <span className="text-dim">{job.qty} tires - {daysLeft}d left</span>
-                    </div>
-                    <div className="progress-bar">
-                      <div className="progress-fill" style={{ width: `${progress}%`, background: 'var(--green)' }} />
-                    </div>
+            const lineQueue = line?.queue || [];
+            const lineStatus = line?.status || 'active';
+            const lineType = line?.currentType || null;
+            const runStreak = line?.runStreak || 0;
+            const lastMaintDay = line?.lastMaintDay || 0;
+            const daysSinceMaint = (g.day || 0) - lastMaintDay;
+            const maintColor = daysSinceMaint > 30 ? 'var(--red)' : daysSinceMaint > 25 ? '#ff9800' : 'var(--green)';
+
+            // Run streak defect bonus
+            const thresholds = FACTORY.productionLines.runEfficiency.thresholds;
+            const defectReductions = FACTORY.productionLines.runEfficiency.defectReduction;
+            let streakBonus = 0;
+            for (let t = thresholds.length - 1; t >= 0; t--) {
+              if (runStreak >= thresholds[t]) { streakBonus = defectReductions[t]; break; }
+            }
+
+            return (
+              <div key={idx} className="card" style={{ borderLeft: lineStatus === 'maintenance' ? '3px solid #ff9800' : idx === selectedLine ? '3px solid var(--accent)' : undefined }}>
+                <div className="row-between mb-4">
+                  <div className="card-title" style={{ margin: 0 }}>Line {idx + 1}</div>
+                  <span className={`text-xs font-bold ${lineStatus === 'active' ? 'text-green' : ''}`}
+                    style={lineStatus === 'maintenance' ? { color: '#ff9800' } : undefined}>
+                    {lineStatus === 'active' ? 'Active' : 'Maintenance'}
+                  </span>
+                </div>
+
+                {lineType && (
+                  <div className="row-between text-sm mb-4">
+                    <span className="text-dim">Current Type</span>
+                    <span className="font-bold">{tireName(lineType, g)}</span>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                )}
+
+                {runStreak > 0 && (
+                  <div className="text-xs mb-4" style={{ color: 'var(--green)' }}>
+                    Run streak: {runStreak} {streakBonus > 0 ? `\u2014 ${Math.round(streakBonus * 100)}% less defects` : ''}
+                  </div>
+                )}
+
+                {/* Maintenance status */}
+                <div className="row-between text-sm mb-4">
+                  <span className="text-dim">Maintenance</span>
+                  <span className="font-bold" style={{ color: maintColor }}>
+                    {daysSinceMaint > 30 ? 'Overdue' : daysSinceMaint > 25 ? 'Due soon' : 'Good'}
+                    <span className="text-dim" style={{ fontWeight: 'normal', marginLeft: 4 }}>({daysSinceMaint}d ago)</span>
+                  </span>
+                </div>
+
+                {lineStatus === 'active' && (
+                  <button className="btn btn-full btn-sm btn-outline mb-4" disabled={busy || g.cash < maintCost}
+                    onClick={() => doAction('maintenanceLine', { lineIndex: idx })}>
+                    Run Maintenance (${fmt(maintCost)})
+                  </button>
+                )}
+
+                {/* Line queue */}
+                {lineQueue.length > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    <div className="text-xs text-dim mb-4">Queue ({lineQueue.length})</div>
+                    {lineQueue.map((job, ji) => {
+                      const tName = tireName(job.tire, g);
+                      const daysLeft = Math.max(0, (job.completionDay || 0) - (g.day || 0));
+                      const totalDays = Math.max(1, (job.completionDay || 0) - (job.startDay || 0));
+                      const progress = Math.round(((totalDays - daysLeft) / totalDays) * 100);
+                      return (
+                        <div key={ji} style={{ marginBottom: ji < lineQueue.length - 1 ? 6 : 0 }}>
+                          <div className="row-between text-sm mb-4">
+                            <span className="font-bold">{tName}</span>
+                            <span className="text-dim">{job.qty} tires - {daysLeft}d left</span>
+                          </div>
+                          <div className="progress-bar">
+                            <div className="progress-fill" style={{ width: `${progress}%`, background: 'var(--green)' }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {lineQueue.length === 0 && lineStatus === 'active' && (
+                  <div className="text-xs text-dim">No jobs queued.</div>
+                )}
+              </div>
+            );
+          })}
 
           {/* Raw Material Trend */}
           <div className="card">
@@ -393,6 +546,21 @@ export default function FactoryPanel() {
           {/* New Production Order */}
           <div className="card">
             <div className="card-title">New Production Order</div>
+
+            {/* Line selector (only if >1 available) */}
+            {maxLines > 1 && (
+              <div style={{ marginBottom: 8 }}>
+                <label className="text-xs text-dim" style={{ display: 'block', marginBottom: 4 }}>Target Line</label>
+                <select className="autoprice-select" style={{ width: '100%' }} value={selectedLine} onChange={(e) => setSelectedLine(Number(e.target.value))}>
+                  {Array.from({ length: maxLines }, (_, i) => {
+                    const ln = lines[i];
+                    const lnStatus = ln?.status || 'active';
+                    return <option key={i} value={i} disabled={lnStatus === 'maintenance'}>Line {i + 1}{lnStatus === 'maintenance' ? ' (Maintenance)' : ''}</option>;
+                  })}
+                </select>
+              </div>
+            )}
+
             <div style={{ marginBottom: 8 }}>
               <label className="text-xs text-dim" style={{ display: 'block', marginBottom: 4 }}>Tire Type</label>
               <select className="autoprice-select" style={{ width: '100%' }} value={selectedType} onChange={(e) => setSelectedType(e.target.value)}>
@@ -413,16 +581,22 @@ export default function FactoryPanel() {
               <span className="text-dim">Effective Cost (with materials)</span>
               <span className={`font-bold ${g.cash < totalCost ? 'text-red' : 'text-green'}`}>${fmt(totalCost)}</span>
             </div>
-            {factory?.currentLine && factory.currentLine !== selectedType && (
-              <div className="text-xs text-red mb-4">Line switch required: +1 day cooldown</div>
-            )}
-            <button className="btn btn-full btn-green" disabled={g.cash < totalCost || qty < 1 || busy}
-              onClick={() => doAction('produceFactoryTires', { tire: selectedType, qty })}>
-              {busy ? 'Starting...' : g.cash < totalCost ? 'Not Enough Cash' : `Produce ${qty} tires`}
+            {(() => {
+              const targetLine = lines[selectedLine];
+              const targetLineType = targetLine?.currentType;
+              if (targetLineType && targetLineType !== selectedType) {
+                return <div className="text-xs text-red mb-4">Line switch required: +1 day cooldown</div>;
+              }
+              return null;
+            })()}
+            <button className="btn btn-full btn-green" disabled={g.cash < totalCost || qty < 1 || busy || (lines[selectedLine]?.status === 'maintenance')}
+              onClick={() => doAction('produceFactoryTires', { tire: selectedType, qty, lineIndex: selectedLine })}>
+              {busy ? 'Starting...' : g.cash < totalCost ? 'Not Enough Cash' : lines[selectedLine]?.status === 'maintenance' ? 'Line in Maintenance' : `Produce ${qty} tires`}
             </button>
           </div>
         </>
-      )}
+        );
+      })()}
 
       {/* ═══ WHOLESALE TAB ═══ */}
       {tab === 'wholesale' && (
@@ -890,6 +1064,75 @@ export default function FactoryPanel() {
             {(factory?.rubberSupply || 0) === 0 && (
               <div className="text-xs text-dim">No surplus to sell. Build a farm or lab to produce rubber.</div>
             )}
+          </div>
+
+          {/* Material Suppliers */}
+          <div className="card">
+            <div className="card-title">Material Suppliers</div>
+            <div className="text-xs text-dim mb-4">Choose suppliers for steel and chemicals. Better suppliers cost more but reduce defects.</div>
+            {Object.entries(MATERIAL_SUPPLIERS).map(([material, tiers]) => {
+              const currentSupplierId = factory?.suppliers?.[material] || tiers.find(t => t.id.includes('standard'))?.id || tiers[1]?.id;
+              return (
+                <div key={material} style={{ marginBottom: 12 }}>
+                  <div className="font-bold text-sm mb-4" style={{ textTransform: 'capitalize' }}>{material}</div>
+                  {tiers.map(tier => {
+                    const isSelected = currentSupplierId === tier.id;
+                    const meetsRep = (factory?.brandReputation || 0) >= tier.minRep;
+                    const priceLabel = tier.priceMod < 1
+                      ? `-${Math.round((1 - tier.priceMod) * 100)}% cost`
+                      : tier.priceMod > 1
+                        ? `+${Math.round((tier.priceMod - 1) * 100)}% cost`
+                        : 'Base cost';
+                    const qualityLabel = tier.qualityMod > 1
+                      ? `+${Math.round((tier.qualityMod - 1) * 100)}% defects`
+                      : tier.qualityMod < 1
+                        ? `-${Math.round((1 - tier.qualityMod) * 100)}% defects`
+                        : 'Base quality';
+                    return (
+                      <div key={tier.id}
+                        style={{
+                          padding: '8px',
+                          marginBottom: 4,
+                          borderRadius: 6,
+                          border: isSelected ? '2px solid var(--accent)' : '1px solid var(--border)',
+                          background: isSelected ? 'rgba(78,168,222,0.08)' : undefined,
+                          opacity: !meetsRep ? 0.5 : 1,
+                          cursor: meetsRep && !isSelected ? 'pointer' : 'default',
+                        }}
+                        onClick={() => {
+                          if (meetsRep && !isSelected && !busy) {
+                            doAction('setMaterialSupplier', { material, supplierId: tier.id });
+                          }
+                        }}
+                      >
+                        <div className="row-between mb-4">
+                          <div className="row gap-8" style={{ alignItems: 'center' }}>
+                            <span style={{
+                              width: 14, height: 14, borderRadius: '50%',
+                              border: '2px solid var(--accent)',
+                              background: isSelected ? 'var(--accent)' : 'transparent',
+                              display: 'inline-block', flexShrink: 0,
+                            }} />
+                            <span className="font-bold text-sm">{tier.label}</span>
+                          </div>
+                          {isSelected && <span className="text-xs text-accent font-bold">Active</span>}
+                        </div>
+                        <div className="row gap-8 text-xs" style={{ flexWrap: 'wrap', marginLeft: 22 }}>
+                          <span style={{ color: tier.priceMod < 1 ? 'var(--green)' : tier.priceMod > 1 ? 'var(--red)' : undefined }}>{priceLabel}</span>
+                          <span style={{ color: tier.qualityMod > 1 ? 'var(--red)' : tier.qualityMod < 1 ? 'var(--green)' : undefined }}>{qualityLabel}</span>
+                          <span className="text-dim">Reliability: {Math.round(tier.reliability * 100)}%</span>
+                        </div>
+                        {!meetsRep && tier.minRep > 0 && (
+                          <div className="text-xs text-red" style={{ marginLeft: 22, marginTop: 2 }}>
+                            Requires {tier.minRep} brand rep (you have {Math.round(factory?.brandReputation || 0)})
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
           </div>
         </>
       )}

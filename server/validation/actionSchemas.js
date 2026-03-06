@@ -71,7 +71,7 @@ export const ACTION_SCHEMAS = {
 
   // ── Factory ──
   buildFactory:             empty,
-  produceFactoryTires:      z.object({ tire: str, qty: num }),
+  produceFactoryTires:      z.object({ tire: str, qty: num, lineIndex: optNum }),
   setFactoryBrandName:      z.object({ brandName: z.string().min(2).max(40) }),
   hireFactoryStaff:         z.object({ role: str }),
   fireFactoryStaff:         z.object({ role: str }),
@@ -87,6 +87,9 @@ export const ACTION_SCHEMAS = {
   startCertification:       z.object({ certId: str }),
   hireFactoryCFO:           empty,
   fireFactoryCFO:           empty,
+  maintainFactoryLine:      z.object({ lineIndex: num }),
+  recallBatch:              z.object({ batchIndex: num }),
+  setMaterialSupplier:      z.object({ material: str, supplierId: str }),
   buyRubberFarm:            empty,
   upgradeRubberFarm:        empty,
   buySyntheticLab:          empty,

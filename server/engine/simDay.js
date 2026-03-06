@@ -32,7 +32,7 @@ import { RETREADING } from '../../shared/constants/retreading.js';
 import { SUPPLIER_REL_TIERS, getSupplierRelTier } from '../../shared/constants/supplierRelations.js';
 import { ACHIEVEMENTS } from '../../shared/constants/achievements.js';
 import { FACTORY } from '../../shared/constants/factory.js';
-import { RAW_MATERIALS, VINNIE_SCHEMES, RD_PROJECTS, CERTIFICATIONS, SHIPPING_ZONES, CFO_ROLE, RUBBER_FARM, SYNTHETIC_LAB } from '../../shared/constants/factoryBrand.js';
+import { RAW_MATERIALS, VINNIE_SCHEMES, RD_PROJECTS, CERTIFICATIONS, SHIPPING_ZONES, CFO_ROLE, RUBBER_FARM, SYNTHETIC_LAB, MATERIAL_SUPPLIERS } from '../../shared/constants/factoryBrand.js';
 import { getAllTires, getBrandTireKey, getEffectiveProductionCost, getCustomerTier, computeTireAttributes, getTireAttrMultiplier } from '../../shared/helpers/factoryBrand.js';
 import { GLOBAL_EVENTS } from '../../shared/constants/globalEvents.js';
 import { MANUFACTURERS } from '../../shared/constants/manufacturers.js';
@@ -308,49 +308,179 @@ export function simDay(g, shared = {}) {
       }
     }
 
-    // ── LINE SWITCHING COOLDOWN ──
-    if ((s.factory.switchCooldown || 0) > 0) {
-      s.factory.switchCooldown--;
+    // ── MULTI-LINE PRODUCTION SYSTEM ──
+    // Migrate legacy single queue to lines array
+    if (!s.factory.lines) {
+      s.factory.lines = [{
+        id: 0,
+        queue: s.factory.productionQueue || [],
+        currentType: s.factory.currentLine || null,
+        runStreak: 0,
+        lastMaintDay: s.day,
+        status: 'active',
+      }];
+      delete s.factory.productionQueue;
+      delete s.factory.currentLine;
+      delete s.factory.switchCooldown;
     }
 
-    // ── PRODUCTION COMPLETIONS — apply defect rate, store as brand_ keys ──
+    // Determine available lines based on factory level
+    const maxLines = (FACTORY.productionLines?.byLevel?.[s.factory.level - 1]) || 1;
+
+    // Get supplier modifiers
+    const steelSup = MATERIAL_SUPPLIERS?.steel?.find(sup => sup.id === s.factory.suppliers?.steel) || { qualityMod: 1, priceMod: 1, reliability: 0.95 };
+    const chemSup = MATERIAL_SUPPLIERS?.chemicals?.find(sup => sup.id === s.factory.suppliers?.chemicals) || { qualityMod: 1, priceMod: 1, reliability: 0.95 };
+    const supplierDefectMod = (steelSup.qualityMod + chemSup.qualityMod) / 2;
+
+    // Supplier reliability check — delays today's completions by 1 day
+    let supplyDelay = false;
+    if (Math.random() > steelSup.reliability || Math.random() > chemSup.reliability) {
+      supplyDelay = true;
+      s.log.push({ msg: '\u{1F4E6} Supply delay — production pushed back 1 day', cat: 'factory' });
+    }
+
     const defectMult = s.factory._vinnieQualityShortcut ? 2 : 1;
     delete s.factory._vinnieQualityShortcut;
-    const completed = s.factory.productionQueue.filter(q => s.day >= q.completionDay);
-    s.factory.productionQueue = s.factory.productionQueue.filter(q => s.day < q.completionDay);
     let producedTotal = 0;
     const allTiresMap = getAllTires(s);
-    for (const q of completed) {
-      const defectRate = Math.max(FACTORY.minDefectRate, (FACTORY.baseDefectRate - (fStaff.inspectors || 0) * 0.02) * defectMult);
-      const goodQty = Math.max(1, Math.floor(q.qty * (1 - defectRate)));
-      // Store with brand_ prefix
-      const storeKey = q.tire.startsWith('brand_') ? q.tire : getBrandTireKey(q.tire);
-      const factorySpace = Math.max(0, getCap(s) - getInv(s));
-      let storeQty = Math.min(goodQty, factorySpace);
-      if (storeQty > 0) s.warehouseInventory[storeKey] = (s.warehouseInventory[storeKey] || 0) + storeQty;
-      // Overflow: if warehouse full, push remaining tires to store locations
-      let overflow = goodQty - storeQty;
-      if (overflow > 0 && s.locations.length > 0) {
-        for (const loc of s.locations) {
-          if (overflow <= 0) break;
-          if (!loc.inventory) loc.inventory = {};
-          const locSpace = Math.max(0, getLocCap(loc) - getLocInv(loc));
-          const pushQty = Math.min(overflow, locSpace);
-          if (pushQty > 0) {
-            loc.inventory[storeKey] = (loc.inventory[storeKey] || 0) + pushQty;
-            overflow -= pushQty;
-            storeQty += pushQty;
+    if (!s.factory.defectHistory) s.factory.defectHistory = [];
+
+    // Green Tech waste reduction
+    const hasGreenTech = (s.factory.completedRD || []).includes('greenTech');
+    const wasteReduction = hasGreenTech ? 0.15 : 0;
+
+    for (const line of s.factory.lines) {
+      if (line.id >= maxLines) continue; // line not yet unlocked
+
+      // Maintenance check
+      if (line.status === 'maintenance') {
+        if (s.day >= (line.maintCompleteDay || 0)) {
+          line.status = 'active';
+          line.lastMaintDay = s.day;
+          s.log.push({ msg: `\u{1F527} Production line ${line.id + 1} maintenance complete`, cat: 'factory' });
+        }
+        continue; // skip production while in maintenance
+      }
+
+      // Maintenance neglect penalty
+      const maintInterval = FACTORY.productionLines?.maintenance?.intervalDays || 30;
+      const daysSinceMaint = s.day - (line.lastMaintDay || 0);
+      const neglectPenalty = daysSinceMaint > maintInterval ? (FACTORY.productionLines?.maintenance?.neglectDefectPenalty || 0.03) : 0;
+
+      // Line switching cooldown
+      if ((line.switchCooldown || 0) > 0) {
+        line.switchCooldown--;
+      }
+
+      // Run efficiency bonus
+      const runEff = FACTORY.productionLines?.runEfficiency;
+      let runDefectBonus = 0;
+      let runCostBonus = 0;
+      if (runEff && line.runStreak > 0) {
+        for (let i = runEff.thresholds.length - 1; i >= 0; i--) {
+          if (line.runStreak >= runEff.thresholds[i]) {
+            runDefectBonus = runEff.defectReduction[i] || 0;
+            runCostBonus = runEff.costReduction[i] || 0;
+            break;
           }
         }
       }
-      producedTotal += storeQty;
-      const tireName = allTiresMap[storeKey]?.n || allTiresMap[q.tire]?.n || q.tire;
-      if (overflow > 0) {
-        s.log.push({ msg: `\u{1F3ED} Factory produced ${storeQty}/${goodQty} ${tireName} (${overflow} lost — all storage full!)`, cat: 'sale' });
-      } else if (goodQty < q.qty) {
-        s.log.push({ msg: `\u{1F3ED} Factory produced ${goodQty}/${q.qty} ${tireName} (${q.qty - goodQty} defective)`, cat: 'sale' });
-      } else {
-        s.log.push({ msg: `\u{1F3ED} Factory produced ${goodQty} ${tireName}`, cat: 'sale' });
+
+      // Process completions for this line
+      const completed = line.queue.filter(q => s.day >= q.completionDay && !supplyDelay);
+      line.queue = line.queue.filter(q => s.day < q.completionDay || supplyDelay);
+
+      // If supply delay, push today's completions back by 1 day
+      if (supplyDelay) {
+        for (const batch of line.queue) {
+          if (batch.completionDay === s.day) batch.completionDay += 1;
+        }
+      }
+
+      for (const q of completed) {
+        // Calculate defect rate with all modifiers
+        let defectRate = Math.max(FACTORY.minDefectRate,
+          (FACTORY.baseDefectRate - (fStaff.inspectors || 0) * 0.02 - runDefectBonus + neglectPenalty) * defectMult * supplierDefectMod
+        );
+        // Apply waste reduction from Green Tech
+        if (wasteReduction > 0) defectRate = Math.max(FACTORY.minDefectRate, defectRate * (1 - wasteReduction));
+
+        const goodQty = Math.max(1, Math.floor(q.qty * (1 - defectRate)));
+        const totalDefects = q.qty - goodQty;
+
+        // Track defect categories
+        const cosmeticDefects = Math.floor(totalDefects * 0.50);
+        const structuralDefects = Math.floor(totalDefects * 0.35);
+        const criticalDefects = totalDefects - cosmeticDefects - structuralDefects;
+
+        if (totalDefects > 0) {
+          s.factory.defectHistory.push({
+            day: s.day, tire: q.tire, qty: q.qty, good: goodQty, lineId: line.id,
+            defects: { cosmetic: cosmeticDefects, structural: structuralDefects, critical: criticalDefects },
+            defectRate: totalDefects / q.qty,
+          });
+        }
+
+        // Update run streak
+        if (line.currentType === q.tire) {
+          line.runStreak = (line.runStreak || 0) + 1;
+        } else {
+          line.runStreak = 1;
+          line.currentType = q.tire;
+        }
+
+        // Store with brand_ prefix
+        const storeKey = q.tire.startsWith('brand_') ? q.tire : getBrandTireKey(q.tire);
+        const factorySpace = Math.max(0, getCap(s) - getInv(s));
+        let storeQty = Math.min(goodQty, factorySpace);
+        if (storeQty > 0) s.warehouseInventory[storeKey] = (s.warehouseInventory[storeKey] || 0) + storeQty;
+        let overflow = goodQty - storeQty;
+        if (overflow > 0 && s.locations.length > 0) {
+          for (const loc of s.locations) {
+            if (overflow <= 0) break;
+            if (!loc.inventory) loc.inventory = {};
+            const locSpace = Math.max(0, getLocCap(loc) - getLocInv(loc));
+            const pushQty = Math.min(overflow, locSpace);
+            if (pushQty > 0) {
+              loc.inventory[storeKey] = (loc.inventory[storeKey] || 0) + pushQty;
+              overflow -= pushQty;
+              storeQty += pushQty;
+            }
+          }
+        }
+        producedTotal += storeQty;
+        const tName = allTiresMap[storeKey]?.n || allTiresMap[q.tire]?.n || q.tire;
+        const lineLabel = s.factory.lines.length > 1 ? ` [Line ${line.id + 1}]` : '';
+        if (overflow > 0) {
+          s.log.push({ msg: `\u{1F3ED} Produced ${storeQty}/${goodQty} ${tName}${lineLabel} (${overflow} lost — storage full!)`, cat: 'sale' });
+        } else if (totalDefects > 0) {
+          s.log.push({ msg: `\u{1F3ED} Produced ${goodQty}/${q.qty} ${tName}${lineLabel} (${totalDefects} defective: ${cosmeticDefects}C/${structuralDefects}S/${criticalDefects}X)`, cat: 'sale' });
+        } else {
+          s.log.push({ msg: `\u{1F3ED} Produced ${goodQty} ${tName}${lineLabel}`, cat: 'sale' });
+        }
+      }
+    }
+
+    // Trim defect history to last 90 entries
+    if (s.factory.defectHistory.length > 90) {
+      s.factory.defectHistory = s.factory.defectHistory.slice(-90);
+    }
+
+    // ── WARRANTY CLAIMS — based on recent defect rate ──
+    const recentDefects = s.factory.defectHistory.filter(d => s.day - d.day < 30);
+    if (recentDefects.length > 0) {
+      const avgDefectRate = recentDefects.reduce((sum, d) => sum + d.defectRate, 0) / recentDefects.length;
+      if (avgDefectRate > 0.02 && Math.random() < avgDefectRate * 0.5) {
+        const claimRoll = Math.random();
+        const claimType = claimRoll < 0.15 ? 'critical' : claimRoll < 0.50 ? 'structural' : 'cosmetic';
+        const typeInfo = FACTORY.defectTypes[claimType];
+        const avgCost = Object.values(FACTORY.productionCost).reduce((a, b) => a + b, 0) / Object.values(FACTORY.productionCost).length;
+        const claimCost = Math.floor(avgCost * typeInfo.warrantyCost * (5 + Math.floor(Math.random() * 15)));
+        s.cash -= claimCost;
+        s.reputation = Math.max(0, s.reputation - typeInfo.repPenalty);
+        s.factory.totalWarrantyClaims = (s.factory.totalWarrantyClaims || 0) + 1;
+        s.factory.totalWarrantyCost = (s.factory.totalWarrantyCost || 0) + claimCost;
+        s.log.push({ msg: `\u{26A0}\u{FE0F} Warranty claim (${claimType}): -$${claimCost.toLocaleString()} — avg defect rate ${(avgDefectRate * 100).toFixed(1)}%`, cat: 'factory' });
       }
     }
 

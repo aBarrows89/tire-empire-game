@@ -1,5 +1,5 @@
 import { FACTORY } from '../../../shared/constants/factory.js';
-import { FACTORY_DISCOUNT_TIERS_DEFAULT, RD_PROJECTS, CERTIFICATIONS, EXCLUSIVE_TIRES, CFO_ROLE, LINE_SWITCH_DAYS, RUBBER_FARM, SYNTHETIC_LAB } from '../../../shared/constants/factoryBrand.js';
+import { FACTORY_DISCOUNT_TIERS_DEFAULT, RD_PROJECTS, CERTIFICATIONS, EXCLUSIVE_TIRES, CFO_ROLE, LINE_SWITCH_DAYS, RUBBER_FARM, SYNTHETIC_LAB, MATERIAL_SUPPLIERS } from '../../../shared/constants/factoryBrand.js';
 import { getEffectiveProductionCost, getBrandTireKey } from '../../../shared/helpers/factoryBrand.js';
 import { uid } from '../../../shared/helpers/random.js';
 
@@ -47,14 +47,14 @@ export async function handleFactory(action, params, g, ctx) {
 
     case 'produceFactoryTires': {
       if (!g.hasFactory || !g.factory) return ctx.fail('No factory');
-      const { tire, qty: rawQty2 } = params;
+      const { tire, qty: rawQty2, lineIndex: rawLineIdx } = params;
       const isExclusive = tire.startsWith('brand_') && (g.factory.unlockedSpecials || []).includes(tire);
       if (!isExclusive && !FACTORY.productionCost[tire]) return ctx.fail('Cannot manufacture this tire type');
       const prodQty = Math.max(1, Math.floor(Number(rawQty2) || 0));
       let unitCost = isExclusive
         ? (EXCLUSIVE_TIRES[tire]?.baseCost || 80)
         : getEffectiveProductionCost(g.factory, tire);
-      // 6a: Global commodity prices cascade into factory production costs
+      // Global commodity prices cascade into factory production costs
       const gameData = await ctx.getGame();
       const gc = gameData?.economy?.commodities || {};
       if (gc.rubber || gc.steel || gc.chemicals) {
@@ -63,25 +63,46 @@ export async function handleFactory(action, params, g, ctx) {
       }
       const cost = prodQty * unitCost;
       if (g.cash < cost) return ctx.fail('Not enough cash');
-      const currentQueue = (g.factory.productionQueue || []).reduce((a, q) => a + q.qty, 0);
+
+      // Multi-line support: determine target line
+      const lineIdx = Math.max(0, Math.floor(Number(rawLineIdx) || 0));
+      const maxLines = (FACTORY.productionLines?.byLevel?.[g.factory.level - 1]) || 1;
+      if (lineIdx >= maxLines) return ctx.fail(`Line ${lineIdx + 1} not available (factory level ${g.factory.level} has ${maxLines} line${maxLines > 1 ? 's' : ''})`);
+
+      // Migrate legacy queue if needed
+      if (!g.factory.lines) {
+        g.factory.lines = [{
+          id: 0, queue: g.factory.productionQueue || [], currentType: g.factory.currentLine || null,
+          runStreak: 0, lastMaintDay: g.day, status: 'active', switchCooldown: 0,
+        }];
+        delete g.factory.productionQueue;
+        delete g.factory.currentLine;
+      }
+      // Ensure line exists
+      while (g.factory.lines.length <= lineIdx) {
+        g.factory.lines.push({ id: g.factory.lines.length, queue: [], currentType: null, runStreak: 0, lastMaintDay: g.day, status: 'active', switchCooldown: 0 });
+      }
+      const line = g.factory.lines[lineIdx];
+      if (line.status === 'maintenance') return ctx.fail(`Line ${lineIdx + 1} is under maintenance`);
+
+      const currentQueue = line.queue.reduce((a, q) => a + q.qty, 0);
       if (currentQueue + prodQty > g.factory.dailyCapacity * 7) {
         return ctx.fail('Production queue full');
       }
       let switchDelay = 0;
-      if (g.factory.currentLine && g.factory.currentLine !== tire) {
+      if (line.currentType && line.currentType !== tire) {
         switchDelay = LINE_SWITCH_DAYS;
       }
-      g.factory.currentLine = tire;
+      line.currentType = tire;
       g.cash -= cost;
-      if (!g.factory.productionQueue) g.factory.productionQueue = [];
       const storeKey = tire.startsWith('brand_') ? tire : getBrandTireKey(tire);
-      g.factory.productionQueue.push({
+      line.queue.push({
         tire: storeKey, qty: prodQty, startDay: g.day,
         completionDay: g.day + switchDelay + Math.ceil(prodQty / g.factory.dailyCapacity),
       });
       if (switchDelay > 0) {
         g.log = g.log || [];
-        g.log.push({ msg: `Factory line switch: +${switchDelay} day cooldown`, cat: 'sale' });
+        g.log.push({ msg: `Line ${lineIdx + 1} switch: +${switchDelay} day cooldown`, cat: 'sale' });
       }
       break;
     }
@@ -343,6 +364,58 @@ export async function handleFactory(action, params, g, ctx) {
       g.factory.rubberSupply = 0;
       g.log = g.log || [];
       g.log.push({ msg: `Sold ${supply} rubber units for $${revenue.toLocaleString()} ($${pricePerUnit}/unit)`, cat: 'sale' });
+      break;
+    }
+
+    case 'maintainFactoryLine': {
+      if (!g.hasFactory || !g.factory) return ctx.fail('No factory');
+      const { lineIndex } = params;
+      const li = Math.max(0, Math.floor(Number(lineIndex) || 0));
+      if (!g.factory.lines || !g.factory.lines[li]) return ctx.fail('Line not found');
+      const line = g.factory.lines[li];
+      if (line.status === 'maintenance') return ctx.fail('Line already in maintenance');
+      const maintCost = (FACTORY.productionLines?.maintenance?.cost?.[g.factory.level - 1]) || 15000;
+      if (g.cash < maintCost) return ctx.fail(`Need $${maintCost.toLocaleString()} for maintenance`);
+      g.cash -= maintCost;
+      line.status = 'maintenance';
+      line.maintCompleteDay = g.day + (FACTORY.productionLines?.maintenance?.durationDays || 1);
+      g.log = g.log || [];
+      g.log.push({ msg: `🔧 Line ${li + 1} maintenance started (-$${maintCost.toLocaleString()})`, cat: 'factory' });
+      break;
+    }
+
+    case 'recallBatch': {
+      if (!g.hasFactory || !g.factory) return ctx.fail('No factory');
+      const { batchIndex } = params;
+      const bi = Math.floor(Number(batchIndex) || 0);
+      const batch = g.factory.defectHistory?.[bi];
+      if (!batch) return ctx.fail('Batch not found');
+      if (batch.recalled) return ctx.fail('Already recalled');
+      const totalDefective = (batch.defects?.cosmetic || 0) + (batch.defects?.structural || 0) + (batch.defects?.critical || 0);
+      if (totalDefective <= 0) return ctx.fail('No defects to recall');
+      const recallCost = Math.floor(totalDefective * (FACTORY.productionCost[batch.tire] || 50) * (FACTORY.warranty?.recallCostMultiplier || 2));
+      if (g.cash < recallCost) return ctx.fail(`Need $${recallCost.toLocaleString()} for recall`);
+      g.cash -= recallCost;
+      g.reputation = Math.min(100, g.reputation + totalDefective * 0.01);
+      batch.recalled = true;
+      g.factory.totalRecalls = (g.factory.totalRecalls || 0) + 1;
+      g.log = g.log || [];
+      g.log.push({ msg: `🔄 Recalled batch of ${batch.qty} tires — $${recallCost.toLocaleString()} cost, reputation recovered`, cat: 'factory' });
+      break;
+    }
+
+    case 'setMaterialSupplier': {
+      if (!g.hasFactory || !g.factory) return ctx.fail('No factory');
+      const { material, supplierId } = params;
+      const suppliers = MATERIAL_SUPPLIERS?.[material];
+      if (!suppliers) return ctx.fail('Invalid material type');
+      const sup = suppliers.find(s => s.id === supplierId);
+      if (!sup) return ctx.fail('Supplier not found');
+      if (g.reputation < (sup.minRep || 0)) return ctx.fail(`Need ${sup.minRep}+ reputation for this supplier`);
+      if (!g.factory.suppliers) g.factory.suppliers = {};
+      g.factory.suppliers[material] = supplierId;
+      g.log = g.log || [];
+      g.log.push({ msg: `Switched ${material} supplier to ${sup.label}`, cat: 'factory' });
       break;
     }
 

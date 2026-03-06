@@ -20,6 +20,12 @@ export const FACTORY = {
     commercial: 90,
     evTire: 70,
     runFlat: 60,
+    luxuryTouring: 95,
+    premiumAllWeather: 80,
+    motorcycle: 45,
+    mudTerrain: 65,
+    racingSlick: 110,
+    trailer: 30,
   },
 
   monthlyOverhead: 50000,
@@ -46,6 +52,34 @@ export const FACTORY = {
   // R&D system — lower base defect, better inspector effectiveness
   baseDefectRate: 0.12,
   minDefectRate: 0.01,
+
+  // Production line mechanics
+  productionLines: {
+    byLevel: [1, 1, 2, 2, 3, 3],  // lines available at each factory level
+    runEfficiency: {
+      thresholds: [3, 7, 15],           // consecutive same-type batches
+      defectReduction: [0.01, 0.02, 0.03],
+      costReduction: [0.03, 0.05, 0.08],
+    },
+    maintenance: {
+      intervalDays: 30,
+      cost: [15000, 25000, 40000, 60000, 100000, 150000],
+      durationDays: 1,
+      neglectDefectPenalty: 0.03,
+    },
+  },
+
+  // Quality & defect tracking
+  defectTypes: {
+    cosmetic:   { weight: 0.50, warrantyCost: 0.3, repPenalty: 0.1 },
+    structural: { weight: 0.35, warrantyCost: 0.7, repPenalty: 0.3 },
+    critical:   { weight: 0.15, warrantyCost: 1.5, repPenalty: 0.8 },
+  },
+  warranty: {
+    baseCostMultiplier: 1.5,
+    maxClaimsPerDay: 5,
+    recallCostMultiplier: 2.0,
+  },
 
   // Volume discounts on production cost (more granular tiers)
   volumeDiscounts: [

@@ -15,4 +15,8 @@ export const TIRES = {
   runFlat: { n: "Run-Flat", bMin: 80, bMax: 130, def: 170, lo: 120, hi: 250 },
   luxuryTouring: { n: "Luxury Touring", bMin: 120, bMax: 190, def: 250, lo: 180, hi: 350, premium: true },
   premiumAllWeather: { n: "Premium All-Weather", bMin: 100, bMax: 160, def: 210, lo: 150, hi: 300, premium: true },
+  motorcycle: { n: "Motorcycle", bMin: 40, bMax: 75, def: 95, lo: 65, hi: 150 },
+  mudTerrain: { n: "Mud Terrain", bMin: 60, bMax: 110, def: 140, lo: 100, hi: 220 },
+  racingSlick: { n: "Racing Slick", bMin: 100, bMax: 180, def: 240, lo: 170, hi: 400, premium: true },
+  trailer: { n: "Trailer", bMin: 30, bMax: 55, def: 75, lo: 50, hi: 120 },
 };
