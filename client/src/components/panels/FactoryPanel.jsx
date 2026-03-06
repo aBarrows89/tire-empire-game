@@ -28,14 +28,17 @@ export default function FactoryPanel() {
   // Contracts state
   const [contractSellers, setContractSellers] = useState([]);
   const [contractForm, setContractForm] = useState({ sellerId: '', tireType: 'allSeason', qty: 500, pricePerUnit: 100, durationDays: 90, batchSize: 50, paymentTerms: 'on_delivery' });
+  const [actionMsg, setActionMsg] = useState(null);
 
   const factory = g.factory || null;
   const hasFactory = !!g.hasFactory;
 
   const doAction = async (action, params = {}) => {
     setBusy(true);
+    setActionMsg(null);
     const res = await postAction(action, params);
-    if (res.ok) { hapticsMedium(); applyState(res); }
+    if (res.ok) { hapticsMedium(); applyState(res); setActionMsg({ type: 'ok', text: `${action} succeeded` }); }
+    else { setActionMsg({ type: 'err', text: res.error || 'Action failed' }); }
     setBusy(false);
   };
 
@@ -854,6 +857,13 @@ export default function FactoryPanel() {
 
         return (
           <>
+            {/* Action feedback */}
+            {actionMsg && (
+              <div className="card text-xs" style={{ color: actionMsg.type === 'ok' ? 'var(--green)' : '#ef5350', padding: '8px 12px' }}>
+                {actionMsg.text}
+              </div>
+            )}
+
             {/* Pending Proposals */}
             {pendingP2P.length > 0 && (
               <div className="card">
