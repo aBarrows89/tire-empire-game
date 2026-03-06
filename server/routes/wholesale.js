@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getPlayer, getAllActivePlayers, savePlayerState } from '../db/queries.js';
+import { getPlayer, getAllActivePlayers, savePlayerState, withPlayerLock } from '../db/queries.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { uid } from '../../shared/helpers/random.js';
 import { TIRES } from '../../shared/constants/tires.js';
@@ -97,13 +97,26 @@ router.post('/order', authMiddleware, async (req, res) => {
     const qty = Math.max(1, Math.floor(Number(rawQty) || 0));
     if (qty <= 0) return res.status(400).json({ error: 'Invalid quantity' });
 
-    const buyer = await getPlayer(req.playerId);
-    if (!buyer) return res.status(404).json({ error: 'Buyer not found' });
-    const bg = { ...buyer.game_state };
+    // Lock buyer first, then seller inside — consistent order prevents deadlocks
+    // (always lock lower playerId first to avoid A→B / B→A deadlock)
+    const [firstId, secondId] = [req.playerId, supplierId].sort();
+    let _bg, _sg, _buyerVersion, _sellerVersion;
 
-    const seller = await getPlayer(supplierId);
-    if (!seller) return res.status(404).json({ error: 'Supplier not found' });
-    const sg = { ...seller.game_state };
+    await withPlayerLock(firstId, async () => {
+      await withPlayerLock(secondId, async () => {
+        const buyer = await getPlayer(req.playerId);
+        if (!buyer) { res.status(404).json({ error: 'Buyer not found' }); return; }
+        const seller = await getPlayer(supplierId);
+        if (!seller) { res.status(404).json({ error: 'Supplier not found' }); return; }
+        _bg = { ...buyer.game_state };
+        _sg = { ...seller.game_state };
+        _buyerVersion = buyer.version;
+        _sellerVersion = seller.version;
+      });
+    });
+
+    if (!_bg || !_sg) return; // response already sent inside lock
+    const bg = _bg, sg = _sg;
 
     // Determine price and source type
     let unitPrice = 0;
@@ -238,9 +251,13 @@ router.post('/order', authMiddleware, async (req, res) => {
     sg.log = sg.log || [];
     sg.log.push(`Wholesale order: ${bg.companyName || 'player'} bought ${qty} ${tireName} (+$${Math.round(sellerRevenue)})`);
 
-    // 7. Save both
-    await savePlayerState(req.playerId, bg);
-    await savePlayerState(supplierId, sg);
+    // 7. Save both with version locking to prevent tick race conditions
+    await withPlayerLock(firstId, async () => {
+      await withPlayerLock(secondId, async () => {
+        await savePlayerState(req.playerId, bg, _buyerVersion);
+        await savePlayerState(supplierId, sg, _sellerVersion);
+      });
+    });
 
     res.json({ ok: true, order: orderRecord, buyerState: bg });
   } catch (err) {

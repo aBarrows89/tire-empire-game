@@ -46,14 +46,23 @@ export default function WholesalePanel() {
   const handleOrder = async (supplierId, tireType) => {
     const key = `${supplierId}_${tireType}`;
     const qty = Math.floor(Number(orderQty[key]) || 0);
-    if (qty <= 0) return;
+    if (qty <= 0) { setWsError('Enter a quantity first'); setTimeout(() => setWsError(null), 3000); return; }
     setBusy(true);
-    const res = await placeWholesaleOrder(supplierId, tireType, qty);
-    if (res.ok) {
-      hapticsMedium();
-      refreshState();
-      loadSuppliers();
-      setOrderQty(prev => ({ ...prev, [key]: '' }));
+    setWsError(null);
+    try {
+      const res = await placeWholesaleOrder(supplierId, tireType, qty);
+      if (res.ok) {
+        hapticsMedium();
+        refreshState();
+        loadSuppliers();
+        setOrderQty(prev => ({ ...prev, [key]: '' }));
+      } else {
+        setWsError(res.error || 'Order failed');
+        setTimeout(() => setWsError(null), 4000);
+      }
+    } catch {
+      setWsError('Network error — try again');
+      setTimeout(() => setWsError(null), 4000);
     }
     setBusy(false);
   };
@@ -223,6 +232,12 @@ export default function WholesalePanel() {
               </button>
             </div>
 
+            {wsError && (
+              <div style={{ color: 'var(--red)', fontSize: 12, marginBottom: 8, padding: '6px 8px', background: 'rgba(255,80,80,0.1)', borderRadius: 6 }}>
+                {wsError}
+              </div>
+            )}
+
             {suppliers.length === 0 && !loadingSuppliers && (
               <div className="text-sm text-dim" style={{ lineHeight: 1.5 }}>
                 No player suppliers found. Other players need to unlock wholesale and set prices.
@@ -251,7 +266,7 @@ export default function WholesalePanel() {
                   return (
                     <div key={tireKey} style={{ marginTop: 6, padding: '6px 0' }}>
                       <div className="row-between text-xs mb-4">
-                        <span>{tire?.n || tireKey}</span>
+                        <span>{tire?.n || (info.brandName ? `${info.brandName} ${tireKey.replace('brand_','')}` : tireKey)}</span>
                         <span>${info.price}/ea ({info.stock} in stock)</span>
                       </div>
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
