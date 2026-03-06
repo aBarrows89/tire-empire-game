@@ -69,6 +69,39 @@ app.use('/api/action', actionLimiter);
 
 // ── Routes ──
 app.get('/health', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
+
+// ONE-SHOT: trim bloated games row — no auth needed, secret key only. Remove after use.
+app.get('/api/emergency-trim/:secret', async (req, res) => {
+  if (req.params.secret !== 'trimgames2026') return res.status(403).json({ error: 'nope' });
+  try {
+    const { pool } = await import('./db/pool.js');
+    const client = await pool.connect();
+    try {
+      await client.query('SET statement_timeout = 60000');
+      const { rows } = await client.query("SELECT economy FROM games WHERE id = 'default'");
+      if (!rows[0]) return res.json({ error: 'no games row' });
+      let econ = rows[0].economy;
+      if (typeof econ === 'string') econ = JSON.parse(econ);
+      const beforeKB = Math.round(JSON.stringify(econ).length / 1024);
+      for (const s of Object.values(econ?.exchange?.stocks || {})) {
+        delete s.revenueHistory; delete s.revenueBySegment; delete s.riskRating;
+        delete s.weeklyGrowth; delete s.profitMargin; delete s.dividendYield;
+        if (s.priceHistory?.length > 30) s.priceHistory = s.priceHistory.slice(-30);
+      }
+      for (const ob of Object.values(econ?.exchange?.orderBooks || {})) {
+        if (ob.bids?.length > 20) ob.bids = ob.bids.slice(-20);
+        if (ob.asks?.length > 20) ob.asks = ob.asks.slice(-20);
+        delete ob.fills;
+      }
+      if (econ?.tcMarketplace?.tradeHistory?.length > 50)
+        econ.tcMarketplace.tradeHistory = econ.tcMarketplace.tradeHistory.slice(0, 50);
+      const afterStr = JSON.stringify(econ);
+      const afterKB = Math.round(afterStr.length / 1024);
+      await client.query("UPDATE games SET economy = $1::jsonb WHERE id = 'default'", [afterStr]);
+      res.json({ ok: true, beforeKB, afterKB, savedKB: beforeKB - afterKB });
+    } finally { client.release(); }
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.get('/api/health', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
 app.use('/api/state', stateRouter);
 app.use('/api/action', actionRouter);
