@@ -71,7 +71,7 @@ export default function SupplierPanel() {
           </div>
           <div className="row-between text-sm mb-4">
             <span className="text-dim">Production Lines</span>
-            <span className="font-bold">{g.factory.lines || 1}</span>
+            <span className="font-bold">{(g.factory.lines || []).length || 1}</span>
           </div>
           <div className="row-between text-sm mb-4">
             <span className="text-dim">Daily Output</span>

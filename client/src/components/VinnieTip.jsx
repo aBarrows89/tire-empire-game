@@ -116,7 +116,7 @@ function collectMatchingTips(g, stateGlobalEvents) {
   // ─── FACTORY ───
   if (g.hasFactory && g.factory) {
     const factoryStaffCount = Object.values(g.factory.staff || {}).reduce((a, b) => a + b, 0);
-    if ((g.factory.productionQueue || []).length === 0) pushTip(tips, 'factoryFirst');
+    if ((g.factory.lines || []).every(l => (l.queue || []).length === 0)) pushTip(tips, 'factoryFirst');
     if (factoryStaffCount < 3) pushTip(tips, 'factoryStaff');
     if (g.reputation >= 25) pushTip(tips, 'factoryBrand');
     if ((g.factory.level || 1) < 3) pushTip(tips, 'factoryUpgrade');
