@@ -75,14 +75,20 @@ export default function SupplierPanel() {
           </div>
           <div className="row-between text-sm mb-4">
             <span className="text-dim">Daily Output</span>
-            <span className="font-bold">{g.factory.dailyOutput || 0} tires/day</span>
+            <span className="font-bold">{g.factory.dailyCapacity || 0} tires/day</span>
           </div>
-          {g.factory.currentTire && TIRES[g.factory.currentTire] && (
-            <div className="row-between text-sm mb-4">
-              <span className="text-dim">Producing</span>
-              <span className="font-bold">{tireName(g.factory.currentTire, g)}</span>
-            </div>
+          {(g.factory.lines || []).some(l => (l.queue || []).length > 0) && (
+            <div className="text-xs text-dim mb-4" style={{ marginTop: 4 }}>Currently producing:</div>
           )}
+          {(g.factory.lines || []).map((line, i) => {
+            if (!line.currentType) return null;
+            return (
+              <div key={i} className="row-between text-xs mb-4">
+                <span>Line {i + 1}</span>
+                <span className="font-bold">{tireName(line.currentType, g)}</span>
+              </div>
+            );
+          })}
           {(() => {
             const brandedInStock = Object.entries(g.warehouseInventory || {})
               .filter(([k, qty]) => qty > 0 && k.startsWith('brand_'))

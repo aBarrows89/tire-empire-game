@@ -955,10 +955,11 @@ export function simDay(g, shared = {}) {
       }
 
       const isAllowed = (tireKey) => {
-        if (prefs.mode === 'vinnie') return vinnieTypes ? vinnieTypes.has(tireKey) : true;
+        const baseKey = tireKey.startsWith('brand_') ? tireKey.slice(6) : tireKey;
+        if (prefs.mode === 'vinnie') return vinnieTypes ? vinnieTypes.has(baseKey) : true;
         if (prefs.mode === 'all') return true;
-        if (prefs.mode === 'whitelist') return (prefs.tireTypes || []).includes(tireKey);
-        if (prefs.mode === 'blacklist') return !(prefs.tireTypes || []).includes(tireKey);
+        if (prefs.mode === 'whitelist') return (prefs.tireTypes || []).includes(tireKey) || (prefs.tireTypes || []).includes(baseKey);
+        if (prefs.mode === 'blacklist') return !(prefs.tireTypes || []).includes(tireKey) && !(prefs.tireTypes || []).includes(baseKey);
         return true;
       };
 
@@ -986,6 +987,32 @@ export function simDay(g, shared = {}) {
     }
     if (moved > 0) {
       s.log.push({ msg: `\u{1F69A} Drivers moved ${moved} tires from warehouse to stores`, cat: 'source' });
+    }
+  }
+
+  // ── CONSOLIDATE USED TIRES FROM SHOPS → WAREHOUSE (requires drivers) ──
+  if (driverCount > 0 && s.locations.length > 0) {
+    let usedMoved = 0;
+    const usedKeys = ['used_junk', 'used_poor', 'used_good', 'used_premium'];
+    const whCap = getStorageCap(s);
+
+    for (const loc of s.locations) {
+      if (!loc.inventory) continue;
+      for (const uk of usedKeys) {
+        const qty = loc.inventory[uk] || 0;
+        if (qty <= 0) continue;
+        const whInv = Object.values(s.warehouseInventory || {}).reduce((a, b) => a + b, 0);
+        const whFree = whCap - whInv;
+        if (whFree <= 0) break;
+        const take = Math.min(qty, whFree);
+        loc.inventory[uk] -= take;
+        if (loc.inventory[uk] <= 0) delete loc.inventory[uk];
+        s.warehouseInventory[uk] = (s.warehouseInventory[uk] || 0) + take;
+        usedMoved += take;
+      }
+    }
+    if (usedMoved > 0) {
+      s.log.push({ msg: `♻️ Drivers consolidated ${usedMoved} used tires from shops to warehouse`, cat: 'source' });
     }
   }
 
