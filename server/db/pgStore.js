@@ -443,7 +443,7 @@ export async function savePlayerState(id, gameState, expectedVersion = null) {
     let query, params;
     if (newDay > 0) {
       query = `UPDATE players SET game_state = $2::jsonb, updated_at = NOW(), version = version + 1
-               WHERE id = $1 AND COALESCE((game_state->>'day')::int, 0) < $3`; -- strict: same-day re-saves blocked
+               WHERE id = $1 AND COALESCE((game_state->>'day')::int, 0) < $3`; // strict: same-day re-saves blocked
       params = [id, JSON.stringify(gameState), newDay];
     } else {
       // No day guard for day-0 states (fresh registrations, admin resets)
