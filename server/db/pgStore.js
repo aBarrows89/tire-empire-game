@@ -496,7 +496,9 @@ async function _syncHotTables(id, g) {
       savePlayerStats(id, g),
     ]);
   } catch (err) {
-    // Non-critical — JSONB is the source of truth during migration
+    // FK violation (23503) = player was deleted between tick and save — safe to ignore
+    if (err.code === '23503') return;
+    // Non-critical — JSONB is the source of truth
     console.error('[pgStore] Hot table sync error:', err.message);
   }
 }
@@ -550,18 +552,38 @@ export async function saveGame(id, day, economy, aiShops, liquidation) {
   // so the day doesn't get re-computed from stale cached state
   invalidateGame();
 
-  // Trim unbounded arrays before serializing to prevent JSON bloat
+  // Trim unbounded arrays before serializing to prevent JSON bloat.
+  // The games row is read every tick — if it gets too large, SELECT times out
+  // and NO players get ticked (frozen revenue for everyone).
   const econClean = economy ? JSON.parse(JSON.stringify(economy)) : {};
+
   if (econClean.exchange?.orderBooks) {
     for (const ob of Object.values(econClean.exchange.orderBooks)) {
-      if (ob.bids?.length > 50) ob.bids = ob.bids.slice(-50);
-      if (ob.asks?.length > 50) ob.asks = ob.asks.slice(-50);
+      // Keep only top 20 bids/asks — market makers replenish each tick anyway
+      if (ob.bids?.length > 20) ob.bids = ob.bids.slice(-20);
+      if (ob.asks?.length > 20) ob.asks = ob.asks.slice(-20);
+      // dayVolume resets each tick, no need to persist large fills arrays
+      delete ob.fills;
     }
   }
+
   if (econClean.exchange?.stocks) {
     for (const s of Object.values(econClean.exchange.stocks)) {
-      if (s.priceHistory?.length > 90) s.priceHistory = s.priceHistory.slice(-90);
+      // Trim priceHistory to 30 days — UI sparklines only show ~14 days anyway
+      if (s.priceHistory?.length > 30) s.priceHistory = s.priceHistory.slice(-30);
+      // Strip fields that are recomputed every tick from player state — no need to persist
+      delete s.revenueHistory;      // rebuilt from g.history in updateFundamentals
+      delete s.revenueBySegment;    // rebuilt from dayRevByChannel
+      delete s.riskRating;          // rebuilt from stock + player state
+      delete s.weeklyGrowth;        // rebuilt from g.history
+      delete s.profitMargin;        // rebuilt from dayRev/dayProfit
+      delete s.dividendYield;       // rebuilt from dailyProfit
     }
+  }
+
+  // Trim tcMarketplace history
+  if (econClean.tcMarketplace?.tradeHistory?.length > 50) {
+    econClean.tcMarketplace.tradeHistory = econClean.tcMarketplace.tradeHistory.slice(0, 50);
   }
 
   try {
@@ -570,7 +592,12 @@ export async function saveGame(id, day, economy, aiShops, liquidation) {
     const liqStr = JSON.stringify(liquidation || []);
     const econKB = Math.round(econStr.length / 1024);
     const shopsKB = Math.round(shopsStr.length / 1024);
-    if (econKB > 500) console.warn(`[pgStore] saveGame: economy is ${econKB}KB — consider trimming`);
+    if (econKB > 200) console.warn(`[pgStore] saveGame: economy is ${econKB}KB — approaching timeout risk`);
+    if (econKB > 800) {
+      // Economy blob is dangerously large — log and skip save to avoid locking DB
+      console.error(`[pgStore] saveGame ABORTED: economy ${econKB}KB exceeds 800KB safety limit. Tick will retry next cycle.`);
+      return;
+    }
     await pool.query(
       `UPDATE games SET week = $2, economy = $3::jsonb, ai_shops = $4::jsonb, liquidation = $5::jsonb, updated_at = NOW() WHERE id = $1`,
       [id, day, econStr, shopsStr, liqStr]
