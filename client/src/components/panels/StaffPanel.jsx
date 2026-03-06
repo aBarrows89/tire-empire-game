@@ -20,6 +20,7 @@ export default function StaffPanel() {
   const [pending, setPending] = React.useState(null);
   const [error, setError] = React.useState(null);
 
+  if (!g.staff) g.staff = { techs: 0, sales: 0, managers: 0, drivers: 0, pricingAnalyst: 0 };
   const totalPayroll = Object.entries(g.staff).reduce(
     (a, [k, v]) => a + (PAY[k] || 0) * v, 0
   );
