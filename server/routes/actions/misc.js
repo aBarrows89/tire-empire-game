@@ -492,8 +492,12 @@ export async function handleMisc(action, params, g, ctx) {
 
     case 'rushFactoryBatch': {
       if (!g.hasFactory || !g.factory) return ctx.fail('No factory');
-      const queue = g.factory.productionQueue || [];
-      const pending = queue.filter(q => q.completionDay > g.day);
+      const pending = [];
+      for (const line of (g.factory.lines || [])) {
+        for (const q of (line.queue || [])) {
+          if (q.completionDay > g.day) pending.push(q);
+        }
+      }
       if (pending.length === 0) return ctx.fail('No production in progress');
       const daysToSkip = Math.ceil((pending[0].completionDay - g.day) * (TC_RUSH.factoryBatch.maxSkip || 0.5));
       const cost = daysToSkip * TC_RUSH.factoryBatch.costPerDay;

@@ -296,9 +296,9 @@ export async function handleSourcing(action, params, g, ctx) {
 
     case 'acceptContract': {
       const { offerId } = params;
-      if (!g.contractOffers) g.contractOffers = [];
+      if (!offerId || !g.contractOffers?.length) return null; // not a supplier offer — pass to P2P handler
       const offerIdx = g.contractOffers.findIndex(o => o.id === offerId);
-      if (offerIdx === -1) return ctx.fail('Contract offer not found or expired');
+      if (offerIdx === -1) return null; // not found here — pass to P2P handler
       const offer = g.contractOffers[offerIdx];
       if (g.day >= offer.expiresDay) return ctx.fail('This offer has expired');
       if (g.cash < offer.upfrontCost) return ctx.fail(`Need $${offer.upfrontCost.toLocaleString()} to sign this contract`);
@@ -351,9 +351,8 @@ export async function handleSourcing(action, params, g, ctx) {
 
     case 'cancelContract': {
       const { contractId } = params;
-      if (!g.contracts) return ctx.fail('No contracts');
-      const ct = g.contracts.find(c => c.id === contractId && c.status === 'active');
-      if (!ct) return ctx.fail('Active contract not found');
+      const ct = (g.contracts || []).find(c => c.id === contractId && c.status === 'active');
+      if (!ct) return null; // not a supplier contract — pass to P2P handler
 
       // Calculate penalty
       const penalty = Math.round(ct.upfrontCost * (ct.penaltyForDefault || 0.15));

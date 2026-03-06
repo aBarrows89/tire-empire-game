@@ -157,6 +157,47 @@ export const ACTION_SCHEMAS = {
   buyFranchise:               z.object({ offeringId: str, locationId: str }),
   terminateFranchise:         z.object({ agreementId: str }),
   deleteFranchiseOffering:    empty,
+
+  // ── TC Utility (rush timers) ──
+  rushRetread:                empty,
+  rushShopConstruction:       empty,
+  rushFactoryBatch:           empty,
+  rushRDProject:              empty,
+
+  // ── TC Utility (supplier access) ──
+  buySupplierAccess:          empty,
+  buyPriorityRestock:         empty,
+  buyExclusiveLot:            z.object({ tireType: str, qty: num, discount: num, tcCost: num }),
+
+  // ── TC Utility (intelligence) ──
+  buyDemandHeatmap:           empty,
+  buyCompetitorPricing:       empty,
+  buySupplierForecast:        empty,
+  buyPlayerScout:             z.object({ targetPlayerId: id }),
+  buyStockInsider:            empty,
+
+  // ── TC Utility (financial) ──
+  buyLoanRateReduction:       empty,
+  buyCreditLine:              empty,
+  buyInsuranceUpgrade:        empty,
+
+  // ── TC Utility (operations) ──
+  hireElite:                  z.object({ locationId: id, role: str }),
+  buyTrainingProgram:         z.object({ locationId: id }),
+
+  // ── TC Purchase ──
+  purchaseTC:                 z.object({ tierId: str, receipt: optStr }),
+
+  // ── 3PL / Storage Marketplace ──
+  listStorage:                z.object({ capacity: num, pricePerSlot: num }),
+  delistStorage:              z.object({ listingId: id }),
+  rentStorage:                z.object({ listingId: id, slots: num }),
+  cancelLease:                z.object({ leaseId: id }),
+  evictTenant:                z.object({ leaseId: id }),
+  tplTransfer:                z.object({ leaseId: id, tire: str, qty: num, direction: str }),
+
+  // ── Wholesale ──
+  upgradeWholesale:           empty,
 };
 
 /** Top-level request body schema */

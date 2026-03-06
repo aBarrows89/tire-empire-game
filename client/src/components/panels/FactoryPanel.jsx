@@ -82,7 +82,6 @@ export default function FactoryPanel() {
   const currentLevel = factory?.level || 1;
   const levelData = FACTORY.levels.find(l => l.level === currentLevel) || FACTORY.levels[0];
   const nextLevel = FACTORY.levels.find(l => l.level === currentLevel + 1);
-  const queue = factory?.productionQueue || [];
   const fStaff = factory?.staff || { lineWorkers: 0, inspectors: 0, engineers: 0, manager: 0 };
   const qualityPct = Math.round((factory?.qualityRating || 0.80) * 100);
   const qualityCapPct = Math.round(levelData.qualityMax * 100);

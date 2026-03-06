@@ -15,14 +15,12 @@ export async function handleFactory(action, params, g, ctx) {
       g.factory = {
         level: 1,
         brandName: (g.companyName || 'My') + ' Tires',
-        productionQueue: [],
-        dailyCapacity: 50,
+        lines: [{ id: 0, queue: [], currentType: null, runStreak: 0, lastMaintDay: g.day || 1, status: 'active' }],
+        dailyCapacity: FACTORY.levels[0].dailyCapacity,
         qualityRating: 0.80,
         brandReputation: 0,
         rawMaterials: { rubber: 1.0, steel: 1.0, chemicals: 1.0 },
         staff: { lineWorkers: 0, inspectors: 0, engineers: 0, manager: 0 },
-        currentLine: null,
-        switchCooldown: 0,
         isDistributor: false,
         discountTiers: [...FACTORY_DISCOUNT_TIERS_DEFAULT],
         wholesalePrices: {},
@@ -250,7 +248,8 @@ export async function handleFactory(action, params, g, ctx) {
       if (!g.factory.rdProjects) g.factory.rdProjects = [];
       if (g.factory.rdProjects.length >= 2) return ctx.fail('Max 2 concurrent R&D projects');
       if (g.factory.rdProjects.some(p => p.id === projectId)) return ctx.fail('Project already in progress');
-      if ((g.factory.unlockedSpecials || []).includes(rdDef.unlocksExclusive)) {
+      if ((g.factory.completedRD || []).includes(projectId)) return ctx.fail('Already completed this project');
+      if (rdDef.unlocksExclusive && (g.factory.unlockedSpecials || []).includes(rdDef.unlocksExclusive)) {
         return ctx.fail('Already completed this project');
       }
       if (g.cash < rdDef.cost) return ctx.fail('Not enough cash');
@@ -393,7 +392,7 @@ export async function handleFactory(action, params, g, ctx) {
       if (batch.recalled) return ctx.fail('Already recalled');
       const totalDefective = (batch.defects?.cosmetic || 0) + (batch.defects?.structural || 0) + (batch.defects?.critical || 0);
       if (totalDefective <= 0) return ctx.fail('No defects to recall');
-      const recallCost = Math.floor(totalDefective * (FACTORY.productionCost[batch.tire] || 50) * (FACTORY.warranty?.recallCostMultiplier || 2));
+      const recallCost = Math.floor(totalDefective * (getEffectiveProductionCost(g.factory, batch.tire) || 50) * (FACTORY.warranty?.recallCostMultiplier || 2));
       if (g.cash < recallCost) return ctx.fail(`Need $${recallCost.toLocaleString()} for recall`);
       g.cash -= recallCost;
       g.reputation = Math.min(100, g.reputation + totalDefective * 0.01);

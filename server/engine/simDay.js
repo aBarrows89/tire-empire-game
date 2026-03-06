@@ -232,7 +232,7 @@ export function simDay(g, shared = {}) {
   if (s.hasFactory && s.factory) {
     s.factory = {
       ...s.factory,
-      productionQueue: [...(s.factory.productionQueue || [])],
+      lines: (s.factory.lines || []).map(l => ({ ...l, queue: [...(l.queue || [])] })),
       staff: { ...(s.factory.staff || { lineWorkers: 0, inspectors: 0, engineers: 0, manager: 0 }) },
       rawMaterials: { ...(s.factory.rawMaterials || { rubber: 1.0, steel: 1.0, chemicals: 1.0 }) },
       rdProjects: [...(s.factory.rdProjects || [])],
@@ -241,6 +241,8 @@ export function simDay(g, shared = {}) {
       customerList: [...(s.factory.customerList || [])],
       orderHistory: [...(s.factory.orderHistory || [])],
     };
+    // Remove orphaned legacy field if still present
+    delete s.factory.productionQueue;
     // Deep-clone contract allocations
     if (s.factory.contractAllocations) {
       s.factory.contractAllocations = { ...s.factory.contractAllocations };
@@ -328,13 +330,14 @@ export function simDay(g, shared = {}) {
     const maxLines = (FACTORY.productionLines?.byLevel?.[s.factory.level - 1]) || 1;
 
     // Get supplier modifiers
+    const rubberSup = MATERIAL_SUPPLIERS?.rubber?.find(sup => sup.id === s.factory.suppliers?.rubber) || { qualityMod: 1, priceMod: 1, reliability: 0.95 };
     const steelSup = MATERIAL_SUPPLIERS?.steel?.find(sup => sup.id === s.factory.suppliers?.steel) || { qualityMod: 1, priceMod: 1, reliability: 0.95 };
     const chemSup = MATERIAL_SUPPLIERS?.chemicals?.find(sup => sup.id === s.factory.suppliers?.chemicals) || { qualityMod: 1, priceMod: 1, reliability: 0.95 };
-    const supplierDefectMod = (steelSup.qualityMod + chemSup.qualityMod) / 2;
+    const supplierDefectMod = (rubberSup.qualityMod + steelSup.qualityMod + chemSup.qualityMod) / 3;
 
     // Supplier reliability check — delays today's completions by 1 day
     let supplyDelay = false;
-    if (Math.random() > steelSup.reliability || Math.random() > chemSup.reliability) {
+    if (Math.random() > rubberSup.reliability || Math.random() > steelSup.reliability || Math.random() > chemSup.reliability) {
       supplyDelay = true;
       s.log.push({ msg: '\u{1F4E6} Supply delay — production pushed back 1 day', cat: 'factory' });
     }
@@ -488,16 +491,24 @@ export function simDay(g, shared = {}) {
     const completedRD = s.factory.rdProjects.filter(p => s.day >= p.completionDay);
     s.factory.rdProjects = s.factory.rdProjects.filter(p => s.day < p.completionDay);
     if (!s.factory.unlockedSpecials) s.factory.unlockedSpecials = [];
+    if (!s.factory.completedRD) s.factory.completedRD = [];
     for (const proj of completedRD) {
       const rdDef = RD_PROJECTS.find(r => r.id === proj.id);
       if (!rdDef) continue;
+      // Track completed project ID (prevents re-starting)
+      if (!s.factory.completedRD.includes(proj.id)) {
+        s.factory.completedRD.push(proj.id);
+      }
       if (rdDef.qualityBoost) {
         s.factory.qualityRating = Math.min(1.0, (s.factory.qualityRating || 0.80) + rdDef.qualityBoost);
+      }
+      if (rdDef.wasteReduction) {
+        s.factory.wasteReduction = (s.factory.wasteReduction || 0) + rdDef.wasteReduction;
       }
       if (rdDef.unlocksExclusive && !s.factory.unlockedSpecials.includes(rdDef.unlocksExclusive)) {
         s.factory.unlockedSpecials.push(rdDef.unlocksExclusive);
       }
-      s.log.push({ msg: `\u{1F52C} R&D Complete: ${rdDef.name}${rdDef.qualityBoost ? ` (+${Math.round(rdDef.qualityBoost * 100)}% quality)` : ''}${rdDef.unlocksExclusive ? ' — new tire unlocked!' : ''}`, cat: 'event' });
+      s.log.push({ msg: `\u{1F52C} R&D Complete: ${rdDef.name}${rdDef.qualityBoost ? ` (+${Math.round(rdDef.qualityBoost * 100)}% quality)` : ''}${rdDef.wasteReduction ? ` (-${Math.round(rdDef.wasteReduction * 100)}% waste)` : ''}${rdDef.unlocksExclusive ? ' — new tire unlocked!' : ''}`, cat: 'event' });
     }
 
     // ── CERTIFICATION COMPLETION ──
@@ -764,8 +775,11 @@ export function simDay(g, shared = {}) {
         if (s.factory) {
           const factoryDamage = 25000 + Math.floor(Math.random() * 50000) * (s.factory.level || 1);
           totalDamage += factoryDamage;
-          // Halt production for a few days by clearing queue
-          s.factory.productionQueue = [];
+          // Halt production by clearing all line queues
+          for (const line of (s.factory.lines || [])) {
+            line.queue = [];
+            line.status = 'idle';
+          }
         }
 
         if (totalDamage > 0) {
@@ -1664,11 +1678,10 @@ export function simDay(g, shared = {}) {
         franchise.missedPayments = 0;
         s.log.push({ msg: `🏪 ${loc.franchise.brandName} royalty: $${totalOwed.toLocaleString()} ($${royaltyAmt.toLocaleString()} rev + $${dailyFee.toLocaleString()} fee)`, cat: 'franchise' });
 
-        // Check required brand compliance
+        // Check required brand compliance — franchisee must stock branded tires (brand_* keys)
         if (loc.franchise.requiredBrand) {
           const inv = loc.inventory || {};
-          const reqLower = loc.franchise.requiredBrand.toLowerCase();
-          const hasRequired = Object.keys(inv).some(k => k.startsWith('brand_') && inv[k] > 0 && k.toLowerCase().includes(reqLower));
+          const hasRequired = Object.keys(inv).some(k => k.startsWith('brand_') && inv[k] > 0);
           if (!hasRequired) {
             franchise.brandViolationDays = (franchise.brandViolationDays || 0) + 1;
             s.reputation = Math.max(0, s.reputation - 0.2);
@@ -2275,11 +2288,12 @@ export function simDay(g, shared = {}) {
 
   // Factory production alerts
   if (notifs.factoryProduction && s.hasFactory && s.factory) {
-    // Batch completion
-    const pq = s.factory.productionQueue || [];
-    for (const batch of pq) {
-      if (batch.completesDay === s.day) {
-        s._notifications.push({ type: 'factoryProduction', title: 'Batch Complete', message: `${batch.qty} ${batch.tireType || 'tires'} finished production.`, icon: '\u{1F3ED}', severity: 'info' });
+    // Batch completion — check all production lines
+    for (const line of (s.factory.lines || [])) {
+      for (const batch of (line.queue || [])) {
+        if (batch.completionDay === s.day) {
+          s._notifications.push({ type: 'factoryProduction', title: 'Batch Complete', message: `${batch.qty} ${batch.tire || 'tires'} finished production.`, icon: '\u{1F3ED}', severity: 'info' });
+        }
       }
     }
     // Rubber surplus reminder (weekly)

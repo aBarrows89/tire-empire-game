@@ -229,6 +229,7 @@ export async function handleFranchise(action, params, g, ctx) {
     default:
       return null;
   }
+  return g;
 }
 
 function parseJson(val) {

@@ -37,7 +37,7 @@ export default function StoragePanel() {
     setBusy(type);
     const result = await postAction('buyStorage', { type });
     hapticsMedium();
-    applyState(result);
+    if (result?.ok) applyState(result);
     setBusy(null);
   };
 
@@ -45,7 +45,7 @@ export default function StoragePanel() {
     if (!txFrom || !txTo || !txTire || txQty <= 0 || txFrom === txTo) return;
     setBusy('transfer');
     const result = await postAction('transferTires', { from: txFrom, to: txTo, tire: txTire, qty: txQty });
-    applyState(result);
+    if (result?.ok) applyState(result);
     setBusy(null);
   };
 

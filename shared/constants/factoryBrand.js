@@ -118,6 +118,11 @@ export const SYNTHETIC_LAB = {
 
 /** Material supplier tiers — price/quality/reliability tradeoffs */
 export const MATERIAL_SUPPLIERS = {
+  rubber: [
+    { id: 'rubber_budget',   label: 'Surplus Rubber Co',     qualityMod: 1.05, priceMod: 0.70, reliability: 0.80, minRep: 0 },
+    { id: 'rubber_standard', label: 'Global Rubber Supply',  qualityMod: 1.00, priceMod: 1.00, reliability: 0.95, minRep: 0 },
+    { id: 'rubber_premium',  label: 'Natural Latex Premium', qualityMod: 0.96, priceMod: 1.30, reliability: 0.99, minRep: 40 },
+  ],
   steel: [
     { id: 'steel_budget',   label: 'Budget Steel Co',    qualityMod: 1.03, priceMod: 0.80, reliability: 0.85, minRep: 0 },
     { id: 'steel_standard', label: 'Standard Metals',    qualityMod: 1.00, priceMod: 1.00, reliability: 0.95, minRep: 0 },

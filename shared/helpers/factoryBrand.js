@@ -100,7 +100,15 @@ export function getAllTires(g) {
  * avgMaterialIndex is the mean of rubber/steel/chemicals indices.
  */
 export function getEffectiveProductionCost(factory, tireType) {
-  const baseCost = FACTORY.productionCost[tireType];
+  // Handle branded keys (brand_allSeason → allSeason) and exclusive keys
+  let baseCost = FACTORY.productionCost[tireType];
+  if (!baseCost && tireType.startsWith('brand_')) {
+    const baseType = tireType.replace('brand_', '');
+    baseCost = FACTORY.productionCost[baseType];
+  }
+  if (!baseCost && EXCLUSIVE_TIRES[tireType]) {
+    baseCost = EXCLUSIVE_TIRES[tireType].baseCost;
+  }
   if (!baseCost) return 0;
 
   const rm = factory.rawMaterials || {};
@@ -136,23 +144,8 @@ export function computeTireAttributes(factory) {
 
   let grip = base, durability = base, comfort = base, treadLife = base, efficiency = base;
 
-  // R&D bonuses from completed projects
-  const completedRD = new Set();
-  for (const proj of (factory.rdProjects || [])) {
-    // Only count completed projects (not in queue)
-    // We check unlockedSpecials + qualityBoost applied
-  }
-  // Check which RD ids have been completed via unlockedSpecials or quality already above base
-  const rdIds = new Set();
-  for (const proj of RD_PROJECTS) {
-    if (proj.unlocksExclusive && (factory.unlockedSpecials || []).includes(proj.unlocksExclusive)) {
-      rdIds.add(proj.id);
-    }
-    // qualityBoost projects are completed if quality is above base + boost
-    if (proj.qualityBoost && (factory.qualityRating || 0.80) > 0.80 + (proj.qualityBoost || 0) * 0.5) {
-      rdIds.add(proj.id);
-    }
-  }
+  // R&D bonuses from completed projects (tracked in factory.completedRD)
+  const rdIds = new Set(factory.completedRD || []);
 
   if (rdIds.has('ultraGrip'))   { grip += 20; }
   if (rdIds.has('silentRide'))  { comfort += 20; }
