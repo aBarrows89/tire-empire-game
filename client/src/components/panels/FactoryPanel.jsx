@@ -4,6 +4,7 @@ import { postAction } from '../../api/client.js';
 import { FACTORY } from '@shared/constants/factory.js';
 import { RAW_MATERIALS, RD_PROJECTS, CERTIFICATIONS, FACTORY_DISCOUNT_TIERS_DEFAULT, EXCLUSIVE_TIRES, CFO_ROLE, RUBBER_FARM, SYNTHETIC_LAB } from '@shared/constants/factoryBrand.js';
 import { TIRES } from '@shared/constants/tires.js';
+import { SUPPLIERS } from '@shared/constants/suppliers.js';
 import { fmt } from '@shared/helpers/format.js';
 import { getEffectiveProductionCost, computeTireAttributes, tireName } from '@shared/helpers/factoryBrand.js';
 import { hapticsMedium } from '../../api/haptics.js';
@@ -459,12 +460,22 @@ export default function FactoryPanel() {
             const marginPct = prodCost > 0 ? Math.round((margin / prodCost) * 100) : 0;
             const mapPrice = factory?.mapPrices?.[type] || '';
             const minOrder = factory?.minOrders?.[type] || 10;
+            // Supplier price range for comparison
+            const basePrice = t?.bMin || 0;
+            const supLow = Math.round(basePrice * (1 - Math.max(...SUPPLIERS.map(s => s.disc))));
+            const supHigh = Math.round(basePrice);
             return (
               <div key={type} className="card">
-                <div className="font-bold text-sm mb-4">{factory?.brandName ? `${factory.brandName} ${t?.n || type}` : (t?.n || type)}</div>
+                <div className="font-bold text-sm mb-4">{tireName(type, g)}</div>
                 <div className="row-between text-xs mb-4">
-                  <span className="text-dim">Production cost: ${prodCost} (base ${baseProdCost})</span>
+                  <span className="text-dim">Your cost: <strong>${prodCost}</strong></span>
                   <span className={margin > 0 ? 'text-green' : 'text-red'}>Margin: ${margin} ({marginPct}%)</span>
+                </div>
+                <div className="text-xs mb-4" style={{ background: 'rgba(78,168,222,0.08)', borderRadius: 4, padding: '4px 6px' }}>
+                  Supplier range: <strong>${supLow}</strong> (cheapest) — <strong>${supHigh}</strong> (most expensive)
+                  {currentPrice <= supLow && <span className="text-green" style={{ marginLeft: 6 }}>Competitive!</span>}
+                  {currentPrice > supHigh && <span className="text-red" style={{ marginLeft: 6 }}>Above all suppliers</span>}
+                  {currentPrice > supLow && currentPrice <= supHigh && <span style={{ marginLeft: 6, color: '#ff9800' }}>Mid-range</span>}
                 </div>
                 <div className="row gap-8 mb-4">
                   <div style={{ flex: 1 }}>

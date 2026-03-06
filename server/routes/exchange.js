@@ -53,7 +53,7 @@ router.post('/open-account', authMiddleware, async (req, res) => {
     g.stockExchange.brokerageOpenedDay = g.day;
     g.log = g.log || [];
     g.log.push({ msg: 'Opened brokerage account at TESX', cat: 'exchange' });
-    await savePlayerState(req.playerId, g);
+    await savePlayerState(req.playerId, g, null, { force: true });
     res.json({ ok: true, state: g });
   } catch (err) { console.error('Exchange open-account error:', err); res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -251,7 +251,7 @@ router.post('/order', authMiddleware, async (req, res) => {
       g.log = g.log || [];
       g.log.push({ msg: (side === 'buy' ? 'Bought' : 'Sold') + ' ' + totalFilled + ' $' + ticker + ' @ $' + (totalCost / totalFilled).toFixed(2), cat: 'exchange' });
     }
-    await savePlayerState(req.playerId, g);
+    await savePlayerState(req.playerId, g, null, { force: true });
     await saveExchangeState(exchangeState);
     res.json({ ok: true, filled: totalFilled, fills, state: g });
   } catch (err) { console.error('Exchange order error:', err); res.status(500).json({ error: 'Internal server error' }); }
@@ -277,7 +277,7 @@ router.post('/cancel-order', authMiddleware, async (req, res) => {
       }
     }
     g.stockExchange.openOrders.splice(idx, 1);
-    await savePlayerState(req.playerId, g);
+    await savePlayerState(req.playerId, g, null, { force: true });
     res.json({ ok: true, state: g });
   } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -344,7 +344,7 @@ router.post('/ipo/apply', authMiddleware, async (req, res) => {
     const result = processIPO(g, exchangeState, day);
     g.log = g.log || [];
     g.log.push({ msg: 'IPO! $' + result.ticker + ' listed at $' + result.initialPrice + '/share. Fee: $' + result.listingFee, cat: 'exchange' });
-    await savePlayerState(req.playerId, g);
+    await savePlayerState(req.playerId, g, null, { force: true });
     await saveExchangeState(exchangeState);
     res.json({ ok: true, ...result, state: g });
   } catch (err) { console.error('Exchange IPO error:', err); res.status(500).json({ error: 'Internal server error' }); }
@@ -373,7 +373,7 @@ router.post('/ipo/set-dividend-ratio', authMiddleware, async (req, res) => {
       if (stock) stock.dividendPayoutRatio = g.stockExchange.dividendPayoutRatio;
       await saveExchangeState(exchangeState);
     }
-    await savePlayerState(req.playerId, g);
+    await savePlayerState(req.playerId, g, null, { force: true });
     res.json({ ok: true, state: g });
   } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -396,7 +396,7 @@ router.post('/unlock', authMiddleware, async (req, res) => {
     g.stockExchange[stateKey] = true;
     g.log = g.log || [];
     g.log.push({ msg: 'Unlocked ' + feat.label + ' for ' + feat.cost + ' TC', cat: 'exchange' });
-    await savePlayerState(req.playerId, g);
+    await savePlayerState(req.playerId, g, null, { force: true });
     res.json({ ok: true, state: g });
   } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -430,7 +430,7 @@ router.post('/dark-pool-order', authMiddleware, async (req, res) => {
     }
     g.log = g.log || [];
     g.log.push({ msg: 'Dark pool: ' + side + ' ' + qty + ' $' + ticker + ' @ $' + price.toFixed(2), cat: 'exchange' });
-    await savePlayerState(req.playerId, g);
+    await savePlayerState(req.playerId, g, null, { force: true });
     res.json({ ok: true, price, qty, commission, state: g });
   } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -445,7 +445,7 @@ router.post('/set-alert', authMiddleware, async (req, res) => {
     if (!g.stockExchange.priceAlerts) g.stockExchange.priceAlerts = [];
     if (g.stockExchange.priceAlerts.length >= 10) return res.status(400).json({ error: 'Max 10 alerts' });
     g.stockExchange.priceAlerts.push({ id: uid(), ticker, targetPrice, direction, active: true });
-    await savePlayerState(req.playerId, g);
+    await savePlayerState(req.playerId, g, null, { force: true });
     res.json({ ok: true, state: g });
   } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -460,7 +460,7 @@ router.post('/vinnie-tip', authMiddleware, async (req, res) => {
     if (!exchangeState || Object.keys(exchangeState.stocks).length === 0) return res.status(400).json({ error: 'No stocks listed yet' });
     g.tireCoins -= VINNIE_TIP_COST;
     const tip = generateVinnieTip(exchangeState.stocks);
-    await savePlayerState(req.playerId, g);
+    await savePlayerState(req.playerId, g, null, { force: true });
     res.json({ ok: true, tip, state: g });
   } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -484,7 +484,7 @@ router.post('/short-sell', authMiddleware, async (req, res) => {
     g.stockExchange.shortPositions[ticker] = { qty, openPrice: stock.price, openDay: g.day };
     g.log = g.log || [];
     g.log.push({ msg: 'Short sold ' + qty + ' $' + ticker + ' @ $' + stock.price.toFixed(2), cat: 'exchange' });
-    await savePlayerState(req.playerId, g);
+    await savePlayerState(req.playerId, g, null, { force: true });
     res.json({ ok: true, state: g });
   } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -507,7 +507,7 @@ router.post('/cover-short', authMiddleware, async (req, res) => {
     delete g.stockExchange.shortPositions[ticker];
     g.log = g.log || [];
     g.log.push({ msg: 'Covered short on $' + ticker + ': ' + (pnl >= 0 ? '+' : '') + '$' + Math.round(pnl), cat: 'exchange' });
-    await savePlayerState(req.playerId, g);
+    await savePlayerState(req.playerId, g, null, { force: true });
     res.json({ ok: true, pnl, state: g });
   } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -520,7 +520,7 @@ router.post('/scratch-ticket', authMiddleware, async (req, res) => {
     if ((g.tireCoins || 0) < LOTTERY_TICKET_COST) return res.status(400).json({ error: 'Need ' + LOTTERY_TICKET_COST + ' TC' });
     g.tireCoins -= LOTTERY_TICKET_COST;
     const ticket = generateScratchTicket();
-    await savePlayerState(req.playerId, g);
+    await savePlayerState(req.playerId, g, null, { force: true });
     res.json({ ok: true, ticket, state: g });
   } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -536,7 +536,7 @@ router.post('/scratch-ticket/claim', authMiddleware, async (req, res) => {
     g.cash += clampedPrize;
     g.log = g.log || [];
     g.log.push({ msg: 'Scratch ticket winner! +$' + clampedPrize.toLocaleString(), cat: 'exchange' });
-    await savePlayerState(req.playerId, g);
+    await savePlayerState(req.playerId, g, null, { force: true });
     res.json({ ok: true, prize: clampedPrize, state: g });
   } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -619,7 +619,7 @@ router.post('/tc-market/sell', authMiddleware, async (req, res) => {
         buyer.game_state.tireCoins = (buyer.game_state.tireCoins || 0) + fillQty;
         buyer.game_state.log = buyer.game_state.log || [];
         buyer.game_state.log.push({ msg: `TC Market: Bought ${fillQty} TC for $${fillPrice.toLocaleString()}`, cat: 'exchange' });
-        await savePlayerState(buy.buyerId, buyer.game_state);
+        await savePlayerState(buy.buyerId, buyer.game_state, null, { force: true });
       }
 
       // Fee goes to reserve
@@ -647,7 +647,7 @@ router.post('/tc-market/sell', authMiddleware, async (req, res) => {
 
     game.economy.tcMarketplace = tcMkt;
     await saveGame('default', day, game.economy, game.ai_shops || [], game.liquidation || []);
-    await savePlayerState(req.playerId, g);
+    await savePlayerState(req.playerId, g, null, { force: true });
     res.json({ ok: true, listing, state: g });
   } catch (err) { console.error('TC sell error:', err); res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -705,7 +705,7 @@ router.post('/tc-market/buy', authMiddleware, async (req, res) => {
         seller.game_state.cash += fillPrice - sellerFee;
         seller.game_state.log = seller.game_state.log || [];
         seller.game_state.log.push({ msg: `TC Market: Sold ${fillQty} TC for $${fillPrice.toLocaleString()} (-$${sellerFee} fee)`, cat: 'exchange' });
-        await savePlayerState(sell.sellerId, seller.game_state);
+        await savePlayerState(sell.sellerId, seller.game_state, null, { force: true });
         if (game.economy.tcReserve) game.economy.tcReserve.cashBalance += sellerFee;
       }
 
@@ -735,7 +735,7 @@ router.post('/tc-market/buy', authMiddleware, async (req, res) => {
 
     game.economy.tcMarketplace = tcMkt;
     await saveGame('default', day, game.economy, game.ai_shops || [], game.liquidation || []);
-    await savePlayerState(req.playerId, g);
+    await savePlayerState(req.playerId, g, null, { force: true });
     res.json({ ok: true, listing, state: g });
   } catch (err) { console.error('TC buy error:', err); res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -770,7 +770,7 @@ router.post('/tc-market/accept', authMiddleware, async (req, res) => {
         seller.game_state.cash += listing.askingPrice - fee;
         seller.game_state.log = seller.game_state.log || [];
         seller.game_state.log.push({ msg: `TC Market: Sold ${listing.tcAmount} TC for $${listing.askingPrice.toLocaleString()} (-$${fee} fee)`, cat: 'exchange' });
-        await savePlayerState(listing.sellerId, seller.game_state);
+        await savePlayerState(listing.sellerId, seller.game_state, null, { force: true });
         if (game.economy.tcReserve) game.economy.tcReserve.cashBalance += fee;
       }
 
@@ -794,7 +794,7 @@ router.post('/tc-market/accept', authMiddleware, async (req, res) => {
         buyer.game_state.tireCoins = (buyer.game_state.tireCoins || 0) + listing.tcAmount;
         buyer.game_state.log = buyer.game_state.log || [];
         buyer.game_state.log.push({ msg: `TC Market: Bought ${listing.tcAmount} TC for $${listing.bidPrice.toLocaleString()}`, cat: 'exchange' });
-        await savePlayerState(listing.buyerId, buyer.game_state);
+        await savePlayerState(listing.buyerId, buyer.game_state, null, { force: true });
       }
       if (game.economy.tcReserve) game.economy.tcReserve.cashBalance += fee;
 
@@ -807,7 +807,7 @@ router.post('/tc-market/accept', authMiddleware, async (req, res) => {
     if (tcMkt.tradeHistory.length > 100) tcMkt.tradeHistory.pop();
     game.economy.tcMarketplace = tcMkt;
     await saveGame('default', day, game.economy, game.ai_shops || [], game.liquidation || []);
-    await savePlayerState(req.playerId, g);
+    await savePlayerState(req.playerId, g, null, { force: true });
     res.json({ ok: true, state: g });
   } catch (err) { console.error('TC accept error:', err); res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -840,7 +840,7 @@ router.post('/tc-market/cancel', authMiddleware, async (req, res) => {
     listing.status = 'cancelled';
     game.economy.tcMarketplace = tcMkt;
     await saveGame('default', day, game.economy, game.ai_shops || [], game.liquidation || []);
-    await savePlayerState(req.playerId, g);
+    await savePlayerState(req.playerId, g, null, { force: true });
     res.json({ ok: true, state: g });
   } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
 });
