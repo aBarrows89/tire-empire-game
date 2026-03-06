@@ -551,28 +551,35 @@ export async function getGame(id = 'default') {
 export function trimExchange(econ) {
   if (!econ.exchange) return;
   const ex = econ.exchange;
-  // Order books — keep only 5 bids/asks per stock
+  // Order books — keep only 3 bids/asks per stock (market makers replenish each tick)
   if (ex.orderBooks) {
     for (const ob of Object.values(ex.orderBooks)) {
-      if (ob.bids?.length > 5) ob.bids = ob.bids.slice(-5);
-      if (ob.asks?.length > 5) ob.asks = ob.asks.slice(-5);
+      if (ob.bids?.length > 3) ob.bids = ob.bids.slice(-3);
+      if (ob.asks?.length > 3) ob.asks = ob.asks.slice(-3);
       delete ob.fills;
+      delete ob.recentTrades;
+      ob.dayVolume = 0;
     }
   }
-  // Stocks — strip rebuilable fields, trim histories
+  // Stocks — keep only essential fields, strip everything rebuilt per-tick
+  const STOCK_KEEP = new Set([
+    'ticker','name','playerId','price','totalShares','founderShares',
+    'floatShares','ipoDay','lockupEndDay','dividendPayoutRatio',
+    'sector','_dayOpen','_currentDay','change','isNPC',
+  ]);
   if (ex.stocks) {
     for (const s of Object.values(ex.stocks)) {
+      // Trim arrays
       if (s.priceHistory?.length > 14) s.priceHistory = s.priceHistory.slice(-14);
       if (s.dividendHistory?.length > 10) s.dividendHistory = s.dividendHistory.slice(-10);
       if (s.earningsHistory?.length > 10) s.earningsHistory = s.earningsHistory.slice(-10);
       if (s.tradeLog?.length > 10) s.tradeLog = s.tradeLog.slice(-10);
-      delete s.revenueHistory;
-      delete s.revenueBySegment;
-      delete s.riskRating;
-      delete s.weeklyGrowth;
-      delete s.profitMargin;
-      delete s.dividendYield;
-      delete s.holders;
+      // Delete all non-essential fields (rebuilt from player state each tick)
+      for (const key of Object.keys(s)) {
+        if (!STOCK_KEEP.has(key) && !key.endsWith('History') && !key.endsWith('Log')) {
+          delete s[key];
+        }
+      }
     }
   }
   // Transaction logs, market reports, etc.
@@ -580,10 +587,10 @@ export function trimExchange(econ) {
   if (ex.ipoHistory?.length > 10) ex.ipoHistory = ex.ipoHistory.slice(-10);
   if (ex.stockTradeLogs?.length > 20) ex.stockTradeLogs = ex.stockTradeLogs.slice(-20);
   delete ex.marketMakerLog;
-  // Market report — keep only latest
-  if (ex.marketReport && typeof ex.marketReport === 'object') {
-    delete ex.marketReport.historical;
-  }
+  // Market report — nuke it (rebuilt each tick)
+  delete ex.marketReport;
+  // Stock trade logs
+  if (ex.stockTradeLogs?.length > 10) ex.stockTradeLogs = ex.stockTradeLogs.slice(-10);
   // ETFs
   if (ex.etfs) {
     for (const etf of Object.values(ex.etfs)) {

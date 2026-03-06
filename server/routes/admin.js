@@ -937,11 +937,12 @@ router.post('/trim-economy', async (req, res) => {
     const afterKB = Math.round(JSON.stringify(econ).length / 1024);
     // Force save via direct SQL (bypass the 800KB safety limit for emergency trim)
     const { pool } = await import('../db/pool.js');
+    const econStr = JSON.stringify(econ);
     await pool.query(
       `UPDATE games SET economy = $2::jsonb, updated_at = NOW() WHERE id = $1`,
-      ['default', JSON.stringify(econ)]
+      ['default', econStr]
     );
-    res.json({ ok: true, beforeKB, afterKB, saved: afterKB <= 800 });
+    res.json({ ok: true, beforeKB, afterKB, saved: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
