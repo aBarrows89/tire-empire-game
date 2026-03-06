@@ -491,7 +491,7 @@ export default function FactoryPanel() {
 
                 {lineStatus === 'active' && (
                   <button className="btn btn-full btn-sm btn-outline mb-4" disabled={busy || g.cash < maintCost}
-                    onClick={() => doAction('maintenanceLine', { lineIndex: idx })}>
+                    onClick={() => doAction('maintainFactoryLine', { lineIndex: idx })}>
                     Run Maintenance (${fmt(maintCost)})
                   </button>
                 )}
