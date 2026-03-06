@@ -1,5 +1,5 @@
 import { TICK_MS } from '../config.js';
-import { getAllActivePlayers, savePlayerState, getGame, saveGame, upsertLeaderboard, getPlayerListings, updatePlayerListing, getPlayer, removePlayer, addChatMessage, updatePlayerContract, updateFranchiseAgreement, withPlayerLock, getChatMessages, getLeaderboard, createPlayer } from '../db/queries.js';
+import { getAllActivePlayers, savePlayerState, getGame, saveGame, upsertLeaderboard, getPlayerListings, updatePlayerListing, getPlayer, removePlayer, addChatMessage, updatePlayerContract, updateFranchiseAgreement, withPlayerLock, getChatMessages, getLeaderboard, createPlayer, VersionConflictError } from '../db/queries.js';
 import { uid } from '../../shared/helpers/random.js';
 import { simDay } from '../engine/simDay.js';
 import { simAIPlayerDay, isBotPlayer, createStealthPlayer } from '../engine/aiPlayers.js';
@@ -1261,80 +1261,37 @@ export async function runTick(clients) {
         }
         continue;
       }
+      let _tickedState = null;
       try {
-        applyAutoPrice(state);
-        applyAutoSource(state);
-        if (state.hasAutoRestock || state.isPremium) applyAutoSupplier(state);
-        const newState = simDay(state, shared);
+        await withPlayerLock(player.id, async () => {
+          // Re-read freshest state inside the lock.
+          // Any action that fired before us has already committed — we see real state.
+          const freshPlayer = await getPlayer(player.id);
+          if (!freshPlayer) return;
+          const lockedState = freshPlayer.game_state;
 
-        // ── Merge-save: re-read latest DB state so mid-tick player actions
-        // (deposit, withdraw, loan repay, takeLoan, buy stock, etc.) are not overwritten.
-        // We apply the economic DELTAS from simDay onto the freshest DB state.
-        try {
-          const fresh = await getPlayer(player.id);
-          if (fresh && fresh.version > (player.version || 0)) {
-            const fs = fresh.game_state;
-
-            // Guard: if DB player already has a higher day, another tick instance
-            // (e.g. during Railway deploy overlap) already processed this player.
-            // Skip our stale save to prevent day regression.
-            if ((fs.day || 0) >= (newState.day || 0)) {
-              console.warn(`[Tick] Skipping save for ${player.id}: DB day ${fs.day} >= computed day ${newState.day}`);
-              continue;
-            }
-
-            // Compute deltas that simDay produced (costs, revenue, loan payments, interest)
-            const cashDelta = newState.cash - state.cash;
-            const bankDelta = (newState.bankBalance || 0) - (state.bankBalance || 0);
-
-            // For loans: simDay reduced remaining on existing loans.
-            // Fresh state may have new loans added or existing ones repaid by the player.
-            // Strategy: start from fresh loans, apply the same payment reductions simDay made
-            const freshLoans = (fs.loans || []).map(fl => {
-              const simLoan = (newState.loans || []).find(sl => sl.id === fl.id);
-              if (simLoan) {
-                // Apply the payment reduction: remaining went down by this much in simDay
-                const originalLoan = (state.loans || []).find(ol => ol.id === fl.id);
-                const reduction = originalLoan ? (originalLoan.remaining - simLoan.remaining) : 0;
-                return { ...fl, remaining: Math.max(0, fl.remaining - reduction) };
-              }
-              // New loan taken by player during tick — keep it untouched
-              return fl;
-            }).filter(l => l.remaining > 0);
-            // Also include any new loans simDay created (shouldn't happen but be safe)
-            for (const sl of (newState.loans || [])) {
-              if (!freshLoans.find(fl => fl.id === sl.id)) freshLoans.push(sl);
-            }
-
-            // Merge strategy:
-            // - Start with newState (has all simDay computed fields: prices, reputation, etc.)
-            // - Override with fresh values for structural fields the player may have changed
-            //   during the tick (storage purchases, location opens, inventory moves, etc.)
-            // - Apply economic deltas (cash/bank costs from simDay) on top of fresh values
-            const merged = {
-              ...newState,
-              // Structural: take from fresh so mid-tick purchases/changes are preserved
-              storage: fs.storage || newState.storage,
-              hasWarehouse: fs.hasWarehouse ?? newState.hasWarehouse,
-              warehouseInventory: fs.warehouseInventory || newState.warehouseInventory,
-              locations: fs.locations || newState.locations,
-              bonusStorage: fs.bonusStorage ?? newState.bonusStorage,
-              tireCoins: fs.tireCoins ?? newState.tireCoins,
-              // Economic: apply simDay deltas onto fresh base values
-              cash: (fs.cash || 0) + cashDelta,
-              bankBalance: (fs.bankBalance || 0) + bankDelta,
-              loans: freshLoans,
-              log: (newState.log || []).slice(-50), // today's tick logs only, capped
-            };
-            await savePlayerState(player.id, merged);
-            Object.assign(newState, merged);
-          } else {
-            await savePlayerState(player.id, newState);
+          // If another tick instance already advanced this player (Railway deploy overlap), skip
+          const expectedDay = (player.game_state.day || 0) + 1;
+          if ((lockedState.day || 0) >= expectedDay) {
+            console.warn(`[Tick] Skipping ${player.id}: already at day ${lockedState.day}`);
+            return;
           }
-        } catch (_mergeErr) {
-          console.error('[Tick] Merge-save error, falling back:', _mergeErr.message);
-          await savePlayerState(player.id, newState);
-        }
+
+          // Run simDay on the freshest committed state
+          applyAutoPrice(lockedState);
+          applyAutoSource(lockedState);
+          if (lockedState.hasAutoRestock || lockedState.isPremium) applyAutoSupplier(lockedState);
+          const newState = simDay(lockedState, shared);
+
+          // Save with optimistic locking — no merge needed since we hold the lock
+          newState.log = (newState.log || []).slice(-50);
+          await savePlayerState(player.id, newState, freshPlayer.version);
+          _tickedState = newState;
+        }); // end withPlayerLock
+
+        const newState = _tickedState;
+        if (!newState) continue; // skipped (already processed)
+
 
         // ── Franchise royalty cross-player transfers ──
         if (newState._franchisePayments?.length > 0) {
@@ -1391,12 +1348,22 @@ export async function runTick(clients) {
         // Push notifications (non-blocking)
         checkAndSendPush(player.id, newState, day).catch(() => {});
       } catch (playerErr) {
+        // Version conflict = another process saved first (deploy overlap) — not an error, just skip
+        if (playerErr instanceof VersionConflictError) {
+          console.warn(`[Tick] Version conflict for ${player.id} — another instance saved first, skipping`);
+          continue;
+        }
         console.error(`[Tick] Error processing player ${player.id}:`, playerErr.stack || playerErr.message);
-        // Emergency: still advance the day so we don't loop forever at the same day
+        // Emergency: advance the day so we don't loop forever — read fresh state first
         try {
-          const emergencyState = { ...(player.game_state || {}), day: (player.game_state?.day || 0) + 1, log: [] };
-          await savePlayerState(player.id, emergencyState);
-          console.warn(`[Tick] Emergency day-advance saved for ${player.id} (day ${emergencyState.day})`);
+          const emergFresh = await getPlayer(player.id);
+          const emergBase = emergFresh?.game_state || player.game_state || {};
+          // Only advance if not already at today's day
+          if ((emergBase.day || 0) < day) {
+            const emergencyState = { ...emergBase, day: (emergBase.day || 0) + 1, log: [] };
+            await savePlayerState(player.id, emergencyState);
+            console.warn(`[Tick] Emergency day-advance for ${player.id} → day ${emergencyState.day}`);
+          }
         } catch (emergErr) {
           console.error(`[Tick] Emergency save also failed for ${player.id}:`, emergErr.message);
         }
@@ -1619,18 +1586,21 @@ export async function runTick(clients) {
       } catch {}
     }
 
-    // Update game day — if this fails, abort the tick (don't broadcast wrong day)
-    try {
-      await saveGame(
-        'default',
-        day,
-        game.economy || {},
-        game.ai_shops || [],
-        game.liquidation || []
-      );
-    } catch (saveErr) {
-      console.error('[Tick] saveGame failed, aborting broadcast for day', day, ':', saveErr.message);
-      return; // exit runTick — next tick will re-read DB at correct day
+    // Update game day — retry once on failure before aborting
+    let saveGameOk = false;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await saveGame('default', day, game.economy || {}, game.ai_shops || [], game.liquidation || []);
+        saveGameOk = true;
+        break;
+      } catch (saveErr) {
+        console.error(`[Tick] saveGame attempt ${attempt + 1} failed for day ${day}:`, saveErr.message);
+        if (attempt === 0) await new Promise(r => setTimeout(r, 1000)); // wait 1s before retry
+      }
+    }
+    if (!saveGameOk) {
+      console.error('[Tick] saveGame failed after retry — aborting broadcast for day', day);
+      return;
     }
 
     // Broadcast tick to all clients
