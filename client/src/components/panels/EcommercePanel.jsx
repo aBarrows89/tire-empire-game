@@ -10,12 +10,13 @@ import {
   ECOM_TIERS,
 } from '@shared/constants/ecommerce.js';
 import { fmt } from '@shared/helpers/format.js';
+import InfoBubble from '../ui/InfoBubble.jsx';
 import { getEcomTier } from '@shared/helpers/ecommerce.js';
 import { getCap } from '@shared/helpers/inventory.js';
 import { hapticsMedium } from '../../api/haptics.js';
 
 export default function EcommercePanel() {
-  const { state, refreshState } = useGame();
+  const { state, applyState } = useGame();
   const g = state.game;
   const [busy, setBusy] = useState(null);
 
@@ -30,7 +31,7 @@ export default function EcommercePanel() {
     const unlock = async () => {
       setBusy('unlock');
       const res = await postAction('unlockEcom');
-      if (res.ok) { hapticsMedium(); refreshState(); }
+      if (res.ok) { hapticsMedium(); applyState(res); }
       setBusy(null);
     };
 
@@ -98,21 +99,21 @@ export default function EcommercePanel() {
   const hire = async (role) => {
     setBusy(`hire-${role}`);
     const res = await postAction('hireEcomStaff', { role });
-    if (res.ok) refreshState();
+    if (res.ok) applyState(res);
     setBusy(null);
   };
 
   const fire = async (role) => {
     setBusy(`fire-${role}`);
     const res = await postAction('fireEcomStaff', { role });
-    if (res.ok) refreshState();
+    if (res.ok) applyState(res);
     setBusy(null);
   };
 
   const buyUpgrade = async (upgradeId) => {
     setBusy(`upgrade-${upgradeId}`);
     const res = await postAction('buyEcomUpgrade', { upgradeId });
-    if (res.ok) refreshState();
+    if (res.ok) applyState(res);
     setBusy(null);
   };
 
@@ -132,7 +133,14 @@ export default function EcommercePanel() {
     <>
       {/* ── Tier & Performance ── */}
       <div className="card">
-        <div className="card-title">E-Commerce</div>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div className="card-title" style={{ margin: 0 }}>E-Commerce</div>
+          <InfoBubble title="How E-Commerce Works">
+            <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Online Sales</b> — Sell tires directly to customers online. Your e-commerce tier determines traffic and conversion rates.</p>
+            <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Staff</b> — Hire a web developer, marketer, and customer support to boost your online presence and reduce return rates.</p>
+            <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Upgrades</b> — Buy upgrades like SEO, ad campaigns, and better checkout to grow traffic and revenue.</p>
+          </InfoBubble>
+        </div>
         <div className="row-between mb-4">
           <span className="text-sm text-dim">Current Tier</span>
           <span className="font-bold text-accent">{tier.label}</span>

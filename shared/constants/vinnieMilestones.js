@@ -213,6 +213,17 @@ export const VINNIE_MILESTONES = [
     panel: 'factory',
   },
 
+  // ── Franchise intro ──
+  {
+    id: 'franchise_intro',
+    check: g => g.reputation >= 75 && (g.locations || []).length >= 2 && g.hasFactory && !g.franchiseOffering?.active,
+    title: "Time to Franchise, Kid",
+    message: g => `Look at you \u2014 ${g.locations.length} shops, reputation ${Math.floor(g.reputation)}, and a factory cranking out tires. You're sitting on a goldmine. Ever thought about franchising? Let other players buy into your brand. They pay you a buy-in fee upfront, plus royalties on every tire they sell under your name. You set the terms \u2014 royalty percentage, monthly fees, even require them to stock your brand. Head to the Franchise panel and create an offering. Trust me, passive income is the best income.`,
+    emotion: 'money',
+    hint: 'Open Franchise panel',
+    panel: 'franchise',
+  },
+
   // ── Premium pitch milestones ──
   {
     id: 'premium_pitch_shops',

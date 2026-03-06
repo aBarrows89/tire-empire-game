@@ -8,11 +8,12 @@ import { SUPPLIERS } from '@shared/constants/suppliers.js';
 import { fmt } from '@shared/helpers/format.js';
 import { getEffectiveProductionCost, computeTireAttributes, tireName } from '@shared/helpers/factoryBrand.js';
 import { hapticsMedium } from '../../api/haptics.js';
+import InfoBubble from '../ui/InfoBubble.jsx';
 
 const PRODUCIBLE_TYPES = Object.keys(FACTORY.productionCost);
 
 export default function FactoryPanel() {
-  const { state, refreshState } = useGame();
+  const { state, applyState } = useGame();
   const g = state.game;
   const [busy, setBusy] = useState(false);
   const [selectedType, setSelectedType] = useState(PRODUCIBLE_TYPES[0]);
@@ -26,7 +27,7 @@ export default function FactoryPanel() {
   const doAction = async (action, params = {}) => {
     setBusy(true);
     const res = await postAction(action, params);
-    if (res.ok) { hapticsMedium(); refreshState(); }
+    if (res.ok) { hapticsMedium(); applyState(res); }
     setBusy(false);
   };
 
@@ -125,6 +126,14 @@ export default function FactoryPanel() {
     <>
       {/* Tab navigation */}
       <div className="card">
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+          <span className="card-title" style={{ margin: 0 }}>Factory</span>
+          <InfoBubble title="Your Factory">
+            <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Production</b> — Produce your own branded tires. Quality improves with R&D projects and certifications.</p>
+            <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Wholesale</b> — Set wholesale prices so other players can buy your tires. Set MAP (minimum advertised price) to protect your brand.</p>
+            <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Supply Chain</b> — Build rubber farms and synthetic labs to reduce raw material costs.</p>
+          </InfoBubble>
+        </div>
         <div className="row gap-8" style={{ flexWrap: 'wrap' }}>
           {TABS.map(([id, label]) => (
             <button key={id} className={`btn btn-sm ${tab === id ? '' : 'btn-outline'}`} style={{ flex: 1, minWidth: 60 }} onClick={() => setTab(id)}>

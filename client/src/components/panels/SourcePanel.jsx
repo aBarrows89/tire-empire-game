@@ -12,7 +12,7 @@ import { hapticsMedium } from '../../api/haptics.js';
 import { playSound } from '../../api/sounds.js';
 
 export default function SourcePanel() {
-  const { state, refreshState } = useGame();
+  const { state, applyState } = useGame();
   const g = state.game;
   const [busy, setBusy] = useState(null);
   const [selectedLotItems, setSelectedLotItems] = useState([]);
@@ -27,14 +27,14 @@ export default function SourcePanel() {
   const buy = async (sourceId) => {
     setBusy(sourceId);
     const res = await postAction('buySource', { sourceId });
-    if (res.ok) { hapticsMedium(); playSound('purchase'); refreshState(); }
+    if (res.ok) { hapticsMedium(); playSound('purchase'); applyState(res); }
     setBusy(null);
   };
 
   const setAutoSource = async (sourceId) => {
     setBusy('auto');
-    await postAction('setAutoSource', { sourceId: sourceId || null });
-    refreshState();
+    const result = await postAction('setAutoSource', { sourceId: sourceId || null });
+    applyState(result);
     setBusy(null);
   };
 
@@ -57,26 +57,26 @@ export default function SourcePanel() {
 
   const inspect = async (sourceKey) => {
     setBusy(`inspect-${sourceKey}`);
-    await postAction('inspectSource', { sourceId: sourceKey });
+    const result = await postAction('inspectSource', { sourceId: sourceKey });
     setSelectedLotItems([]);
-    refreshState();
+    applyState(result);
     setBusy(null);
   };
 
   const buyFromLot = async (indices) => {
     setBusy('lotBuy');
-    await postAction('buyFromLot', { indices });
+    const result = await postAction('buyFromLot', { indices });
     hapticsMedium();
     setSelectedLotItems([]);
-    refreshState();
+    applyState(result);
     setBusy(null);
   };
 
   const dismissLot = async () => {
     setBusy('lotDismiss');
-    await postAction('dismissLot');
+    const result = await postAction('dismissLot');
     setSelectedLotItems([]);
-    refreshState();
+    applyState(result);
     setBusy(null);
   };
 
@@ -288,8 +288,8 @@ export default function SourcePanel() {
                   disabled={busy === `close-${stand.id}`}
                   onClick={async () => {
                     setBusy(`close-${stand.id}`);
-                    await postAction('closeFleaStand', { standId: stand.id });
-                    refreshState();
+                    const result = await postAction('closeFleaStand', { standId: stand.id });
+                    applyState(result);
                     setBusy(null);
                   }}
                 >
@@ -320,7 +320,7 @@ export default function SourcePanel() {
                   setBusy(`open-${market.id}`);
                   const res = await postAction('openFleaStand', { marketId: market.id });
                   if (res.error) alert(res.error);
-                  refreshState();
+                  applyState(res);
                   setBusy(null);
                 }}
               >
@@ -360,8 +360,8 @@ export default function SourcePanel() {
                       disabled={alreadyAttending || g.cash < meet.fee + 300 || busy === `meet-${meet.id}`}
                       onClick={async () => {
                         setBusy(`meet-${meet.id}`);
-                        await postAction('attendCarMeet', { meetId: meet.id });
-                        refreshState();
+                        const result = await postAction('attendCarMeet', { meetId: meet.id });
+                        applyState(result);
                         setBusy(null);
                       }}
                     >

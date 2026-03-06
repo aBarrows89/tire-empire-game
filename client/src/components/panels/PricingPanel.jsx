@@ -13,7 +13,7 @@ const STRATEGIES = [
 ];
 
 export default function PricingPanel() {
-  const { state, refreshState } = useGame();
+  const { state, applyState } = useGame();
   const g = state.game;
   const timers = useRef({});
 
@@ -29,14 +29,14 @@ export default function PricingPanel() {
     clearTimeout(timers.current[tire]);
     timers.current[tire] = setTimeout(async () => {
       hapticsLight();
-      await postAction('setPrice', { tire, price: Number(price) });
-      refreshState();
+      const result = await postAction('setPrice', { tire, price: Number(price) });
+      applyState(result);
     }, 400);
   };
 
   const setAutoPrice = async (tire, strategy, offset) => {
-    await postAction('setAutoPrice', { tire, strategy, offset: Number(offset) || 0 });
-    refreshState();
+    const result = await postAction('setAutoPrice', { tire, strategy, offset: Number(offset) || 0 });
+    applyState(result);
   };
 
   const hasTires = (k) => (g.inventory[k] || 0) > 0;

@@ -11,7 +11,7 @@ import { postAction, get3plListings } from '../../api/client.js';
 import { hapticsMedium } from '../../api/haptics.js';
 
 export default function StoragePanel() {
-  const { state, refreshState } = useGame();
+  const { state, applyState } = useGame();
   const g = state.game;
   const [busy, setBusy] = useState(null);
   const [txFrom, setTxFrom] = useState('warehouse');
@@ -35,17 +35,17 @@ export default function StoragePanel() {
 
   const buy = async (type) => {
     setBusy(type);
-    await postAction('buyStorage', { type });
+    const result = await postAction('buyStorage', { type });
     hapticsMedium();
-    refreshState();
+    applyState(result);
     setBusy(null);
   };
 
   const transfer = async () => {
     if (!txFrom || !txTo || !txTire || txQty <= 0 || txFrom === txTo) return;
     setBusy('transfer');
-    await postAction('transferTires', { from: txFrom, to: txTo, tire: txTire, qty: txQty });
-    refreshState();
+    const result = await postAction('transferTires', { from: txFrom, to: txTo, tire: txTire, qty: txQty });
+    applyState(result);
     setBusy(null);
   };
 
@@ -130,7 +130,7 @@ export default function StoragePanel() {
                       if (!window.confirm(`Sell ${st.n} for $${fmt(sellValue)} (50% of purchase price)?\n\nMake sure you have enough remaining capacity for your inventory.`)) return;
                       setBusy(`sell-${s.id}`);
                       const result = await postAction('sellStorage', { storageId: s.id });
-                      await refreshState();
+                      applyState(result);
                       setBusy(null);
                       if (result?.error) alert(result.error);
                     }}
@@ -349,7 +349,7 @@ export default function StoragePanel() {
                         onClick={async () => {
                           setBusy(`tpl-${lease.id}`);
                           const result = await postAction('tplTransfer', { leaseId: lease.id, tire: tplTxTire, qty: tplTxQty, direction: tplTxDir });
-                          await refreshState();
+                          applyState(result);
                           setBusy(null);
                           if (result?.error) alert(result.error);
                         }}
@@ -364,7 +364,7 @@ export default function StoragePanel() {
                           if (!window.confirm(`Cancel lease with ${lease.ownerName}?\n\nTires that don't fit in your warehouse will be liquidated at 50% market value.`)) return;
                           setBusy(`cancel-${lease.id}`);
                           const result = await postAction('cancelLease', { leaseId: lease.id });
-                          await refreshState();
+                          applyState(result);
                           setBusy(null);
                           if (result?.error) alert(result.error);
                         }}
@@ -410,7 +410,7 @@ export default function StoragePanel() {
                   onClick={async () => {
                     setBusy('listStorage');
                     const result = await postAction('listStorage', { capacity: listCap, pricePerTire: listPrice });
-                    await refreshState();
+                    applyState(result);
                     setBusy(null);
                     if (result?.error) alert(result.error);
                   }}
@@ -454,8 +454,8 @@ export default function StoragePanel() {
                           onClick={async () => {
                             if (!window.confirm(`Send eviction notice? Tenant has ${TPL.evictionNoticeDays} days to vacate.`)) return;
                             setBusy(`evict-${t.leaseId}`);
-                            await postAction('evictTenant', { listingId: listing.id, tenantId: t.playerId });
-                            await refreshState();
+                            const result = await postAction('evictTenant', { listingId: listing.id, tenantId: t.playerId });
+                            applyState(result);
                             setBusy(null);
                           }}
                         >
@@ -474,8 +474,8 @@ export default function StoragePanel() {
                     onClick={async () => {
                       if (!window.confirm('Remove this storage listing?')) return;
                       setBusy(`delist-${listing.id}`);
-                      await postAction('delistStorage', { listingId: listing.id });
-                      await refreshState();
+                      const result = await postAction('delistStorage', { listingId: listing.id });
+                      applyState(result);
                       setBusy(null);
                     }}
                   >
@@ -528,7 +528,7 @@ export default function StoragePanel() {
                         if (!window.confirm(`Rent ${rentSlots} storage slots from ${l.ownerName}?\n\nFirst month: $${fmt(cost)}\nMonthly: $${fmt(cost)}/mo`)) return;
                         setBusy(`rent-${l.listingId}`);
                         const result = await postAction('rentStorage', { listingId: l.listingId, ownerId: l.ownerId, slots: rentSlots });
-                        await refreshState();
+                        applyState(result);
                         loadBrowse();
                         setBusy(null);
                         if (result?.error) alert(result.error);
@@ -600,7 +600,7 @@ export default function StoragePanel() {
             )) return;
             setBusy('retread');
             const result = await postAction('retreadTires', { tire: tireKey, qty: retreadQty });
-            await refreshState();
+            applyState(result);
             setBusy(null);
             if (result?.error) {
               alert(`Retread failed: ${result.error}`);
@@ -652,7 +652,7 @@ export default function StoragePanel() {
                   if (!window.confirm(`Instantly complete ${pendingCount} retread${pendingCount !== 1 ? 's' : ''} for ${tcCost} TC?`)) return;
                   setBusy('instantRetread');
                   const result = await postAction('instantRetread', {});
-                  await refreshState();
+                  applyState(result);
                   setBusy(null);
                   if (result?.error) alert(result.error);
                 }}

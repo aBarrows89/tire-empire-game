@@ -142,7 +142,7 @@ function PurchaseTier({ tier, g, onBuy, busy, pricing }) {
 }
 
 export default function TireCoinStorePanel() {
-  const { state, refreshState } = useGame();
+  const { state, refreshState, applyState } = useGame();
   const g = state.game;
   const [busy, setBusy] = useState(null);
   const [pricing, setPricing] = useState({});
@@ -191,7 +191,7 @@ export default function TireCoinStorePanel() {
     try {
       const res = await postAction(action, params);
       if (res?.ok !== false) hapticsMedium();
-      await refreshState();
+      applyState(res);
     } catch (e) {
       // Error handled by postAction toast
       setRecentlyBought(prev => { const n = new Set(prev); n.delete(action); return n; });

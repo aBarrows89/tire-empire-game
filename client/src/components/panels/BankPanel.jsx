@@ -9,7 +9,7 @@ import { playSound } from '../../api/sounds.js';
 import { UICard, ProgressBar, SectionHeader, Tag } from '../ui/ui.jsx';
 
 export default function BankPanel() {
-  const { state, refreshState } = useGame();
+  const { state, applyState } = useGame();
   const g = state.game;
   const [busy, setBusy] = useState(null);
   const [depAmount, setDepAmount] = useState('');
@@ -18,35 +18,35 @@ export default function BankPanel() {
 
   const take = async (index) => {
     setBusy(`loan-${index}`);
-    await postAction('takeLoan', { index });
+    const result = await postAction('takeLoan', { index });
     hapticsMedium(); playSound('cash');
-    refreshState(); setBusy(null);
+    applyState(result); setBusy(null);
   };
 
   const deposit = async () => {
     const amt = Math.floor(Number(depAmount));
     if (!amt || amt <= 0) return;
     setBusy('dep');
-    await postAction('bankDeposit', { amount: amt });
+    const result = await postAction('bankDeposit', { amount: amt });
     hapticsMedium(); playSound('cash');
-    refreshState(); setDepAmount(''); setBusy(null);
+    applyState(result); setDepAmount(''); setBusy(null);
   };
 
   const withdraw = async () => {
     const amt = Math.floor(Number(wdAmount));
     if (!amt || amt <= 0) return;
     setBusy('wd');
-    await postAction('bankWithdraw', { amount: amt });
+    const result = await postAction('bankWithdraw', { amount: amt });
     hapticsMedium(); playSound('cash');
-    refreshState(); setWdAmount(''); setBusy(null);
+    applyState(result); setWdAmount(''); setBusy(null);
   };
 
   const repay = async (loanIdx) => {
     const amt = Math.floor(Number(repayAmounts[loanIdx] || 0));
     if (!amt || amt <= 0) return;
     setBusy(`repay-${loanIdx}`);
-    await postAction('repayLoan', { loanIndex: loanIdx, amount: amt });
-    hapticsMedium(); refreshState();
+    const result = await postAction('repayLoan', { loanIndex: loanIdx, amount: amt });
+    hapticsMedium(); applyState(result);
     setRepayAmounts(p => ({ ...p, [loanIdx]: '' }));
     setBusy(null);
   };

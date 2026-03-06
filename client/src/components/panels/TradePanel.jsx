@@ -9,7 +9,7 @@ import EmptyState from '../EmptyState.jsx';
 import useSwipeTabs from '../../hooks/useSwipeTabs.js';
 
 export default function TradePanel() {
-  const { state, refreshState } = useGame();
+  const { state, refreshState, applyState } = useGame();
   const g = state.game;
   const [trades, setTrades] = useState([]);
   const [tab, setTab] = useState('active'); // active | new
@@ -107,9 +107,9 @@ export default function TradePanel() {
   const completed = trades.filter(t => ['completed', 'declined', 'cancelled'].includes(t.status));
 
   const dismissVinnie = async () => {
-    await postAction('dismissVinnie', { id: 'p2p_trade_warning' });
+    const result = await postAction('dismissVinnie', { id: 'p2p_trade_warning' });
     setShowVinnieWarn(false);
-    refreshState();
+    applyState(result);
   };
 
   return (

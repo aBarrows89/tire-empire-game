@@ -9,9 +9,10 @@ import { getVolTier } from '@shared/helpers/wholesale.js';
 import { getCap } from '@shared/helpers/inventory.js';
 import { getAllTires } from '@shared/helpers/factoryBrand.js';
 import { hapticsMedium } from '../../api/haptics.js';
+import InfoBubble from '../ui/InfoBubble.jsx';
 
 export default function WholesalePanel() {
-  const { state, refreshState } = useGame();
+  const { state, refreshState, applyState } = useGame();
   const g = state.game;
   const [busy, setBusy] = React.useState(false);
   const [suppliers, setSuppliers] = React.useState([]);
@@ -28,7 +29,7 @@ export default function WholesalePanel() {
     try {
       const res = await postAction('unlockWholesale');
       if (res.error) { setWsError(res.error); }
-      else if (res.ok) { hapticsMedium(); refreshState(); }
+      else if (res.ok) { hapticsMedium(); applyState(res); }
       else { setWsError('Something went wrong'); }
     } catch (e) { setWsError(e.message); }
     setBusy(false);
@@ -153,7 +154,14 @@ export default function WholesalePanel() {
     <>
       {/* Wholesale Stats Card */}
       <div className="card">
-        <div className="card-title">Wholesale Stats</div>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div className="card-title" style={{ margin: 0 }}>Wholesale Stats</div>
+          <InfoBubble title="How Wholesale Works">
+            <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Buy</b> — Order tires in bulk from factory players at wholesale prices. Higher volume tiers unlock better discounts.</p>
+            <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Sell</b> — If you have a factory, set wholesale prices and sell to other players' shops and distribution centers.</p>
+            <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Volume Tiers</b> — Your monthly purchase volume determines your discount tier. Buy more to unlock better pricing.</p>
+          </InfoBubble>
+        </div>
         <div className="row-between mb-4">
           <span className="text-sm text-dim">Monthly Volume</span>
           <span className="font-bold">{fmt(g.monthlyPurchaseVol || 0)} tires</span>
@@ -454,9 +462,9 @@ export default function WholesalePanel() {
                       disabled={busy || g.cash < nextLevel.cost}
                       onClick={async () => {
                         setBusy(true);
-                        await postAction('upgradeWholesale', { category });
+                        const result = await postAction('upgradeWholesale', { category });
                         hapticsMedium();
-                        refreshState();
+                        applyState(result);
                         setBusy(false);
                       }}
                     >

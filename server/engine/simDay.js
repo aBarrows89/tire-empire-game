@@ -1534,6 +1534,22 @@ export function simDay(g, shared = {}) {
         franchise.missedPayments = 0;
         s.log.push({ msg: `🏪 ${loc.franchise.brandName} royalty: $${totalOwed.toLocaleString()} ($${royaltyAmt.toLocaleString()} rev + $${dailyFee.toLocaleString()} fee)`, cat: 'franchise' });
 
+        // Check required brand compliance
+        if (loc.franchise.requiredBrand) {
+          const inv = loc.inventory || {};
+          const reqLower = loc.franchise.requiredBrand.toLowerCase();
+          const hasRequired = Object.keys(inv).some(k => k.startsWith('brand_') && inv[k] > 0 && k.toLowerCase().includes(reqLower));
+          if (!hasRequired) {
+            franchise.brandViolationDays = (franchise.brandViolationDays || 0) + 1;
+            s.reputation = Math.max(0, s.reputation - 0.2);
+            if (franchise.brandViolationDays % 7 === 1) {
+              s.log.push({ msg: `⚠️ ${loc.franchise.brandName}: not stocking required brand "${loc.franchise.requiredBrand}" — reputation penalty`, cat: 'franchise' });
+            }
+          } else {
+            franchise.brandViolationDays = 0;
+          }
+        }
+
         // Queue royalty payment to franchisor — handled by tickLoop cross-player transfer
         if (!s._franchisePayments) s._franchisePayments = [];
         s._franchisePayments.push({

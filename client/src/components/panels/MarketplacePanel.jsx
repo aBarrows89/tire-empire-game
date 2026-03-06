@@ -17,7 +17,7 @@ function getPlayerTier(g) {
 }
 
 export default function MarketplacePanel() {
-  const { state, dispatch, refreshState } = useGame();
+  const { state, dispatch, refreshState, applyState } = useGame();
   const g = state.game;
   const [listings, setListings] = useState([]);
   const [myListings, setMyListings] = useState([]);
@@ -430,7 +430,7 @@ export default function MarketplacePanel() {
               </div>
               <div className="text-xs text-dim mb-4">Listed on day {g.factoryListing.listedDay}</div>
               <button className="btn btn-full btn-sm btn-red" disabled={busy}
-                onClick={async () => { setBusy('delist-factory'); await postAction('delistFactory'); refreshState(); setBusy(null); }}>
+                onClick={async () => { setBusy('delist-factory'); const result = await postAction('delistFactory'); applyState(result); setBusy(null); }}>
                 Remove Listing
               </button>
             </div>
@@ -472,7 +472,7 @@ export default function MarketplacePanel() {
                     if (!confirm(`Buy ${l.brandName} for $${fmt(l.askingPrice)}?`)) return;
                     setBusy(`buy-factory-${l.playerId}`);
                     const res = await postAction('buyFactory', { sellerId: l.playerId });
-                    if (res.ok) { hapticsMedium(); refreshState(); fetchAllListings(); }
+                    if (res.ok) { hapticsMedium(); applyState(res); fetchAllListings(); }
                     setBusy(null);
                   }}>
                   Buy Factory (${fmt(l.askingPrice)})

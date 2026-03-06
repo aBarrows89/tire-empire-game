@@ -10,7 +10,7 @@ import { tireName } from '@shared/helpers/factoryBrand.js';
 import { postAction } from '../../api/client.js';
 
 export default function SupplierPanel() {
-  const { state, refreshState } = useGame();
+  const { state, applyState } = useGame();
   const g = state.game;
   const [busy, setBusy] = useState(null);
   const [orderTire, setOrderTire] = useState('allSeason');
@@ -26,8 +26,8 @@ export default function SupplierPanel() {
 
   const unlock = async (index) => {
     setBusy(`u${index}`);
-    await postAction('buySupplier', { index });
-    refreshState();
+    const result = await postAction('buySupplier', { index });
+    applyState(result);
     setBusy(null);
   };
 
@@ -42,8 +42,8 @@ export default function SupplierPanel() {
       return true;
     }).map(([k]) => k);
     const tire = validTires.includes(orderTire) ? orderTire : validTires[0];
-    await postAction('orderTires', { tire, qty: orderQty, supplierIndex });
-    refreshState();
+    const result = await postAction('orderTires', { tire, qty: orderQty, supplierIndex });
+    applyState(result);
     setBusy(null);
   };
 
@@ -251,8 +251,8 @@ export default function SupplierPanel() {
                             disabled={busy === `sc${index}`}
                             onClick={async () => {
                               setBusy(`sc${index}`);
-                              await postAction('signSupplierContract', { supplierIndex: index, tire: orderTire });
-                              refreshState();
+                              const result = await postAction('signSupplierContract', { supplierIndex: index, tire: orderTire });
+                              applyState(result);
                               setBusy(null);
                             }}
                           >
@@ -276,8 +276,8 @@ export default function SupplierPanel() {
                         disabled={busy === 'enableAutoRestock'}
                         onClick={async () => {
                           setBusy('enableAutoRestock');
-                          await postAction('setAutoRestock', { enabled: true, threshold: 0.3, maxSpend: 50000 });
-                          refreshState();
+                          const result = await postAction('setAutoRestock', { enabled: true, threshold: 0.3, maxSpend: 50000 });
+                          applyState(result);
                           setBusy(null);
                         }}
                       >
@@ -295,8 +295,8 @@ export default function SupplierPanel() {
                       disabled={busy === 'disableAutoRestock'}
                       onClick={async () => {
                         setBusy('disableAutoRestock');
-                        await postAction('setAutoRestock', { enabled: false });
-                        refreshState();
+                        const result = await postAction('setAutoRestock', { enabled: false });
+                        applyState(result);
                         setBusy(null);
                       }}
                     >
@@ -312,8 +312,8 @@ export default function SupplierPanel() {
                         value={Math.round((g.autoRestock?.threshold || 0.3) * 100)}
                         onChange={async (e) => {
                           setBusy('setThreshold');
-                          await postAction('setAutoRestock', { enabled: true, threshold: Number(e.target.value) / 100, maxSpend: g.autoRestock?.maxSpend || 50000 });
-                          refreshState();
+                          const result = await postAction('setAutoRestock', { enabled: true, threshold: Number(e.target.value) / 100, maxSpend: g.autoRestock?.maxSpend || 50000 });
+                          applyState(result);
                           setBusy(null);
                         }}
                       >
@@ -332,8 +332,8 @@ export default function SupplierPanel() {
                         value={g.autoRestock?.maxSpend || 50000}
                         onChange={async (e) => {
                           setBusy('setBudget');
-                          await postAction('setAutoRestock', { enabled: true, threshold: g.autoRestock?.threshold || 0.3, maxSpend: Number(e.target.value) });
-                          refreshState();
+                          const result = await postAction('setAutoRestock', { enabled: true, threshold: g.autoRestock?.threshold || 0.3, maxSpend: Number(e.target.value) });
+                          applyState(result);
                           setBusy(null);
                         }}
                       >
@@ -356,8 +356,8 @@ export default function SupplierPanel() {
                         disabled={busy === `rmAuto-${index}-${a.tire}`}
                         onClick={async () => {
                           setBusy(`rmAuto-${index}-${a.tire}`);
-                          await postAction('removeAutoSupplier', { supplierIndex: index, tire: a.tire });
-                          refreshState();
+                          const result = await postAction('removeAutoSupplier', { supplierIndex: index, tire: a.tire });
+                          applyState(result);
                           setBusy(null);
                         }}
                       >
@@ -404,13 +404,13 @@ export default function SupplierPanel() {
                         disabled={!autoTire[index] || !(autoQty[index] >= sup.min) || !autoThreshold[index] || busy === `addAuto-${index}`}
                         onClick={async () => {
                           setBusy(`addAuto-${index}`);
-                          await postAction('addAutoSupplier', {
+                          const result = await postAction('addAutoSupplier', {
                             supplierIndex: index,
                             tire: autoTire[index],
                             qty: autoQty[index],
                             threshold: autoThreshold[index],
                           });
-                          refreshState();
+                          applyState(result);
                           setBusy(null);
                         }}
                       >
@@ -465,7 +465,7 @@ export default function SupplierPanel() {
               if (res.ok) {
                 setImportMsg(`Order placed! ${importQty} ${tireName(importTire, g)} arriving in 5-7 days`);
               }
-              refreshState();
+              applyState(res);
               setBusy(null);
             }}
           >
@@ -535,8 +535,8 @@ export default function SupplierPanel() {
           disabled={!exportTire || exportQty <= 0 || busy === 'export'}
           onClick={async () => {
             setBusy('export');
-            await postAction('exportTires', { tire: exportTire, qty: exportQty });
-            refreshState();
+            const result = await postAction('exportTires', { tire: exportTire, qty: exportQty });
+            applyState(result);
             setBusy(null);
           }}
         >

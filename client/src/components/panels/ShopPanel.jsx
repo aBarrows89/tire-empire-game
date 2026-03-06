@@ -15,7 +15,7 @@ import { postAction, API_BASE, acceptShopOffer, rejectShopOffer, counterShopOffe
 import { hapticsMedium } from '../../api/haptics.js';
 
 export default function ShopPanel() {
-  const { state, refreshState } = useGame();
+  const { state, refreshState, applyState } = useGame();
   const g = state.game;
   const [busy, setBusy] = useState(null);
   const [selectedState, setSelectedState] = useState(null);
@@ -56,65 +56,65 @@ export default function ShopPanel() {
   const open = async (cityId) => {
     setBusy(cityId);
     const res = await postAction('openShop', { cityId });
-    if (res.ok) { hapticsMedium(); refreshState(); }
+    if (res.ok) { hapticsMedium(); applyState(res); }
     setBusy(null);
   };
 
   const financeShop = async (cityId) => {
     setBusy(`fin-${cityId}`);
     const res = await postAction('financeShop', { cityId });
-    if (res.ok) refreshState();
+    if (res.ok) applyState(res);
     setBusy(null);
   };
 
   const sellShop = async (locationId) => {
     setBusy(`sell-${locationId}`);
-    await postAction('sellShop', { locationId });
-    refreshState();
+    const result = await postAction('sellShop', { locationId });
+    applyState(result);
     setBusy(null);
   };
 
   const upgradeStorage = async (locationId) => {
     setBusy(`upg-${locationId}`);
-    await postAction('upgradeShopStorage', { locationId });
-    refreshState();
+    const result = await postAction('upgradeShopStorage', { locationId });
+    applyState(result);
     setBusy(null);
   };
 
   const listForSale = async (locationId) => {
     setBusy(`list-${locationId}`);
     const price = askingPrices[locationId];
-    await postAction('listShopForSale', { locationId, askingPrice: price || undefined });
-    refreshState();
+    const result = await postAction('listShopForSale', { locationId, askingPrice: price || undefined });
+    applyState(result);
     setBusy(null);
   };
 
   const delistShop = async (locationId) => {
     setBusy(`delist-${locationId}`);
-    await postAction('delistShop', { locationId });
-    refreshState();
+    const result = await postAction('delistShop', { locationId });
+    applyState(result);
     setBusy(null);
   };
 
   const acceptBid = async (bidId) => {
     setBusy(`accept-${bidId}`);
-    await postAction('acceptShopBid', { bidId });
+    const result = await postAction('acceptShopBid', { bidId });
     hapticsMedium();
-    refreshState();
+    applyState(result);
     setBusy(null);
   };
 
   const rejectBid = async (bidId) => {
     setBusy(`reject-${bidId}`);
-    await postAction('rejectShopBid', { bidId });
-    refreshState();
+    const result = await postAction('rejectShopBid', { bidId });
+    applyState(result);
     setBusy(null);
   };
 
   const bidContract = async (contractType) => {
     setBusy(`bid-${contractType}`);
-    await postAction('bidOnContract', { contractType });
-    refreshState();
+    const result = await postAction('bidOnContract', { contractType });
+    applyState(result);
     setBusy(null);
   };
 
@@ -306,7 +306,7 @@ export default function ShopPanel() {
                         <span className="text-xs text-dim">Marketing</span>
                         <select className="autoprice-select" style={{ width: 'auto', fontSize: 10, minHeight: 28, padding: '2px 6px' }}
                           value={loc.marketing || ''}
-                          onChange={async (e) => { setBusy(`mkt-${loc.id}`); await postAction('setMarketing', { locationId: loc.id, tier: e.target.value || null }); refreshState(); setBusy(null); }}
+                          onChange={async (e) => { setBusy(`mkt-${loc.id}`); const result = await postAction('setMarketing', { locationId: loc.id, tier: e.target.value || null }); applyState(result); setBusy(null); }}
                           disabled={busy === `mkt-${loc.id}`}>
                           <option value="">None</option>
                           <option value="flyers">Flyers ($50/day +10%)</option>
@@ -335,7 +335,7 @@ export default function ShopPanel() {
                           <span className="text-xs text-dim">Auto-Stock Filter</span>
                           <select className="autoprice-select" style={{ width: 'auto', fontSize: 10, minHeight: 28, padding: '2px 6px' }}
                             value={(loc.stockingPrefs?.mode) || 'all'}
-                            onChange={async (e) => { const mode = e.target.value; setBusy(`stock-${loc.id}`); await postAction('setStockingPrefs', { locationId: loc.id, mode, tireTypes: loc.stockingPrefs?.tireTypes || [] }); refreshState(); setBusy(null); }}
+                            onChange={async (e) => { const mode = e.target.value; setBusy(`stock-${loc.id}`); const result = await postAction('setStockingPrefs', { locationId: loc.id, mode, tireTypes: loc.stockingPrefs?.tireTypes || [] }); applyState(result); setBusy(null); }}
                             disabled={busy === `stock-${loc.id}`}>
                             <option value="all">Stock All Types</option>
                             <option value="blacklist">Exclude Selected</option>
@@ -363,8 +363,8 @@ export default function ShopPanel() {
                                     const current = loc.stockingPrefs?.tireTypes || [];
                                     const updated = selected ? current.filter(x=>x!==k) : [...current,k];
                                     setBusy(`stock-${loc.id}`);
-                                    await postAction('setStockingPrefs', { locationId: loc.id, mode: loc.stockingPrefs?.mode || 'blacklist', tireTypes: updated });
-                                    refreshState(); setBusy(null);
+                                    const result = await postAction('setStockingPrefs', { locationId: loc.id, mode: loc.stockingPrefs?.mode || 'blacklist', tireTypes: updated });
+                                    applyState(result); setBusy(null);
                                   }}>
                                   {selected && (isExclude ? '✕ ' : '✓ ')}{t.n}
                                 </button>
@@ -526,8 +526,8 @@ export default function ShopPanel() {
             max={15}
             value={g.disposalFee ?? 3}
             onChange={async (e) => {
-              await postAction('setDisposalFee', { fee: Number(e.target.value) });
-              refreshState();
+              const result = await postAction('setDisposalFee', { fee: Number(e.target.value) });
+              applyState(result);
             }}
           />
           <div className="row-between text-xs text-dim mt-8">
@@ -571,8 +571,8 @@ export default function ShopPanel() {
                       const val = Number(e.target.value);
                       if (!val || val <= 0) return;
                       setLocalServicePrices(prev => ({ ...prev, [k]: val }));
-                      await postAction('setServicePrice', { service: k, price: val });
-                      refreshState();
+                      const result = await postAction('setServicePrice', { service: k, price: val });
+                      applyState(result);
                     }}
                     onKeyDown={async (e) => {
                       if (e.key === 'Enter') {
@@ -796,8 +796,8 @@ export default function ShopPanel() {
               disabled={busy === 'franchise-tmpl'}
               onClick={async () => {
                 setBusy('franchise-tmpl');
-                await postAction('createFranchiseTemplate');
-                refreshState();
+                const result = await postAction('createFranchiseTemplate');
+                applyState(result);
                 setBusy(null);
               }}
             >
@@ -808,8 +808,8 @@ export default function ShopPanel() {
               disabled={busy === 'franchise-open'}
               onClick={async () => {
                 setBusy('franchise-open');
-                await postAction('openFranchise');
-                refreshState();
+                const result = await postAction('openFranchise');
+                applyState(result);
                 setBusy(null);
               }}
             >

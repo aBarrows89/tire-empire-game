@@ -43,7 +43,8 @@ export function generateTicker(companyName, existingTickers) {
   ticker = ticker.slice(0, 4);
   let candidate = ticker;
   let i = 1;
-  while (existingTickers && existingTickers.has(candidate)) { candidate = ticker.slice(0, 3) + String(i); i++; }
+  const _sfx = 'XZQWVYJK';
+  while (existingTickers && existingTickers.has(candidate)) { candidate = ticker.slice(0, 3) + (i <= _sfx.length ? _sfx[i - 1] : String(i)); i++; }
   return candidate;
 }
 

@@ -6,7 +6,7 @@ import { postAction } from '../../api/client.js';
 import { hapticsMedium } from '../../api/haptics.js';
 
 export default function AchievementsPanel() {
-  const { state, refreshState } = useGame();
+  const { state, applyState } = useGame();
   const g = state.game;
   const earned = g.achievements || {};
   const earnedCount = Object.values(earned).filter(Boolean).length;
@@ -14,9 +14,9 @@ export default function AchievementsPanel() {
 
   const buyCosmetic = async (cosmeticId) => {
     setBusy(cosmeticId);
-    await postAction('buyCosmetic', { cosmeticId });
+    const result = await postAction('buyCosmetic', { cosmeticId });
     hapticsMedium();
-    refreshState();
+    applyState(result);
     setBusy(null);
   };
 

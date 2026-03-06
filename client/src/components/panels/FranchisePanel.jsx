@@ -3,6 +3,7 @@ import { useGame } from '../../context/GameContext.jsx';
 import { postAction, getHeaders, API_BASE } from '../../api/client.js';
 import { fmt } from '@shared/helpers/format.js';
 import { FRANCHISE_PERKS, FRANCHISE_REQUIREMENTS } from '@shared/constants/franchise.js';
+import InfoBubble from '../ui/InfoBubble.jsx';
 
 const { MIN_REP_TO_FRANCHISE, MIN_LOCATIONS_TO_FRANCHISE } = FRANCHISE_REQUIREMENTS;
 
@@ -14,14 +15,21 @@ const TABS = [
 ];
 
 export default function FranchisePanel() {
-  const { state, refreshState } = useGame();
+  const { state, applyState } = useGame();
   const g = state.game;
   const [tab, setTab] = useState('marketplace');
 
   return (
     <div>
       <div className="card">
-        <div className="card-title">Franchising</div>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div className="card-title" style={{ margin: 0 }}>Franchising</div>
+          <InfoBubble title="How Franchising Works">
+            <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Buy In</b> — Join an established brand by paying the buy-in fee. Your shop gets their brand name, supply chain perks, and customer recognition.</p>
+            <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Royalties</b> — You pay a % of daily revenue plus a monthly fee to the franchisor. Miss 3 payments and the agreement is terminated.</p>
+            <p style={{ margin: '0 0 4px' }}><b style={{ color: 'var(--text)' }}>Create an Offering</b> — If you have a factory, 75+ rep, and 2+ shops, you can franchise YOUR brand. Set your terms and earn passive income from franchisees.</p>
+          </InfoBubble>
+        </div>
         <div className="text-xs text-dim">
           Buy into established brands or franchise your own. DBA agreements, royalties, and brand recognition.
         </div>
@@ -40,15 +48,15 @@ export default function FranchisePanel() {
         ))}
       </div>
 
-      {tab === 'marketplace' && <FranchiseMarketplace g={g} refreshState={refreshState} />}
-      {tab === 'my_agreements' && <MyFranchises g={g} refreshState={refreshState} />}
-      {tab === 'franchisor' && <FranchisorPanel g={g} refreshState={refreshState} />}
+      {tab === 'marketplace' && <FranchiseMarketplace g={g} applyState={applyState} />}
+      {tab === 'my_agreements' && <MyFranchises g={g} applyState={applyState} />}
+      {tab === 'franchisor' && <FranchisorPanel g={g} applyState={applyState} />}
     </div>
   );
 }
 
 // ─── Marketplace ───────────────────────────────────────────
-function FranchiseMarketplace({ g, refreshState }) {
+function FranchiseMarketplace({ g, applyState }) {
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -83,7 +91,7 @@ function FranchiseMarketplace({ g, refreshState }) {
       if (res?.ok) {
         setSuccess(`Welcome to ${selected.brand_name}! Your location is now DBA ${selected.brand_name}.`);
         setSelected(null);
-        refreshState();
+        applyState(res);
         load();
       } else {
         setError(res?.error || 'Failed to buy franchise');
@@ -196,7 +204,7 @@ function FranchiseListing({ listing, g, isSelected, onSelect, availableLocs, buy
 }
 
 // ─── My Franchises (as franchisee) ─────────────────────────
-function MyFranchises({ g, refreshState }) {
+function MyFranchises({ g, applyState }) {
   const [pending, setPending] = useState(null);
   const [error, setError] = useState(null);
 
@@ -209,7 +217,7 @@ function MyFranchises({ g, refreshState }) {
     setError(null);
     try {
       const res = await postAction('terminateFranchise', { agreementId });
-      if (res?.ok) refreshState();
+      if (res?.ok) applyState(res);
       else setError(res?.error || 'Failed');
     } finally {
       setPending(null);
@@ -282,7 +290,7 @@ function MyFranchises({ g, refreshState }) {
 }
 
 // ─── Franchisor Panel ──────────────────────────────────────
-function FranchisorPanel({ g, refreshState }) {
+function FranchisorPanel({ g, applyState }) {
   const canFranchise = g.hasFactory && g.reputation >= MIN_REP_TO_FRANCHISE && (g.locations || []).length >= MIN_LOCATIONS_TO_FRANCHISE;
   const hasOffering = !!g.franchiseOffering?.active;
   const income = g.franchiseIncome || {};
@@ -316,7 +324,7 @@ function FranchisorPanel({ g, refreshState }) {
       const res = await postAction('createFranchiseOffering', form);
       if (res?.ok) {
         setSuccess('Franchise offering created! Other players can now apply.');
-        refreshState();
+        applyState(res);
       } else {
         setError(res?.error || 'Failed');
       }
@@ -328,8 +336,8 @@ function FranchisorPanel({ g, refreshState }) {
   const handleToggleActive = async () => {
     setPending(true);
     try {
-      await postAction('updateFranchiseOffering', { active: !g.franchiseOffering.active });
-      refreshState();
+      const res = await postAction('updateFranchiseOffering', { active: !g.franchiseOffering.active });
+      applyState(res);
     } finally {
       setPending(false);
     }
@@ -343,7 +351,7 @@ function FranchisorPanel({ g, refreshState }) {
       const res = await postAction('deleteFranchiseOffering', {});
       if (res?.ok) {
         setSuccess('Franchise offering deleted.');
-        refreshState();
+        applyState(res);
       } else {
         setError(res?.error || 'Failed to delete');
       }
