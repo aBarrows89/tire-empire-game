@@ -983,6 +983,11 @@ export async function runTick(clients) {
       if (ge.id === 'steel_surplus') commodities.steel -= 0.12;
       if (ge.id === 'winter_storm') commodities.oil += 0.10;
       if (ge.id === 'port_strike') { commodities.oil += 0.08; commodities.rubber += 0.05; }
+      if (ge.id === 'plantation_fire') commodities.rubber += 0.30;
+      if (ge.id === 'synthetic_chemical_shortage') commodities.chemicals += 0.25;
+      if (ge.id === 'trade_embargo') { commodities.rubber += 0.20; commodities.oil += 0.05; }
+      if (ge.id === 'new_rubber_source') commodities.rubber -= 0.25;
+      if (ge.id === 'monsoon_season') { commodities.rubber += 0.15; commodities.oil += 0.08; }
     }
 
     // Clamp commodities to [0.75, 1.35]

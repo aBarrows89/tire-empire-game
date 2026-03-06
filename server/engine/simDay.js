@@ -32,7 +32,7 @@ import { RETREADING } from '../../shared/constants/retreading.js';
 import { SUPPLIER_REL_TIERS, getSupplierRelTier } from '../../shared/constants/supplierRelations.js';
 import { ACHIEVEMENTS } from '../../shared/constants/achievements.js';
 import { FACTORY } from '../../shared/constants/factory.js';
-import { RAW_MATERIALS, VINNIE_SCHEMES, RD_PROJECTS, CERTIFICATIONS, SHIPPING_ZONES, CFO_ROLE, RUBBER_FARM, SYNTHETIC_LAB, MATERIAL_SUPPLIERS } from '../../shared/constants/factoryBrand.js';
+import { RAW_MATERIALS, VINNIE_SCHEMES, RD_PROJECTS, CERTIFICATIONS, SHIPPING_ZONES, CFO_ROLE, RUBBER_FARM, SYNTHETIC_LAB, MATERIAL_SUPPLIERS, RUBBER_STORAGE, RUBBER_PER_TIRE, RUBBER_QUALITY } from '../../shared/constants/factoryBrand.js';
 import { getAllTires, getBrandTireKey, getEffectiveProductionCost, getCustomerTier, computeTireAttributes, getTireAttrMultiplier } from '../../shared/helpers/factoryBrand.js';
 import { GLOBAL_EVENTS } from '../../shared/constants/globalEvents.js';
 import { MANUFACTURERS } from '../../shared/constants/manufacturers.js';
@@ -123,6 +123,26 @@ export function simDay(g, shared = {}) {
   if (s.week && !s.startDay) {
     s.day = s.week; // treat old weeks as days
     delete s.week;
+  }
+
+  // Migration: rubberSupply → naturalRubber/syntheticRubber split
+  if (s.hasFactory && s.factory && s.factory.rubberSupply !== undefined && s.factory.naturalRubber === undefined) {
+    const oldSupply = s.factory.rubberSupply || 0;
+    if (s.factory.rubberFarm && s.factory.syntheticLab) {
+      s.factory.naturalRubber = Math.floor(oldSupply * 0.5);
+      s.factory.syntheticRubber = oldSupply - s.factory.naturalRubber;
+    } else if (s.factory.syntheticLab) {
+      s.factory.naturalRubber = 0;
+      s.factory.syntheticRubber = oldSupply;
+    } else {
+      s.factory.naturalRubber = oldSupply;
+      s.factory.syntheticRubber = 0;
+    }
+    delete s.factory.rubberSupply;
+    delete s.factory._effectiveRubberIndex;
+    s.factory.rubberPreference = 'auto';
+    s.log = s.log || [];
+    s.log.push({ msg: 'Rubber Storage required! Your farm/lab output is paused until you build storage.', cat: 'event' });
   }
 
   // Deep-clone mutable nested objects
@@ -279,7 +299,28 @@ export function simDay(g, shared = {}) {
           continue; // Too deep in debt
         }
 
-        const actualOutput = Math.min(todayOutput, alloc.remainingQty);
+        let actualOutput = Math.min(todayOutput, alloc.remainingQty);
+
+        // Rubber consumption for contract production
+        const baseType = alloc.tireType.startsWith('brand_') ? alloc.tireType.replace('brand_', '') : alloc.tireType;
+        const rubberPerUnit = RUBBER_PER_TIRE[baseType] || 1.0;
+        const contractRubberNeeded = rubberPerUnit * actualOutput;
+        const contractNat = s.factory.naturalRubber || 0;
+        const contractSyn = s.factory.syntheticRubber || 0;
+        const contractRubberAvail = contractNat + contractSyn;
+        if (s.factory.rubberStorage && contractRubberAvail < contractRubberNeeded) {
+          // Produce only what rubber allows
+          actualOutput = Math.floor(contractRubberAvail / rubberPerUnit);
+          if (actualOutput <= 0) continue;
+        }
+        if (s.factory.rubberStorage) {
+          const rubberUsed = rubberPerUnit * actualOutput;
+          // Deduct rubber — prefer natural for contracts, fall back to synthetic
+          const natUse = Math.min(s.factory.naturalRubber || 0, rubberUsed);
+          s.factory.naturalRubber = (s.factory.naturalRubber || 0) - natUse;
+          s.factory.syntheticRubber = (s.factory.syntheticRubber || 0) - (rubberUsed - natUse);
+        }
+
         s.cash -= (FACTORY.productionCost[alloc.tireType] || 50) * actualOutput;
 
         // Add to staging area
@@ -405,6 +446,11 @@ export function simDay(g, shared = {}) {
         let defectRate = Math.max(FACTORY.minDefectRate,
           (FACTORY.baseDefectRate - (fStaff.inspectors || 0) * 0.02 - runDefectBonus + neglectPenalty) * defectMult * supplierDefectMod
         );
+        // Apply rubber quality defect modifier (synthetic rubber = +2% defects)
+        if (q.syntheticRatio != null && q.syntheticRatio > 0) {
+          const rubberDefectMult = 1.0 + (RUBBER_QUALITY.synthetic.defectModifier - 1.0) * q.syntheticRatio;
+          defectRate *= rubberDefectMult;
+        }
         // Apply waste reduction from Green Tech
         if (wasteReduction > 0) defectRate = Math.max(FACTORY.minDefectRate, defectRate * (1 - wasteReduction));
 
@@ -545,43 +591,145 @@ export function simDay(g, shared = {}) {
     if (s.factory.hasCFO) factoryPayroll += CFO_ROLE.salary / 30;
     s.cash -= factoryPayroll;
 
-    // ── RUBBER PRODUCTION (Farm + Synthetic Lab) ──
+    // ── RUBBER PRODUCTION (Farm + Synthetic Lab) — output into typed storage ──
+    const rubberStorageLevel = s.factory.rubberStorage?.level || 0;
+    const rubberStorageCap = rubberStorageLevel > 0
+      ? (RUBBER_STORAGE.levels.find(l => l.level === rubberStorageLevel) || RUBBER_STORAGE.levels[0]).capacity
+      : 0;
+    const currentNatural = s.factory.naturalRubber || 0;
+    const currentSynthetic = s.factory.syntheticRubber || 0;
+    const currentTotalRubber = currentNatural + currentSynthetic;
+
     if (s.factory.rubberFarm) {
       const farmLevel = RUBBER_FARM.levels.find(l => l.level === s.factory.rubberFarm.level) || RUBBER_FARM.levels[0];
       let farmOutput = farmLevel.dailyOutput;
-      // Weather vulnerability: drought/flood from global events halves production
+      // Weather vulnerability check — natural rubber affected by weather events
       const activeGlobal = shared.globalEvents || [];
       const hasWeatherEvent = activeGlobal.some(e => e.id === 'rubber_shortage' || e.id === 'winter_storm');
       if (hasWeatherEvent) farmOutput = Math.floor(farmOutput * 0.5);
-      s.factory.rubberSupply = (s.factory.rubberSupply || 0) + farmOutput;
+      // New events: plantation_fire, monsoon_season reduce natural output
+      const hasPlantationFire = activeGlobal.some(e => e.id === 'plantation_fire');
+      if (hasPlantationFire) farmOutput = Math.floor(farmOutput * 0.3);
+      const hasMonsoon = activeGlobal.some(e => e.id === 'monsoon_season');
+      if (hasMonsoon) farmOutput = Math.floor(farmOutput * 0.6);
+      const hasNewSource = activeGlobal.some(e => e.id === 'new_rubber_source');
+      if (hasNewSource) farmOutput = Math.floor(farmOutput * 1.5);
+
+      if (rubberStorageCap > 0) {
+        const spaceLeft = Math.max(0, rubberStorageCap - currentTotalRubber);
+        const stored = Math.min(farmOutput, spaceLeft);
+        s.factory.naturalRubber = currentNatural + stored;
+        if (stored < farmOutput && s.day % 7 === 0) {
+          s.log.push({ msg: `\u{1F331} Rubber farm: ${farmOutput - stored} units wasted — storage full!`, cat: 'event' });
+        }
+      } else if (s.day % 7 === 0) {
+        s.log.push({ msg: '\u{1F331} Rubber farm output paused — build Rubber Storage!', cat: 'event' });
+      }
       s.cash -= RUBBER_FARM.operatingCost;
-      if (farmOutput > 0 && s.day % 7 === 0) {
+      if (farmOutput > 0 && rubberStorageCap > 0 && s.day % 7 === 0) {
         s.log.push({ msg: `\u{1F331} Rubber farm produced ${farmOutput * 7} units this week`, cat: 'sale' });
       }
     }
+
     if (s.factory.syntheticLab) {
       const labLevel = SYNTHETIC_LAB.levels.find(l => l.level === s.factory.syntheticLab.level) || SYNTHETIC_LAB.levels[0];
-      const labOutput = labLevel.dailyOutput; // immune to weather
-      s.factory.rubberSupply = (s.factory.rubberSupply || 0) + labOutput;
+      let labOutput = labLevel.dailyOutput; // immune to weather by default
+      // synthetic_chemical_shortage halves synthetic output
+      const activeGlobal2 = shared.globalEvents || [];
+      const hasChemShortage = activeGlobal2.some(e => e.id === 'synthetic_chemical_shortage');
+      if (hasChemShortage) labOutput = Math.floor(labOutput * 0.5);
+
+      const totalAfterFarm = (s.factory.naturalRubber || 0) + (s.factory.syntheticRubber || 0);
+      if (rubberStorageCap > 0) {
+        const spaceLeft = Math.max(0, rubberStorageCap - totalAfterFarm);
+        const stored = Math.min(labOutput, spaceLeft);
+        s.factory.syntheticRubber = (s.factory.syntheticRubber || 0) + stored;
+        if (stored < labOutput && s.day % 7 === 0) {
+          s.log.push({ msg: `\u{1F9EA} Synthetic lab: ${labOutput - stored} units wasted — storage full!`, cat: 'event' });
+        }
+      } else if (s.day % 7 === 0) {
+        s.log.push({ msg: '\u{1F9EA} Synthetic lab output paused — build Rubber Storage!', cat: 'event' });
+      }
       s.cash -= SYNTHETIC_LAB.operatingCost;
       // Synthetic lab increases chemical index
       s.factory.rawMaterials.chemicals = Math.min(
         RAW_MATERIALS.chemicals.max,
         (s.factory.rawMaterials.chemicals || 1.0) + SYNTHETIC_LAB.chemicalIndexIncrease / 30
       );
-      if (labOutput > 0 && s.day % 7 === 0) {
+      if (labOutput > 0 && rubberStorageCap > 0 && s.day % 7 === 0) {
         s.log.push({ msg: `\u{1F9EA} Synthetic lab produced ${labOutput * 7} units this week`, cat: 'sale' });
       }
     }
-    // Apply rubber supply to effective rubber index
-    if ((s.factory.rubberSupply || 0) > 0) {
-      const farmReduction = (s.factory.rubberFarm ? (s.factory.rubberSupply || 0) * RUBBER_FARM.rubberReductionPerUnit : 0);
-      const labReduction = (s.factory.syntheticLab ? (s.factory.rubberSupply || 0) * SYNTHETIC_LAB.rubberReductionPerUnit : 0);
-      const totalReduction = Math.max(farmReduction, labReduction);
-      s.factory._effectiveRubberIndex = Math.max(
-        RUBBER_FARM.minRubberIndex,
-        (s.factory.rawMaterials.rubber || 1.0) - totalReduction
-      );
+  }
+
+  // ── EXCLUSIVITY DEAL GENERATION (monthly) ──
+  if (s.hasFactory && s.factory && (s.factory.brandReputation || 0) >= 20 && s.day % 30 === 0) {
+    if (!s.factory.exclusivityOffers) s.factory.exclusivityOffers = [];
+    if (!s.factory.exclusivityDeals) s.factory.exclusivityDeals = [];
+    // Clean expired offers
+    s.factory.exclusivityOffers = s.factory.exclusivityOffers.filter(o => s.day - o.offeredDay < 14);
+
+    const pendingCount = s.factory.exclusivityOffers.length;
+    if (pendingCount < 3 && Math.random() < 0.6) {
+      const aiShopNames = ['AutoZone Express', 'QuikTire Co', 'Metro Tire Depot', 'Highway Tire Supply', 'CrossCountry Treads', 'Urban Tire Works'];
+      const tireTypes = Object.keys(FACTORY.productionCost);
+      const tireType = tireTypes[Math.floor(Math.random() * tireTypes.length)];
+      const monthlyQty = 100 + Math.floor(Math.random() * 400);
+      const baseCost = FACTORY.productionCost[tireType] || 50;
+      const priceMult = 1.3 + Math.random() * 0.4; // 130-170% of production cost
+      const pricePerUnit = Math.round(baseCost * priceMult);
+      const durationMonths = 3 + Math.floor(Math.random() * 10); // 3-12 months
+      const shopName = aiShopNames[Math.floor(Math.random() * aiShopNames.length)];
+
+      s.factory.exclusivityOffers.push({
+        id: `excl_${s.day}_${Math.floor(Math.random() * 9999)}`,
+        shopName,
+        tireType,
+        monthlyQty,
+        pricePerUnit,
+        durationMonths,
+        totalQty: monthlyQty * durationMonths,
+        offeredDay: s.day,
+        expiresDay: s.day + 14,
+      });
+      s.log.push({ msg: `Exclusivity offer from ${shopName}: ${monthlyQty}/mo of ${tireType} at $${pricePerUnit}/unit for ${durationMonths} months`, cat: 'event' });
+    }
+  }
+
+  // ── EXCLUSIVITY DEAL FULFILLMENT (daily) ──
+  if (s.hasFactory && s.factory?.exclusivityDeals?.length > 0) {
+    for (const deal of s.factory.exclusivityDeals) {
+      if (deal.status !== 'active') continue;
+      if (s.day > deal.endDay) {
+        deal.status = 'completed';
+        s.log.push({ msg: `Exclusivity deal with ${deal.shopName} completed! Delivered ${deal.deliveredQty}/${deal.totalQty}`, cat: 'event' });
+        continue;
+      }
+
+      // Daily shipment = monthlyQty / 30
+      const dailyTarget = Math.ceil(deal.monthlyQty / 30);
+      const storeKey = getBrandTireKey(deal.tireType);
+      const available = s.warehouseInventory[storeKey] || 0;
+      const shipped = Math.min(dailyTarget, available);
+
+      if (shipped > 0) {
+        s.warehouseInventory[storeKey] = available - shipped;
+        deal.deliveredQty = (deal.deliveredQty || 0) + shipped;
+        const revenue = shipped * deal.pricePerUnit;
+        s.cash += revenue;
+      }
+
+      // Missed delivery penalty — check weekly
+      if (shipped < dailyTarget && s.day % 7 === 0) {
+        s.factory.brandReputation = Math.max(0, (s.factory.brandReputation || 0) - 1);
+        s.log.push({ msg: `Missed exclusivity delivery to ${deal.shopName} — brand rep -1`, cat: 'event' });
+      }
+    }
+    // Clean up completed deals (keep last 10 for history)
+    const completed = s.factory.exclusivityDeals.filter(d => d.status === 'completed');
+    if (completed.length > 10) {
+      s.factory.exclusivityDeals = s.factory.exclusivityDeals.filter(d => d.status === 'active')
+        .concat(completed.slice(-10));
     }
   }
 

@@ -1,5 +1,5 @@
 import { FACTORY } from '../../../shared/constants/factory.js';
-import { FACTORY_DISCOUNT_TIERS_DEFAULT, RD_PROJECTS, CERTIFICATIONS, EXCLUSIVE_TIRES, CFO_ROLE, LINE_SWITCH_DAYS, RUBBER_FARM, SYNTHETIC_LAB, MATERIAL_SUPPLIERS } from '../../../shared/constants/factoryBrand.js';
+import { FACTORY_DISCOUNT_TIERS_DEFAULT, RD_PROJECTS, CERTIFICATIONS, EXCLUSIVE_TIRES, CFO_ROLE, LINE_SWITCH_DAYS, RUBBER_FARM, SYNTHETIC_LAB, MATERIAL_SUPPLIERS, RUBBER_STORAGE, RUBBER_PER_TIRE, RUBBER_QUALITY } from '../../../shared/constants/factoryBrand.js';
 import { getEffectiveProductionCost, getBrandTireKey } from '../../../shared/helpers/factoryBrand.js';
 import { uid } from '../../../shared/helpers/random.js';
 
@@ -38,7 +38,10 @@ export async function handleFactory(action, params, g, ctx) {
         hasCFO: false,
         rubberFarm: null,
         syntheticLab: null,
-        rubberSupply: 0,
+        rubberStorage: null,
+        naturalRubber: 0,
+        syntheticRubber: 0,
+        rubberPreference: 'auto',
       };
       break;
     }
@@ -61,6 +64,37 @@ export async function handleFactory(action, params, g, ctx) {
       }
       const cost = prodQty * unitCost;
       if (g.cash < cost) return ctx.fail('Not enough cash');
+
+      // Rubber consumption — require rubber storage and sufficient rubber
+      const prodBaseType = tire.startsWith('brand_') ? tire.replace('brand_', '') : tire;
+      const rubberPerUnit = RUBBER_PER_TIRE[prodBaseType] || 1.0;
+      const rubberNeeded = rubberPerUnit * prodQty;
+      if (g.factory.rubberStorage) {
+        const natAvail = g.factory.naturalRubber || 0;
+        const synAvail = g.factory.syntheticRubber || 0;
+        if (natAvail + synAvail < rubberNeeded) {
+          return ctx.fail(`Need ${rubberNeeded} rubber units (have ${natAvail + synAvail}). Produce or buy more rubber.`);
+        }
+        // Deduct rubber based on preference
+        const pref = g.factory.rubberPreference || 'auto';
+        let natUse = 0, synUse = 0;
+        if (pref === 'natural') {
+          natUse = Math.min(natAvail, rubberNeeded);
+          synUse = rubberNeeded - natUse;
+        } else if (pref === 'synthetic') {
+          synUse = Math.min(synAvail, rubberNeeded);
+          natUse = rubberNeeded - synUse;
+        } else { // auto — prefer natural first
+          natUse = Math.min(natAvail, rubberNeeded);
+          synUse = rubberNeeded - natUse;
+        }
+        g.factory.naturalRubber = natAvail - natUse;
+        g.factory.syntheticRubber = synAvail - synUse;
+        // Store synthetic ratio on the batch for defect calculation
+        var syntheticRatio = rubberNeeded > 0 ? synUse / rubberNeeded : 0;
+      } else if (g.factory.rubberFarm || g.factory.syntheticLab) {
+        return ctx.fail('Build Rubber Storage first to use your rubber production');
+      }
 
       // Multi-line support: determine target line
       const lineIdx = Math.max(0, Math.floor(Number(rawLineIdx) || 0));
@@ -97,6 +131,7 @@ export async function handleFactory(action, params, g, ctx) {
       line.queue.push({
         tire: storeKey, qty: prodQty, startDay: g.day,
         completionDay: g.day + switchDelay + Math.ceil(prodQty / g.factory.dailyCapacity),
+        syntheticRatio: typeof syntheticRatio === 'number' ? syntheticRatio : 0,
       });
       if (switchDelay > 0) {
         g.log = g.log || [];
@@ -352,17 +387,87 @@ export async function handleFactory(action, params, g, ctx) {
       break;
     }
 
+    case 'buildRubberStorage': {
+      if (!g.hasFactory || !g.factory) return ctx.fail('No factory');
+      if (g.factory.rubberStorage) return ctx.fail('Already have rubber storage');
+      const storageLv1 = RUBBER_STORAGE.levels[0];
+      if (g.cash < storageLv1.buildCost) return ctx.fail(`Need $${storageLv1.buildCost.toLocaleString()}`);
+      g.cash -= storageLv1.buildCost;
+      g.factory.rubberStorage = { level: 1 };
+      g.log = g.log || [];
+      g.log.push({ msg: `Built Rubber Storage (capacity: ${storageLv1.capacity} units)`, cat: 'event' });
+      break;
+    }
+
+    case 'upgradeRubberStorage': {
+      if (!g.hasFactory || !g.factory?.rubberStorage) return ctx.fail('No rubber storage');
+      const curStorageLvl = g.factory.rubberStorage.level;
+      const nextStorage = RUBBER_STORAGE.levels.find(l => l.level === curStorageLvl + 1);
+      if (!nextStorage) return ctx.fail('Already at max storage level');
+      if (g.cash < nextStorage.upgradeCost) return ctx.fail(`Need $${nextStorage.upgradeCost.toLocaleString()}`);
+      if ((g.tireCoins || 0) < nextStorage.upgradeTcCost) return ctx.fail(`Need ${nextStorage.upgradeTcCost} TC`);
+      g.cash -= nextStorage.upgradeCost;
+      g.tireCoins -= nextStorage.upgradeTcCost;
+      g.factory.rubberStorage.level = nextStorage.level;
+      g.log = g.log || [];
+      g.log.push({ msg: `Rubber Storage upgraded to Level ${nextStorage.level} (capacity: ${nextStorage.capacity})`, cat: 'event' });
+      break;
+    }
+
+    case 'setRubberPreference': {
+      if (!g.hasFactory || !g.factory) return ctx.fail('No factory');
+      const { preference } = params;
+      if (!['natural', 'synthetic', 'auto'].includes(preference)) return ctx.fail('Invalid preference');
+      g.factory.rubberPreference = preference;
+      break;
+    }
+
+    case 'buyRubberMarket': {
+      if (!g.hasFactory || !g.factory) return ctx.fail('No factory');
+      if (!g.factory.rubberStorage) return ctx.fail('Build Rubber Storage first');
+      const { rubberType: buyType, qty: buyRawQty } = params;
+      if (!['natural', 'synthetic'].includes(buyType)) return ctx.fail('Invalid rubber type');
+      const buyQty = Math.max(1, Math.floor(Number(buyRawQty) || 0));
+      const storageLvl = g.factory.rubberStorage.level;
+      const cap = (RUBBER_STORAGE.levels.find(l => l.level === storageLvl) || RUBBER_STORAGE.levels[0]).capacity;
+      const currentTotal = (g.factory.naturalRubber || 0) + (g.factory.syntheticRubber || 0);
+      if (currentTotal + buyQty > cap) return ctx.fail(`Not enough storage space (${cap - currentTotal} available)`);
+      const gameData = await ctx.getGame();
+      const rubberIdx = gameData?.economy?.commodities?.rubber || 1.0;
+      const basePrice = buyType === 'natural' ? 500 : 600;
+      const pricePerUnit = Math.round(basePrice * rubberIdx);
+      const totalCost = pricePerUnit * buyQty;
+      if (g.cash < totalCost) return ctx.fail(`Need $${totalCost.toLocaleString()}`);
+      g.cash -= totalCost;
+      if (buyType === 'natural') {
+        g.factory.naturalRubber = (g.factory.naturalRubber || 0) + buyQty;
+      } else {
+        g.factory.syntheticRubber = (g.factory.syntheticRubber || 0) + buyQty;
+      }
+      g.log = g.log || [];
+      g.log.push({ msg: `Bought ${buyQty} ${buyType} rubber at $${pricePerUnit}/unit ($${totalCost.toLocaleString()})`, cat: 'sale' });
+      break;
+    }
+
     case 'sellRubberSurplus': {
       if (!g.hasFactory || !g.factory) return ctx.fail('No factory');
-      const supply = g.factory.rubberSupply || 0;
-      if (supply <= 0) return ctx.fail('No rubber surplus to sell');
+      const { rubberType: sellType, qty: sellRawQty } = params || {};
+      const rType = ['natural', 'synthetic'].includes(sellType) ? sellType : 'natural';
+      const availSupply = rType === 'natural' ? (g.factory.naturalRubber || 0) : (g.factory.syntheticRubber || 0);
+      const sellQty = sellRawQty ? Math.min(Math.max(1, Math.floor(Number(sellRawQty) || 0)), availSupply) : availSupply;
+      if (sellQty <= 0) return ctx.fail(`No ${rType} rubber to sell`);
       const rubberIdx = g.factory.rawMaterials?.rubber || 1.0;
-      const pricePerUnit = Math.round(rubberIdx * 500);
-      const revenue = supply * pricePerUnit;
+      const basePrice = rType === 'natural' ? 500 : 600;
+      const pricePerUnit = Math.round(rubberIdx * basePrice);
+      const revenue = sellQty * pricePerUnit;
       g.cash += revenue;
-      g.factory.rubberSupply = 0;
+      if (rType === 'natural') {
+        g.factory.naturalRubber = (g.factory.naturalRubber || 0) - sellQty;
+      } else {
+        g.factory.syntheticRubber = (g.factory.syntheticRubber || 0) - sellQty;
+      }
       g.log = g.log || [];
-      g.log.push({ msg: `Sold ${supply} rubber units for $${revenue.toLocaleString()} ($${pricePerUnit}/unit)`, cat: 'sale' });
+      g.log.push({ msg: `Sold ${sellQty} ${rType} rubber for $${revenue.toLocaleString()} ($${pricePerUnit}/unit)`, cat: 'sale' });
       break;
     }
 
@@ -400,6 +505,42 @@ export async function handleFactory(action, params, g, ctx) {
       g.factory.totalRecalls = (g.factory.totalRecalls || 0) + 1;
       g.log = g.log || [];
       g.log.push({ msg: `🔄 Recalled batch of ${batch.qty} tires — $${recallCost.toLocaleString()} cost, reputation recovered`, cat: 'factory' });
+      break;
+    }
+
+    case 'acceptExclusivityDeal': {
+      if (!g.hasFactory || !g.factory) return ctx.fail('No factory');
+      const { offerId } = params;
+      if (!g.factory.exclusivityOffers) return ctx.fail('No pending offers');
+      const offerIdx = g.factory.exclusivityOffers.findIndex(o => o.id === offerId);
+      if (offerIdx === -1) return ctx.fail('Offer not found');
+      const offer = g.factory.exclusivityOffers[offerIdx];
+      if (g.day > offer.expiresDay) return ctx.fail('Offer expired');
+
+      // Move from offers to active deals
+      if (!g.factory.exclusivityDeals) g.factory.exclusivityDeals = [];
+      g.factory.exclusivityDeals.push({
+        ...offer,
+        status: 'active',
+        startDay: g.day,
+        endDay: g.day + offer.durationMonths * 30,
+        deliveredQty: 0,
+      });
+      g.factory.exclusivityOffers.splice(offerIdx, 1);
+      g.log = g.log || [];
+      g.log.push({ msg: `Accepted exclusivity deal with ${offer.shopName}: ${offer.monthlyQty}/mo of ${offer.tireType}`, cat: 'event' });
+      break;
+    }
+
+    case 'declineExclusivityDeal': {
+      if (!g.hasFactory || !g.factory) return ctx.fail('No factory');
+      const { offerId: declineId } = params;
+      if (!g.factory.exclusivityOffers) return ctx.fail('No pending offers');
+      const decIdx = g.factory.exclusivityOffers.findIndex(o => o.id === declineId);
+      if (decIdx === -1) return ctx.fail('Offer not found');
+      g.factory.exclusivityOffers.splice(decIdx, 1);
+      g.log = g.log || [];
+      g.log.push({ msg: 'Declined exclusivity offer', cat: 'event' });
       break;
     }
 

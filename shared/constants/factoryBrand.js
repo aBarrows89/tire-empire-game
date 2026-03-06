@@ -116,6 +116,29 @@ export const SYNTHETIC_LAB = {
   operatingCost: 800, // daily
 };
 
+/** Rubber Storage — required to hold natural/synthetic rubber */
+export const RUBBER_STORAGE = {
+  levels: [
+    { level: 1, capacity: 200,  buildCost: 50000,  buildTcCost: 0 },
+    { level: 2, capacity: 500,  upgradeCost: 150000, upgradeTcCost: 200 },
+    { level: 3, capacity: 1500, upgradeCost: 400000, upgradeTcCost: 500 },
+    { level: 4, capacity: 5000, upgradeCost: 1000000, upgradeTcCost: 1000 },
+  ],
+};
+
+/** Rubber units consumed per tire produced */
+export const RUBBER_PER_TIRE = {
+  allSeason: 1.0, performance: 1.5, winter: 1.5, lightTruck: 2.0,
+  commercial: 2.5, evTire: 1.5, runFlat: 1.5, luxuryTouring: 2.0,
+  premiumAllWeather: 1.5, motorcycle: 0.8, mudTerrain: 2.0, racingSlick: 2.5, trailer: 1.0,
+};
+
+/** Quality modifiers by rubber type */
+export const RUBBER_QUALITY = {
+  natural:   { defectModifier: 1.0,  qualityBonus: 0.01, weatherVulnerable: true },
+  synthetic: { defectModifier: 1.02, qualityBonus: 0,    weatherVulnerable: false },
+};
+
 /** Material supplier tiers — price/quality/reliability tradeoffs */
 export const MATERIAL_SUPPLIERS = {
   rubber: [

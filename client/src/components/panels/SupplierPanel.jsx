@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { SUPPLIERS } from '@shared/constants/suppliers.js';
 import { TIRES } from '@shared/constants/tires.js';
@@ -7,9 +7,11 @@ import { fmt } from '@shared/helpers/format.js';
 import { getCap, getInv } from '@shared/helpers/inventory.js';
 import { FACTORY } from '@shared/constants/factory.js';
 import { tireName } from '@shared/helpers/factoryBrand.js';
-import { postAction } from '../../api/client.js';
+import { postAction, getWholesaleSuppliers } from '../../api/client.js';
 
 export default function SupplierPanel() {
+  const [playerFactories, setPlayerFactories] = useState([]);
+  const [factoriesLoaded, setFactoriesLoaded] = useState(false);
   const { state, applyState } = useGame();
   const g = state.game;
   const [busy, setBusy] = useState(null);
@@ -52,6 +54,16 @@ export default function SupplierPanel() {
 
   const tierLabels = { 0: 'New', 1: 'Regular', 2: 'Preferred', 3: 'Key Account', 4: 'Strategic', 5: 'Elite' };
   const tierColors = { 0: 'var(--text-dim)', 1: '#c0c0c0', 2: 'var(--gold)', 3: '#e5e4e2', 4: 'var(--accent)', 5: 'var(--green)' };
+
+  // Load player factory distributors
+  useEffect(() => {
+    getWholesaleSuppliers().then(res => {
+      if (res.suppliers) {
+        setPlayerFactories(res.suppliers.filter(s => s.type === 'factory'));
+      }
+      setFactoriesLoaded(true);
+    }).catch(() => setFactoriesLoaded(true));
+  }, []);
 
   return (
     <>
@@ -549,6 +561,39 @@ export default function SupplierPanel() {
           {busy === 'export' ? 'Exporting...' : 'Export'}
         </button>
       </div>
+
+      {/* Player Factory Distributors */}
+      {factoriesLoaded && playerFactories.length > 0 && (
+        <div className="card">
+          <div className="card-title">Player Factories</div>
+          <div className="text-xs text-dim mb-4">Buy branded tires directly from other player factories.</div>
+          {playerFactories.map(fac => (
+            <div key={fac.playerId} style={{
+              padding: '8px',
+              marginBottom: 8,
+              borderRadius: 6,
+              border: '1px solid var(--border)',
+            }}>
+              <div className="row-between mb-4">
+                <span className="font-bold text-sm">{fac.companyName}</span>
+                <span className="text-xs text-dim">Rep: {Math.round(fac.reputation || 0)}</span>
+              </div>
+              {fac.tireTypes && Object.entries(fac.tireTypes).filter(([, v]) => v.stock > 0).length > 0 ? (
+                <div className="text-xs">
+                  {Object.entries(fac.tireTypes).filter(([, v]) => v.stock > 0).map(([tire, info]) => (
+                    <div key={tire} className="row-between" style={{ padding: '2px 0' }}>
+                      <span>{tireName(tire, g)}</span>
+                      <span>{info.stock} @ ${fmt(info.price)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-dim">No stock available</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }

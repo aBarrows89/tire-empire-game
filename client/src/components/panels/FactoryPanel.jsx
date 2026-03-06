@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { postAction } from '../../api/client.js';
 import { FACTORY } from '@shared/constants/factory.js';
-import { RAW_MATERIALS, RD_PROJECTS, CERTIFICATIONS, FACTORY_DISCOUNT_TIERS_DEFAULT, EXCLUSIVE_TIRES, CFO_ROLE, RUBBER_FARM, SYNTHETIC_LAB, MATERIAL_SUPPLIERS } from '@shared/constants/factoryBrand.js';
+import { RAW_MATERIALS, RD_PROJECTS, CERTIFICATIONS, FACTORY_DISCOUNT_TIERS_DEFAULT, EXCLUSIVE_TIRES, CFO_ROLE, RUBBER_FARM, SYNTHETIC_LAB, MATERIAL_SUPPLIERS, RUBBER_STORAGE, RUBBER_PER_TIRE, RUBBER_QUALITY } from '@shared/constants/factoryBrand.js';
 import { TIRES } from '@shared/constants/tires.js';
 import { SUPPLIERS } from '@shared/constants/suppliers.js';
 import { fmt } from '@shared/helpers/format.js';
@@ -21,6 +21,10 @@ export default function FactoryPanel() {
   const [brandName, setBrandName] = useState('');
   const [tab, setTab] = useState('dashboard');
   const [selectedLine, setSelectedLine] = useState(0);
+  const [buyRubberType, setBuyRubberType] = useState('natural');
+  const [buyRubberQty, setBuyRubberQty] = useState(10);
+  const [sellRubberType, setSellRubberType] = useState('natural');
+  const [sellRubberQty, setSellRubberQty] = useState(10);
 
   const factory = g.factory || null;
   const hasFactory = !!g.hasFactory;
@@ -756,6 +760,81 @@ export default function FactoryPanel() {
               ))}
             </div>
           )}
+
+          {/* Exclusivity Deals — Pending Offers */}
+          {(factory?.exclusivityOffers || []).length > 0 && (
+            <div className="card">
+              <div className="card-title">Exclusivity Offers</div>
+              <div className="text-xs text-dim mb-4">AI shops want exclusive supply deals. Offers expire in 14 days.</div>
+              {factory.exclusivityOffers.map(offer => {
+                const totalRev = offer.monthlyQty * offer.durationMonths * offer.pricePerUnit;
+                const daysLeft = offer.expiresDay - (g.day || 0);
+                return (
+                  <div key={offer.id} style={{ padding: 8, marginBottom: 8, borderRadius: 6, border: '1px solid var(--border)' }}>
+                    <div className="font-bold text-sm mb-4">{offer.shopName}</div>
+                    <div className="row-between text-xs mb-4">
+                      <span>Type: {offer.tireType}</span>
+                      <span>{offer.monthlyQty}/mo for {offer.durationMonths} months</span>
+                    </div>
+                    <div className="row-between text-xs mb-4">
+                      <span>${fmt(offer.pricePerUnit)}/unit</span>
+                      <span className="text-green font-bold">Total: ${fmt(totalRev)}</span>
+                    </div>
+                    <div className="text-xs text-dim mb-4">Expires in {daysLeft} days</div>
+                    <div className="row gap-8">
+                      <button className="btn btn-sm btn-green" style={{ flex: 1 }} disabled={busy}
+                        onClick={() => doAction('acceptExclusivityDeal', { offerId: offer.id })}>
+                        Accept
+                      </button>
+                      <button className="btn btn-sm btn-red" style={{ flex: 1 }} disabled={busy}
+                        onClick={() => doAction('declineExclusivityDeal', { offerId: offer.id })}>
+                        Decline
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Active Exclusivity Deals */}
+          {(factory?.exclusivityDeals || []).filter(d => d.status === 'active').length > 0 && (
+            <div className="card">
+              <div className="card-title">Active Exclusivity Deals</div>
+              {factory.exclusivityDeals.filter(d => d.status === 'active').map(deal => {
+                const totalTarget = deal.totalQty || (deal.monthlyQty * deal.durationMonths);
+                const delivered = deal.deliveredQty || 0;
+                const pct = totalTarget > 0 ? Math.round(delivered / totalTarget * 100) : 0;
+                const daysLeft = deal.endDay - (g.day || 0);
+                return (
+                  <div key={deal.id} style={{ padding: 8, marginBottom: 8, borderRadius: 6, border: '1px solid var(--border)' }}>
+                    <div className="row-between mb-4">
+                      <span className="font-bold text-sm">{deal.shopName}</span>
+                      <span className="text-xs text-dim">{daysLeft} days left</span>
+                    </div>
+                    <div className="text-xs mb-4">{deal.tireType} — {deal.monthlyQty}/mo @ ${fmt(deal.pricePerUnit)}/unit</div>
+                    <div style={{ background: 'var(--border)', borderRadius: 4, height: 10, overflow: 'hidden', marginBottom: 4 }}>
+                      <div style={{ width: `${pct}%`, background: 'var(--green)', height: '100%' }} />
+                    </div>
+                    <div className="text-xs text-dim">{delivered} / {totalTarget} delivered ({pct}%)</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Completed Deals History */}
+          {(factory?.exclusivityDeals || []).filter(d => d.status === 'completed').length > 0 && (
+            <div className="card">
+              <div className="card-title">Completed Deals</div>
+              {factory.exclusivityDeals.filter(d => d.status === 'completed').slice(-5).map(deal => (
+                <div key={deal.id} className="row-between text-xs mb-4">
+                  <span>{deal.shopName} — {deal.tireType}</span>
+                  <span className="text-dim">{deal.deliveredQty}/{deal.totalQty}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
 
@@ -1033,36 +1112,139 @@ export default function FactoryPanel() {
             )}
           </div>
 
-          {/* Rubber Supply */}
+          {/* Rubber Storage */}
           <div className="card">
-            <div className="card-title">Rubber Supply</div>
-            <div className="row-between text-sm mb-4">
-              <span className="text-dim">Accumulated Units</span>
-              <span className="font-bold">{factory?.rubberSupply || 0}</span>
+            <div className="card-title">Rubber Storage</div>
+            {factory?.rubberStorage ? (() => {
+              const storageLvl = factory.rubberStorage.level;
+              const storageDef = RUBBER_STORAGE.levels.find(l => l.level === storageLvl) || RUBBER_STORAGE.levels[0];
+              const nextStorage = RUBBER_STORAGE.levels.find(l => l.level === storageLvl + 1);
+              const natRubber = factory.naturalRubber || 0;
+              const synRubber = factory.syntheticRubber || 0;
+              const totalRubber = natRubber + synRubber;
+              const pctUsed = storageDef.capacity > 0 ? Math.round(totalRubber / storageDef.capacity * 100) : 0;
+
+              // Daily consumption estimate
+              const dailyProd = factory.dailyCapacity || 0;
+              const avgRubberPerTire = 1.5; // rough average
+              const daysRemaining = dailyProd > 0 && totalRubber > 0 ? Math.floor(totalRubber / (dailyProd * avgRubberPerTire)) : 0;
+
+              return (
+                <>
+                  <div className="row-between text-sm mb-4">
+                    <span className="text-dim">Level {storageLvl}</span>
+                    <span className="font-bold">{totalRubber} / {storageDef.capacity} ({pctUsed}%)</span>
+                  </div>
+                  <div style={{ background: 'var(--border)', borderRadius: 4, height: 14, marginBottom: 8, overflow: 'hidden', display: 'flex' }}>
+                    <div style={{ width: `${storageDef.capacity > 0 ? (natRubber / storageDef.capacity * 100) : 0}%`, background: '#4caf50', height: '100%' }} />
+                    <div style={{ width: `${storageDef.capacity > 0 ? (synRubber / storageDef.capacity * 100) : 0}%`, background: '#2196f3', height: '100%' }} />
+                  </div>
+                  <div className="row gap-8 text-xs mb-4">
+                    <span style={{ color: '#4caf50' }}>Natural: {natRubber}</span>
+                    <span style={{ color: '#2196f3' }}>Synthetic: {synRubber}</span>
+                  </div>
+                  {daysRemaining > 0 && (
+                    <div className="text-xs text-dim mb-4">~{daysRemaining} days of rubber remaining</div>
+                  )}
+                  {nextStorage && (
+                    <button className="btn btn-full btn-sm btn-outline" disabled={busy || g.cash < nextStorage.upgradeCost || (g.tireCoins || 0) < nextStorage.upgradeTcCost}
+                      onClick={() => doAction('upgradeRubberStorage')}>
+                      Upgrade to Lv{nextStorage.level} — {nextStorage.capacity} cap (${fmt(nextStorage.upgradeCost)} + {nextStorage.upgradeTcCost} TC)
+                    </button>
+                  )}
+                  {!nextStorage && <div className="text-xs text-green font-bold">Max Level</div>}
+                </>
+              );
+            })() : (
+              <>
+                <div className="text-sm text-dim mb-4">
+                  Required to store rubber from your farm/lab. Without storage, production is paused.
+                </div>
+                <button className="btn btn-full btn-green" disabled={busy || g.cash < RUBBER_STORAGE.levels[0].buildCost}
+                  onClick={() => doAction('buildRubberStorage')}>
+                  Build Storage — {RUBBER_STORAGE.levels[0].capacity} capacity (${fmt(RUBBER_STORAGE.levels[0].buildCost)})
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Rubber Preference */}
+          {factory?.rubberStorage && (
+            <div className="card">
+              <div className="card-title">Rubber Preference</div>
+              <div className="text-xs text-dim mb-4">Controls which rubber type is consumed first when producing tires.</div>
+              <div className="row gap-8">
+                {['auto', 'natural', 'synthetic'].map(pref => (
+                  <button key={pref} disabled={busy}
+                    className={`btn btn-sm ${(factory.rubberPreference || 'auto') === pref ? 'btn-accent' : 'btn-outline'}`}
+                    style={{ flex: 1, textTransform: 'capitalize' }}
+                    onClick={() => doAction('setRubberPreference', { preference: pref })}>
+                    {pref}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="row-between text-sm mb-4">
-              <span className="text-dim">Effective Rubber Index</span>
-              <span className={`font-bold ${(factory?._effectiveRubberIndex || rm.rubber) < 0.9 ? 'text-green' : 'text-accent'}`}>
-                {((factory?._effectiveRubberIndex || rm.rubber) * 100).toFixed(0)}%
-              </span>
+          )}
+
+          {/* Buy Rubber from NPC Market */}
+          {factory?.rubberStorage && (
+            <div className="card">
+              <div className="card-title">Buy Rubber (Market)</div>
+              <div className="row gap-8 mb-4">
+                <select value={buyRubberType} onChange={e => setBuyRubberType(e.target.value)}
+                  style={{ flex: 1, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }}>
+                  <option value="natural">Natural (${ Math.round((rm.rubber || 1) * 500)}/u)</option>
+                  <option value="synthetic">Synthetic (${ Math.round((rm.rubber || 1) * 600)}/u)</option>
+                </select>
+                <input type="number" min={1} max={500} value={buyRubberQty}
+                  onChange={e => setBuyRubberQty(Math.max(1, parseInt(e.target.value) || 1))}
+                  style={{ width: 70, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', textAlign: 'center' }} />
+              </div>
+              <button className="btn btn-full btn-sm btn-green" disabled={busy}
+                onClick={() => doAction('buyRubberMarket', { rubberType: buyRubberType, qty: buyRubberQty })}>
+                Buy {buyRubberQty} {buyRubberType} (${fmt(Math.round((rm.rubber || 1) * (buyRubberType === 'natural' ? 500 : 600)) * buyRubberQty)})
+              </button>
             </div>
+          )}
+
+          {/* Sell Rubber */}
+          {factory?.rubberStorage && ((factory.naturalRubber || 0) + (factory.syntheticRubber || 0)) > 0 && (
+            <div className="card">
+              <div className="card-title">Sell Rubber</div>
+              <div className="row gap-8 mb-4">
+                <select value={sellRubberType} onChange={e => setSellRubberType(e.target.value)}
+                  style={{ flex: 1, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }}>
+                  <option value="natural">Natural ({factory.naturalRubber || 0} avail)</option>
+                  <option value="synthetic">Synthetic ({factory.syntheticRubber || 0} avail)</option>
+                </select>
+                <input type="number" min={1}
+                  max={sellRubberType === 'natural' ? (factory.naturalRubber || 0) : (factory.syntheticRubber || 0)}
+                  value={sellRubberQty}
+                  onChange={e => setSellRubberQty(Math.max(1, parseInt(e.target.value) || 1))}
+                  style={{ width: 70, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', textAlign: 'center' }} />
+              </div>
+              <button className="btn btn-full btn-sm btn-green" disabled={busy}
+                onClick={() => doAction('sellRubberSurplus', { rubberType: sellRubberType, qty: sellRubberQty })}>
+                Sell {sellRubberQty} {sellRubberType} (${fmt(Math.round((rm.rubber || 1) * (sellRubberType === 'natural' ? 500 : 600)) * sellRubberQty)})
+              </button>
+            </div>
+          )}
+
+          {/* Market Rubber Price Reference */}
+          <div className="card">
+            <div className="card-title">Rubber Market</div>
             <div className="row-between text-sm mb-4">
-              <span className="text-dim">Market Rubber Price</span>
+              <span className="text-dim">Commodity Rubber Index</span>
               <span className="font-bold">{(rm.rubber * 100).toFixed(0)}%</span>
             </div>
-            {(factory?.rubberSupply || 0) > 0 && (() => {
-              const pricePerUnit = Math.round((rm.rubber || 1.0) * 500);
-              const totalValue = (factory?.rubberSupply || 0) * pricePerUnit;
-              return (
-                <button className="btn btn-full btn-sm btn-green" disabled={busy}
-                  onClick={() => doAction('sellRubberSurplus')}>
-                  Sell {factory.rubberSupply} units (${fmt(totalValue)})
-                </button>
-              );
-            })()}
-            {(factory?.rubberSupply || 0) === 0 && (
-              <div className="text-xs text-dim">No surplus to sell. Build a farm or lab to produce rubber.</div>
-            )}
+            <div className="row-between text-sm mb-4">
+              <span className="text-dim">NPC Natural Price</span>
+              <span className="font-bold">${fmt(Math.round((rm.rubber || 1) * 500))}/unit</span>
+            </div>
+            <div className="row-between text-sm mb-4">
+              <span className="text-dim">NPC Synthetic Price</span>
+              <span className="font-bold">${fmt(Math.round((rm.rubber || 1) * 600))}/unit</span>
+            </div>
           </div>
 
           {/* Material Suppliers */}

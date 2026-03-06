@@ -539,3 +539,62 @@ export async function claimScratchPrize(prize) {
   const res = await fetchWithRetry(`${API_BASE}/exchange/scratch-ticket/claim`, { method: 'POST', headers, body: JSON.stringify({ prize }) });
   return res.json();
 }
+
+// Rubber Market P2P API
+export async function getRubberListings() {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/rubber-market/listings`, { headers });
+  return res.json();
+}
+
+export async function getRubberPrices() {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/rubber-market/prices`, { headers });
+  return res.json();
+}
+
+export async function listRubber(rubberType, qty, pricePerUnit) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/rubber-market/list`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ rubberType, qty, pricePerUnit }),
+  });
+  return res.json();
+}
+
+export async function buyRubberListing(listingId, qty) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/rubber-market/buy`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ listingId, qty }),
+  });
+  return res.json();
+}
+
+export async function cancelRubberListing(listingId) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/rubber-market/cancel`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ listingId }),
+  });
+  return res.json();
+}
+
+// Profile interaction API
+export async function sendCashToPlayer(playerId, amount) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/profile/${playerId}/send-cash`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ amount }),
+  });
+  return res.json();
+}
+
+export async function reportPlayer(playerId, reason) {
+  const headers = await getHeaders();
+  const res = await fetchWithRetry(`${API_BASE}/profile/${playerId}/report`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ reason }),
+  });
+  return res.json();
+}
