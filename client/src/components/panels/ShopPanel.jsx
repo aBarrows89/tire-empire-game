@@ -5,6 +5,7 @@ import { shopCost } from '@shared/constants/shop.js';
 import { STATE_GRID, GRID_ROWS, GRID_COLS } from '@shared/constants/stateGrid.js';
 import { SERVICES } from '@shared/constants/services.js';
 import { TIRES } from '@shared/constants/tires.js';
+import { tireName } from '@shared/helpers/factoryBrand.js';
 import { GOV_TYPES } from '@shared/constants/govTypes.js';
 import { fmt } from '@shared/helpers/format.js';
 import { getLocInv, getLocCap } from '@shared/helpers/inventory.js';
@@ -321,7 +322,7 @@ export default function ShopPanel() {
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                             {Object.entries(loc.salesHistory).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,qty]) => (
                               <span key={k} style={{ fontSize: 9, padding: '3px 8px', borderRadius: 6, background: 'rgba(76,175,80,0.1)', color: 'var(--green)', border: '1px solid rgba(76,175,80,0.2)' }}>
-                                {TIRES[k]?.n || k}: {qty}
+                                {tireName(k, g)}: {qty}
                               </span>
                             ))}
                           </div>
@@ -602,7 +603,7 @@ export default function ShopPanel() {
                   <div>
                     <div className="text-sm font-bold">{gc.name}</div>
                     <div className="text-xs text-dim">
-                      {TIRES[gc.tire]?.n || gc.tire} &middot; ${gc.pricePerTire}/tire &middot; {gc.daysLeft}d left
+                      {tireName(gc.tire, g)} &middot; ${gc.pricePerTire}/tire &middot; {gc.daysLeft}d left
                     </div>
                     <div className="text-xs text-dim">
                       Delivered: {gc.delivered || 0}{gc.totalTarget ? ` / ${gc.totalTarget}` : ''}

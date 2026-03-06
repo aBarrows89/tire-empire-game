@@ -5,7 +5,7 @@ import { FACTORY } from '@shared/constants/factory.js';
 import { RAW_MATERIALS, RD_PROJECTS, CERTIFICATIONS, FACTORY_DISCOUNT_TIERS_DEFAULT, EXCLUSIVE_TIRES, CFO_ROLE, RUBBER_FARM, SYNTHETIC_LAB } from '@shared/constants/factoryBrand.js';
 import { TIRES } from '@shared/constants/tires.js';
 import { fmt } from '@shared/helpers/format.js';
-import { getEffectiveProductionCost, computeTireAttributes } from '@shared/helpers/factoryBrand.js';
+import { getEffectiveProductionCost, computeTireAttributes, tireName } from '@shared/helpers/factoryBrand.js';
 import { hapticsMedium } from '../../api/haptics.js';
 
 const PRODUCIBLE_TYPES = Object.keys(FACTORY.productionCost);
@@ -331,7 +331,7 @@ export default function FactoryPanel() {
               <div className="card-title">Current Line</div>
               <div className="row-between mb-4">
                 <span className="text-sm text-dim">Active Type</span>
-                <span className="font-bold">{TIRES[factory.currentLine]?.n || EXCLUSIVE_TIRES[factory.currentLine]?.n || factory.currentLine}</span>
+                <span className="font-bold">{tireName(factory.currentLine, g)}</span>
               </div>
               {(factory.switchCooldown || 0) > 0 && (
                 <div className="text-xs text-red mb-4">Line switching cooldown: {factory.switchCooldown} day(s)</div>
@@ -345,7 +345,7 @@ export default function FactoryPanel() {
               <div className="card-title">Production Queue</div>
               {queue.map((job, i) => {
                 const baseKey = job.tire.replace('brand_', '');
-                const baseName = TIRES[baseKey]?.n || EXCLUSIVE_TIRES[job.tire]?.n || job.tire;
+                const baseName = tireName(job.tire, g);
                 const tireName = factory?.brandName ? `${factory.brandName} ${baseName}` : baseName;
                 const daysLeft = Math.max(0, (job.completionDay || 0) - (g.day || 0));
                 const totalDays = Math.max(1, (job.completionDay || 0) - (job.startDay || 0));
@@ -389,7 +389,7 @@ export default function FactoryPanel() {
               <select className="autoprice-select" style={{ width: '100%' }} value={selectedType} onChange={(e) => setSelectedType(e.target.value)}>
                 {allProducible.map(type => {
                   const isExcl = type.startsWith('brand_');
-                  const rawName = isExcl ? (EXCLUSIVE_TIRES[type]?.n || type) : (TIRES[type]?.n || type);
+                  const rawName = tireName(type, g);
                   const name = factory?.brandName ? `${factory.brandName} ${rawName}` : rawName;
                   const cost = isExcl ? (EXCLUSIVE_TIRES[type]?.baseCost || 80) : getEffectiveProductionCost(factory, type);
                   return <option key={type} value={type}>{name} -- ${cost}/tire{isExcl ? ' (Exclusive)' : ''}</option>;
@@ -613,7 +613,7 @@ export default function FactoryPanel() {
                   <span className="text-dim">Cost: ${fmt(proj.cost)} | Duration: {proj.days} days</span>
                 </div>
                 {proj.qualityBoost && <div className="text-xs text-green mb-4">+{Math.round(proj.qualityBoost * 100)}% quality</div>}
-                {proj.unlocksExclusive && <div className="text-xs text-accent mb-4">Unlocks: {EXCLUSIVE_TIRES[proj.unlocksExclusive]?.n || proj.unlocksExclusive}</div>}
+                {proj.unlocksExclusive && <div className="text-xs text-accent mb-4">Unlocks: {tireName(proj.unlocksExclusive, g)}</div>}
                 {completed ? (
                   <div className="text-xs text-green font-bold">Completed</div>
                 ) : (

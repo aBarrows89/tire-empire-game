@@ -710,24 +710,39 @@ export function simDay(g, shared = {}) {
         const budget = Math.min(s.cash * 0.15, s.autoRestock.maxSpend || 50000); // Max 15% of cash or cap
         const freeSpace = whCap - whInv;
         
-        // Order the most-needed tires based on sales history
+        // Order tires proportionally based on recent sales history
         const salesHistory = s.salesByType || [];
-        const recentSales = salesHistory.length > 0 ? salesHistory[salesHistory.length - 1] : {};
+        // Aggregate last 7 days of sales for a better signal
+        const recentSales = {};
+        for (let si = Math.max(0, salesHistory.length - 7); si < salesHistory.length; si++) {
+          for (const [t, q] of Object.entries(salesHistory[si] || {})) {
+            if (t !== 'day') recentSales[t] = (recentSales[t] || 0) + (q || 0);
+          }
+        }
         const tireTypes = Object.keys(TIRES).filter(k => !TIRES[k].used);
-        
+        const totalSales = Object.values(recentSales).reduce((a, b) => a + b, 0) || 1;
+
         // Sort by most sold recently
         tireTypes.sort((a, b) => ((recentSales[b] || 0) - (recentSales[a] || 0)));
-        
+
+        // Only stock types that have actually sold (or top 3 if nothing sold yet)
+        const typesToStock = tireTypes.filter(t => (recentSales[t] || 0) > 0);
+        if (typesToStock.length === 0) typesToStock.push(...tireTypes.slice(0, 3));
+
         let spent = 0;
         let ordered = 0;
-        for (const tire of tireTypes) {
+        for (const tire of typesToStock) {
           if (spent >= budget || ordered >= freeSpace) break;
           const t = TIRES[tire];
           const priceMult = shared?.supplierPrices?.[supIdx]?.[tire] || shared?.supplierPricing?.[tire] || 1.0;
           const unitCost = Math.round(t.bMin * priceMult * (1 - (sup.disc || 0)));
+          if (unitCost <= 0) continue;
+          // Allocate space proportionally to sales share, min 5 units
+          const salesShare = (recentSales[tire] || 0) / totalSales;
+          const targetQty = Math.max(5, Math.round(freeSpace * salesShare));
           const canAfford = Math.floor((budget - spent) / unitCost);
-          const qty = Math.min(canAfford, Math.max(10, Math.floor(freeSpace * 0.15)), freeSpace - ordered);
-          if (qty > 0 && unitCost > 0) {
+          const qty = Math.min(canAfford, targetQty, freeSpace - ordered);
+          if (qty > 0) {
             const totalCost = qty * unitCost;
             s.cash -= totalCost;
             s.warehouseInventory[tire] = (s.warehouseInventory[tire] || 0) + qty;
@@ -747,9 +762,14 @@ export function simDay(g, shared = {}) {
   if (driverCount > 0 && s.locations.length > 0) {
     const driverCap = driverCount * 40; // 40 tires per driver per day
     let moved = 0;
+
+    // Distribute driver capacity evenly across all stores (round-robin)
+    const perStoreCap = Math.max(1, Math.floor(driverCap / s.locations.length));
+
     for (const loc of s.locations) {
       if (moved >= driverCap) break;
       if (!loc.inventory) loc.inventory = {};
+      const storeAlloc = Math.min(perStoreCap, driverCap - moved);
 
       // ── STOCKING PREFERENCES — filter what gets pushed to this location ──
       const prefs = loc.stockingPrefs || { mode: 'all', tireTypes: [] };
@@ -796,17 +816,19 @@ export function simDay(g, shared = {}) {
         const j = Math.floor(Math.random() * (i + 1));
         [whEntries[i], whEntries[j]] = [whEntries[j], whEntries[i]];
       }
+      let storeMoved = 0;
       for (const [k, whQty] of whEntries) {
-        if (moved >= driverCap) break;
+        if (storeMoved >= storeAlloc || moved >= driverCap) break;
         const currentWhQty = s.warehouseInventory[k] || 0;
         if (currentWhQty <= 0) continue;
         const locFree = getLocCap(loc) - getLocInv(loc);
         if (locFree <= 0) break;
-        const take = Math.min(currentWhQty, locFree, driverCap - moved);
+        const take = Math.min(currentWhQty, locFree, storeAlloc - storeMoved, driverCap - moved);
         if (take <= 0) continue;
         s.warehouseInventory[k] -= take;
         loc.inventory[k] = (loc.inventory[k] || 0) + take;
         moved += take;
+        storeMoved += take;
       }
     }
     if (moved > 0) {

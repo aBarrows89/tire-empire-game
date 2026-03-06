@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { fmt } from '@shared/helpers/format.js';
 import { TIRES } from '@shared/constants/tires.js';
+import { tireName } from '@shared/helpers/factoryBrand.js';
 import { CITIES } from '@shared/constants/cities.js';
 import { getWealth } from '@shared/helpers/wealth.js';
 import { getInv, getCap } from '@shared/helpers/inventory.js';
@@ -186,7 +187,7 @@ export default function DashboardPanel() {
               const staffTotal = hasLocStaff ? countStaff(staff) : countStaff(g.staff);
               const isAlert = dailyProfit < 0 || loy < 30;
               const topTire = Object.entries(loc.inventory || {}).sort((a, b) => b[1] - a[1])[0];
-              const topTireName = topTire ? (TIRES[topTire[0]]?.n || topTire[0]) : '-';
+              const topTireName = topTire ? tireName(topTire[0], g) : '-';
 
               return (
                 <div key={loc.id || i} style={{

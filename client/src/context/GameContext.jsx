@@ -72,6 +72,8 @@ function gameReducer(state, action) {
       return { ...state, wsConnected: action.payload };
     case 'ADD_DM':
       return { ...state, lastDM: action.payload };
+    case 'OPEN_DM':
+      return { ...state, pendingDM: action.payload };
     case 'SET_TICK_DATA':
       return {
         ...state,

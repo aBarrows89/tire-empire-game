@@ -10,7 +10,7 @@ const CHANNELS = [
   { id: 'dm', label: '\u{1F4E9} DMs' },
 ];
 
-export default function ChatOverlay({ messages = [], onSend, isOpen, onClose, wsRef }) {
+export default function ChatOverlay({ messages = [], onSend, isOpen, onClose, wsRef, pendingDM, onDMOpened }) {
   const [text, setText] = useState('');
   const [channel, setChannel] = useState('global');
   const [typing, setTyping] = useState(false);
@@ -102,6 +102,15 @@ export default function ChatOverlay({ messages = [], onSend, isOpen, onClose, ws
     setDmTarget({ id, name });
     fetchDMHistory(id);
   }, [fetchDMHistory]);
+
+  // Handle pendingDM from profile panel
+  useEffect(() => {
+    if (pendingDM && pendingDM.playerId) {
+      setChannel('dm');
+      openDM(pendingDM.playerId, pendingDM.playerName || 'Player');
+      onDMOpened?.();
+    }
+  }, [pendingDM]);
 
   // Handle incoming DMs from WebSocket
   useEffect(() => {

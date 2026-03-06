@@ -6,6 +6,7 @@ import { CITIES } from '@shared/constants/cities.js';
 import { TPL } from '@shared/constants/thirdPartyLogistics.js';
 import { fmt } from '@shared/helpers/format.js';
 import { getCap, getInv, getLocInv, getLocCap, getStorageCap } from '@shared/helpers/inventory.js';
+import { tireName } from '@shared/helpers/factoryBrand.js';
 import { postAction, get3plListings } from '../../api/client.js';
 import { hapticsMedium } from '../../api/haptics.js';
 
@@ -156,7 +157,7 @@ export default function StoragePanel() {
           if (qty <= 0) return null;
           return (
             <div key={k} className="row-between text-sm mb-4">
-              <span>{TIRES[k]?.n || k}</span>
+              <span>{tireName(k, g)}</span>
               <span className="font-bold">{qty}</span>
             </div>
           );
@@ -182,7 +183,7 @@ export default function StoragePanel() {
                   if (qty <= 0) return null;
                   return (
                     <div key={k} className="row-between text-xs mb-4" style={{ paddingLeft: 12 }}>
-                      <span className="text-dim">{TIRES[k]?.n || k}</span>
+                      <span className="text-dim">{tireName(k, g)}</span>
                       <span>{qty}</span>
                     </div>
                   );
@@ -220,7 +221,7 @@ export default function StoragePanel() {
             <select className="autoprice-select" style={{ width: '100%' }} value={txTire} onChange={e => setTxTire(e.target.value)}>
               <option value="">Select tire...</option>
               {availTires.map(([k, qty]) => (
-                <option key={k} value={k}>{TIRES[k]?.n || k} ({qty} available)</option>
+                <option key={k} value={k}>{tireName(k, g)} ({qty} available)</option>
               ))}
             </select>
           </div>
@@ -298,7 +299,7 @@ export default function StoragePanel() {
                   {/* 3PL inventory */}
                   {Object.entries(leaseInv).map(([k, qty]) => qty > 0 && (
                     <div key={k} className="row-between text-xs mb-4" style={{ paddingLeft: 8 }}>
-                      <span className="text-dim">{TIRES[k]?.n || k}</span>
+                      <span className="text-dim">{tireName(k, g)}</span>
                       <span>{qty}</span>
                     </div>
                   ))}
@@ -327,7 +328,7 @@ export default function StoragePanel() {
                           ? Object.entries(leaseInv).filter(([, v]) => v > 0)
                           : Object.entries(g.warehouseInventory || {}).filter(([, v]) => v > 0)
                         ).map(([k, qty]) => (
-                          <option key={k} value={k}>{TIRES[k]?.n || k} ({qty})</option>
+                          <option key={k} value={k}>{tireName(k, g)} ({qty})</option>
                         ))}
                       </select>
                       <input
@@ -621,11 +622,11 @@ export default function StoragePanel() {
             const daysLeft = Math.max(0, (job.completionDay || job.doneDay || 0) - day);
             const totalDays = 3;
             const progressPct = totalDays > 0 ? Math.min(100, ((totalDays - daysLeft) / totalDays) * 100) : 100;
-            const tireName = TIRES[job.tire]?.n || job.tire || TIRES[job.type]?.n || job.type || 'Unknown';
+            const jobTireName = tireName(job.tire || job.type, g);
             return (
               <div key={i} className="queue-item">
                 <div>
-                  <div className="text-sm font-bold">{tireName} x{job.qty || 1}</div>
+                  <div className="text-sm font-bold">{jobTireName} x{job.qty || 1}</div>
                   <div className="text-xs text-dim">
                     {daysLeft > 0 ? `${daysLeft} day${daysLeft !== 1 ? 's' : ''} remaining` : 'Complete!'}
                     {job.successRate != null && ` \u00B7 ${Math.round(job.successRate * 100)}% success`}

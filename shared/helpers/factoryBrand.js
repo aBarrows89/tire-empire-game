@@ -13,6 +13,24 @@ export function getBrandTireKey(baseType) {
   return `brand_${baseType}`;
 }
 
+/** Get display name for any tire key, including branded/exclusive tires */
+export function tireName(key, g) {
+  // Check static tires first (fast path)
+  if (TIRES[key]) return TIRES[key].n;
+  // Check exclusive tires
+  if (EXCLUSIVE_TIRES[key]) {
+    const brandName = g?.factory?.brandName || 'Custom';
+    return `${brandName} ${EXCLUSIVE_TIRES[key].n}`;
+  }
+  // Check branded tires (brand_allSeason → "BrandName All-Season")
+  if (key.startsWith('brand_') && g?.factory) {
+    const baseType = key.replace('brand_', '');
+    const baseTire = TIRES[baseType];
+    if (baseTire) return `${g.factory.brandName || 'Custom'} ${baseTire.n}`;
+  }
+  return key;
+}
+
 /**
  * Construct a virtual TIRES entry for a branded tire.
  * Uses production cost as bMin/bMax (for COGS), wholesale price as def.

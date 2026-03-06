@@ -6,6 +6,7 @@ import { SUPPLIER_REL_TIERS, getSupplierRelTier } from '@shared/constants/suppli
 import { fmt } from '@shared/helpers/format.js';
 import { getCap, getInv } from '@shared/helpers/inventory.js';
 import { FACTORY } from '@shared/constants/factory.js';
+import { tireName } from '@shared/helpers/factoryBrand.js';
 import { postAction } from '../../api/client.js';
 
 export default function SupplierPanel() {
@@ -79,13 +80,13 @@ export default function SupplierPanel() {
           {g.factory.currentTire && TIRES[g.factory.currentTire] && (
             <div className="row-between text-sm mb-4">
               <span className="text-dim">Producing</span>
-              <span className="font-bold">{TIRES[g.factory.currentTire].n}</span>
+              <span className="font-bold">{tireName(g.factory.currentTire, g)}</span>
             </div>
           )}
           {(() => {
             const brandedInStock = Object.entries(g.warehouseInventory || {})
-              .filter(([k, qty]) => qty > 0 && k.startsWith('branded_'))
-              .map(([k, qty]) => ({ key: k, name: TIRES[k]?.n || k, qty }));
+              .filter(([k, qty]) => qty > 0 && k.startsWith('brand_'))
+              .map(([k, qty]) => ({ key: k, name: tireName(k, g), qty }));
             if (brandedInStock.length === 0) return null;
             return (
               <>
@@ -255,7 +256,7 @@ export default function SupplierPanel() {
                               setBusy(null);
                             }}
                           >
-                            Sign Contract for {TIRES[orderTire]?.n || orderTire}
+                            Sign Contract for {tireName(orderTire, g)}
                           </button>
                         </>
                       );
@@ -309,7 +310,7 @@ export default function SupplierPanel() {
                   {/* Active auto-orders for this supplier */}
                   {(g.autoSuppliers || []).filter(a => a.supplierIndex === index).map(a => (
                     <div key={`${a.supplierIndex}-${a.tire}`} className="auto-order-item row-between">
-                      <span className="text-xs">{TIRES[a.tire]?.n || a.tire} x{a.qty} when &lt; {a.threshold}</span>
+                      <span className="text-xs">{tireName(a.tire, g)} x{a.qty} when &lt; {a.threshold}</span>
                       <button
                         className="btn btn-sm btn-outline"
                         style={{ color: 'var(--red)' }}
@@ -423,7 +424,7 @@ export default function SupplierPanel() {
               setImportMsg(null);
               const res = await postAction('importOrder', { tire: importTire, qty: importQty });
               if (res.ok) {
-                setImportMsg(`Order placed! ${importQty} ${TIRES[importTire]?.n || importTire} arriving in 5-7 days`);
+                setImportMsg(`Order placed! ${importQty} ${tireName(importTire, g)} arriving in 5-7 days`);
               }
               refreshState();
               setBusy(null);
@@ -450,7 +451,7 @@ export default function SupplierPanel() {
             return (
               <div key={i} className="queue-item">
                 <div>
-                  <div className="text-sm font-bold">{TIRES[imp.tire]?.n || imp.tire || TIRES[imp.type]?.n || imp.type} x{imp.qty}</div>
+                  <div className="text-sm font-bold">{tireName(imp.tire || imp.type, g)} x{imp.qty}</div>
                   <div className="text-xs text-dim">
                     {daysLeft > 0 ? `Arrives in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}` : 'Arriving today!'}
                   </div>
@@ -476,7 +477,7 @@ export default function SupplierPanel() {
           >
             <option value="">Select tire type...</option>
             {Object.entries(g.warehouseInventory || {}).filter(([, qty]) => qty > 0).map(([k, qty]) => (
-              <option key={k} value={k}>{TIRES[k]?.n || k} ({qty})</option>
+              <option key={k} value={k}>{tireName(k, g)} ({qty})</option>
             ))}
           </select>
           <input

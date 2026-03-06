@@ -79,7 +79,7 @@ function SplashScreen() {
 }
 
 function GameLayout() {
-  const { state, sendChat, refreshState, wsRef } = useGame();
+  const { state, dispatch, sendChat, refreshState, wsRef } = useGame();
   const [chatOpen, setChatOpen] = useState(false);
   const [toastAch, setToastAch] = useState(null);
   const [toastNotifs, setToastNotifs] = useState(null);
@@ -90,6 +90,11 @@ function GameLayout() {
   const prevPanelRef = useRef(null);
   // Once we've seen a companyName, never flash back to WelcomeScreen mid-session
   const confirmedCompanyRef = useRef(null);
+
+  // Open chat overlay when a DM is requested from profile
+  useEffect(() => {
+    if (state.pendingDM) setChatOpen(true);
+  }, [state.pendingDM]);
 
   // Minimum splash duration
   useEffect(() => {
@@ -243,6 +248,8 @@ function GameLayout() {
         messages={state.chatMessages || []}
         onSend={sendChat}
         wsRef={wsRef}
+        pendingDM={state.pendingDM}
+        onDMOpened={() => dispatch({ type: 'OPEN_DM', payload: null })}
       />
     </>
   );

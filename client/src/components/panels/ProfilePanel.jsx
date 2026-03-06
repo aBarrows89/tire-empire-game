@@ -152,18 +152,60 @@ export default function ProfilePanel() {
         </div>
       )}
 
-      {/* Trade button when viewing other player */}
-      {isOther && (g.locations || []).length > 0 && (
+      {/* Actions when viewing other player */}
+      {isOther && (
         <div className="card">
-          <button
-            className="btn btn-full btn-sm"
-            style={{ background: 'var(--accent)', color: '#000' }}
-            onClick={() => dispatch({ type: 'SET_PANEL', payload: 'trade' })}
-          >
-            Send Trade Offer
-          </button>
-          <div className="text-xs text-dim" style={{ marginTop: 4, textAlign: 'center' }}>
-            Direct trade — no escrow, no protection
+          <div className="card-title">Actions</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {(g.locations || []).length > 0 && (
+              <button
+                className="btn btn-full btn-sm"
+                style={{ background: 'var(--accent)', color: '#000' }}
+                onClick={() => dispatch({ type: 'SET_PANEL', payload: 'trade' })}
+              >
+                {'\u{1F91D}'} Send Trade Offer
+              </button>
+            )}
+            <button
+              className="btn btn-full btn-sm"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+              onClick={() => {
+                dispatch({ type: 'OPEN_DM', payload: { playerId: viewingId, playerName: profile?.companyName || 'Player' } });
+              }}
+            >
+              {'\u{1F4AC}'} Send Message
+            </button>
+            <button
+              className="btn btn-full btn-sm"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+              onClick={async () => {
+                const reason = prompt('Report reason (e.g. spam, harassment, scam):');
+                if (!reason) return;
+                try {
+                  const h = await getHeaders();
+                  await fetch(`${API_BASE}/chat/report`, {
+                    method: 'POST', headers: { ...h, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ targetId: viewingId, reason, context: 'profile' }),
+                  });
+                  alert('Report submitted. Thank you.');
+                } catch { alert('Failed to submit report.'); }
+              }}
+            >
+              {'\u{26A0}\u{FE0F}'} Report Player
+            </button>
+            <button
+              className="btn btn-full btn-sm"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--red)' }}
+              onClick={async () => {
+                const isBlocked = (g.blockedPlayers || []).includes(viewingId);
+                try {
+                  await postAction(isBlocked ? 'unblockPlayer' : 'blockPlayer', { targetId: viewingId });
+                  refreshState();
+                } catch { alert('Failed to update block status.'); }
+              }}
+            >
+              {(g.blockedPlayers || []).includes(viewingId) ? '\u{1F513} Unblock Player' : '\u{1F6AB} Block Player'}
+            </button>
           </div>
         </div>
       )}

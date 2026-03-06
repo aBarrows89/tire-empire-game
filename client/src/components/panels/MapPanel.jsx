@@ -6,6 +6,7 @@ import RevenueChart from '../RevenueChart.jsx';
 import { getInv, getLocInv, getLocCap } from '@shared/helpers/inventory.js';
 import { fmt } from '@shared/helpers/format.js';
 import { TIRES } from '@shared/constants/tires.js';
+import { tireName } from '@shared/helpers/factoryBrand.js';
 import { getCalendar } from '@shared/helpers/calendar.js';
 
 function Sparkline({ data, color = '#4caf50', height = 28 }) {
@@ -51,7 +52,7 @@ export default function MapPanel() {
         .filter(([, q]) => q > 0)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3)
-        .map(([k, q]) => ({ name: TIRES[k]?.n || k, qty: q, key: k }));
+        .map(([k, q]) => ({ name: tireName(k, g), qty: q, key: k }));
       // Low stock warning: any tire type < 5
       const lowStock = Object.entries(loc.inventory || {}).filter(([, q]) => q > 0 && q < 5);
       out[loc.id] = { avgRev, avgProfit, revData, profitData, inv, cap, invPct, topTires, lowStock };
@@ -228,7 +229,7 @@ export default function MapPanel() {
                         )}
                         {c.lowStock.length > 0 && (
                           <div style={{ fontSize: 10, color: '#ffc107', marginTop: 4 }}>
-                            ⚠ Low: {c.lowStock.map(([k, q]) => `${TIRES[k]?.n || k} (${q})`).join(', ')}
+                            ⚠ Low: {c.lowStock.map(([k, q]) => `${tireName(k, g)} (${q})`).join(', ')}
                           </div>
                         )}
                       </div>
@@ -328,7 +329,7 @@ export default function MapPanel() {
                     return (
                       <div key={k} style={{ marginBottom: 5 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2 }}>
-                          <span>{TIRES[k]?.n || k}</span>
+                          <span>{tireName(k, g)}</span>
                           <span style={{ color: 'var(--text-dim)' }}>{q} ({pct}%)</span>
                         </div>
                         <div style={{ background: '#1a1a1a', borderRadius: 3, height: 4, overflow: 'hidden' }}>
