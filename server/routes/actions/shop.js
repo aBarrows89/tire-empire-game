@@ -51,6 +51,7 @@ export async function handleShop(action, params, g, ctx) {
 
     case 'hireStaff': {
       const { role } = params;
+      if (!g.staff) g.staff = { techs: 0, sales: 0, managers: 0, drivers: 0, pricingAnalyst: 0 };
       if (g.staff[role] === undefined) return ctx.fail('Invalid role');
       const hireCost = PAY[role] || 0;
       if (g.cash < hireCost) return ctx.fail(`Not enough cash (need $${hireCost} for first month salary)`);
@@ -61,6 +62,7 @@ export async function handleShop(action, params, g, ctx) {
 
     case 'fireStaff': {
       const { role } = params;
+      if (!g.staff) g.staff = { techs: 0, sales: 0, managers: 0, drivers: 0, pricingAnalyst: 0 };
       if (!g.staff[role] || g.staff[role] <= 0) return ctx.fail('No staff to fire');
       g.staff[role]--;
       break;
