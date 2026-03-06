@@ -188,6 +188,10 @@ function applyAutoSource(g) {
  */
 function applyAutoSupplier(g) {
   if (!g.autoSuppliers || g.autoSuppliers.length === 0) return;
+  // Defensive guards — missing these causes getCap/getInv to throw
+  if (!Array.isArray(g.storage)) return;
+  if (!g.inventory || typeof g.inventory !== 'object') g.inventory = {};
+  if (!g.warehouseInventory || typeof g.warehouseInventory !== 'object') g.warehouseInventory = {};
 
   // Cap auto-supplier spending: min of 15% cash or $50k per day
   const maxSpend = Math.min(Math.floor(g.cash * 0.15), 50000);
@@ -210,7 +214,7 @@ function applyAutoSupplier(g) {
     const orderCost = qty * t.bMin * (1 - sup.disc);
     if (spent + orderCost > maxSpend || g.cash < orderCost) continue;
 
-    // Check free space
+    // Check free space (re-read after each rebuildGlobalInv)
     const freeSpace = getCap(g) - getInv(g);
     if (freeSpace < qty) continue;
 
@@ -221,15 +225,27 @@ function applyAutoSupplier(g) {
     if (!g.warehouseInventory) g.warehouseInventory = {};
     const whInv = Object.values(g.warehouseInventory).reduce((a, b) => a + b, 0);
     const whCap = getStorageCap(g);
-    const toWh = Math.min(qty, whCap - whInv);
-    if (toWh > 0) g.warehouseInventory[tire] = (g.warehouseInventory[tire] || 0) + toWh;
+    // BUGFIX: clamp toWh to [0, qty] — whCap - whInv can be negative if warehouse
+    // was already overfull, which would make toWh negative and REMOVE inventory
+    const toWh = Math.max(0, Math.min(qty, whCap - whInv));
     const overflow = qty - toWh;
+    if (toWh > 0) g.warehouseInventory[tire] = (g.warehouseInventory[tire] || 0) + toWh;
     if (overflow > 0 && g.locations.length > 0) {
-      const loc = g.locations.find(l => getLocInv(l) < getLocCap(l)) || g.locations[0];
-      if (!loc.inventory) loc.inventory = {};
-      loc.inventory[tire] = (loc.inventory[tire] || 0) + overflow;
-    } else if (overflow > 0) {
-      g.warehouseInventory[tire] = (g.warehouseInventory[tire] || 0) + overflow;
+      // Find a location with actual free space, don't overflow past capacity
+      const loc = g.locations.find(l => getLocInv(l) < getLocCap(l));
+      if (loc) {
+        if (!loc.inventory) loc.inventory = {};
+        const locFree = getLocCap(loc) - getLocInv(loc);
+        const toStore = Math.min(overflow, locFree);
+        if (toStore > 0) loc.inventory[tire] = (loc.inventory[tire] || 0) + toStore;
+      }
+      // If no loc has space, silently skip — don't force overflow anywhere
+    }
+    // If no warehouse space and no loc space, skip storing but still charged — refund
+    if (toWh === 0 && (overflow === qty)) {
+      g.cash += orderCost; // full refund — nowhere to put it
+      spent -= orderCost;
+      continue;
     }
     rebuildGlobalInv(g);
 
@@ -1278,9 +1294,11 @@ export async function runTick(clients) {
           }
 
           // Run simDay on the freshest committed state
-          applyAutoPrice(lockedState);
-          applyAutoSource(lockedState);
-          if (lockedState.hasAutoRestock || lockedState.isPremium) applyAutoSupplier(lockedState);
+          try { applyAutoPrice(lockedState); } catch (e) { console.warn('[Tick] applyAutoPrice error:', e.message); }
+          try { applyAutoSource(lockedState); } catch (e) { console.warn('[Tick] applyAutoSource error:', e.message); }
+          try {
+            if (lockedState.hasAutoRestock || lockedState.isPremium) applyAutoSupplier(lockedState);
+          } catch (e) { console.warn('[Tick] applyAutoSupplier error:', e.message); }
           let newState;
           try {
             newState = simDay(lockedState, shared);
