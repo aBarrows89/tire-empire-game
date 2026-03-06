@@ -897,6 +897,19 @@ router.get('/economy-sizes', async (req, res) => {
     sizes._ai_shops = aiShopsKB + 'KB';
     sizes._liquidation = liqKB + 'KB';
     sizes._total = Math.round(JSON.stringify(econ).length / 1024) + 'KB';
+    // Show per-stock field breakdown for the first stock
+    if (econ.exchange?.stocks) {
+      const tickers = Object.keys(econ.exchange.stocks);
+      if (tickers.length > 0) {
+        const firstStock = econ.exchange.stocks[tickers[0]];
+        sizes['firstStock ('+tickers[0]+')'] = {};
+        for (const [fk, fv] of Object.entries(firstStock || {})) {
+          const fsz = JSON.stringify(fv || '').length;
+          if (fsz > 100) sizes['firstStock ('+tickers[0]+')'][fk] = Math.round(fsz / 1024) + 'KB (' + fsz + 'B)';
+        }
+        sizes._stockCount = tickers.length;
+      }
+    }
     res.json(sizes);
   } catch (e) {
     res.status(500).json({ error: e.message });
