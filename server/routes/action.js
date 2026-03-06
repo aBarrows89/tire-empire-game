@@ -64,6 +64,17 @@ router.post('/', authMiddleware, async (req, res) => {
       const params = paramSchema ? paramSchema.parse(rawParams) : rawParams;
       g.log = g.log || [];
 
+      // Block all actions while on vacation, except cancelling
+      if (g.paused && g.vacationUntil && action !== 'cancelVacation') {
+        const remaining = Math.max(0, g.vacationUntil - Date.now());
+        const hours = Math.ceil(remaining / (60 * 60 * 1000));
+        return res.status(403).json({
+          error: `On vacation (${hours}h remaining). Cancel vacation first.`,
+          code: 'ON_VACATION',
+          vacationUntil: g.vacationUntil,
+        });
+      }
+
       let failed = false;
       const ctx = {
         fail: (msg) => {

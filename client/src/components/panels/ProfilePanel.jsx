@@ -5,6 +5,7 @@ import { getCalendar, DAYS_PER_YEAR } from '@shared/helpers/calendar.js';
 import { SkeletonProfileCard } from '../SkeletonLoader.jsx';
 import { isMuted, toggleMute, isMusicMuted, toggleMusic } from '../../api/sounds.js';
 import RewardedAdButton from '../RewardedAdButton.jsx';
+import { MONET } from '@shared/constants/monetization.js';
 
 export default function ProfilePanel() {
   const { state, dispatch, refreshState } = useGame();
@@ -259,6 +260,9 @@ export default function ProfilePanel() {
         </div>
       )}
 
+      {/* Vacation Mode (own profile only) */}
+      {!isOther && <VacationSection g={g} refreshState={refreshState} />}
+
       {/* Blocked Players (own profile only) */}
       {!isOther && (g?.blockedPlayers || []).length > 0 && (
         <div className="card">
@@ -328,5 +332,131 @@ export default function ProfilePanel() {
         </>
       )}
     </>
+  );
+}
+
+function VacationSection({ g, refreshState }) {
+  const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState(Date.now());
+  const { applyState } = useGame();
+
+  // Update countdown every second while on vacation
+  useEffect(() => {
+    if (!g.vacationUntil) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [g.vacationUntil]);
+
+  const vacConfig = MONET.vacation;
+  if (!vacConfig?.enabled) return null;
+
+  const isOnVacation = g.paused && g.vacationUntil;
+  const remaining = isOnVacation ? Math.max(0, g.vacationUntil - now) : 0;
+  const onCooldown = g.vacationCooldownUntil && now < g.vacationCooldownUntil;
+  const cooldownRemaining = onCooldown ? Math.max(0, g.vacationCooldownUntil - now) : 0;
+  const meetsMinDays = (g.day || 0) >= (vacConfig.minDaysPlayed || 7);
+
+  const fmtTime = (ms) => {
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  };
+
+  const handleStart = async (tierId) => {
+    setBusy(true);
+    const res = await postAction('startVacation', { tierId });
+    if (res?.state) applyState(res);
+    else refreshState();
+    setBusy(false);
+  };
+
+  const handleCancel = async () => {
+    setBusy(true);
+    const res = await postAction('cancelVacation', {});
+    if (res?.state) applyState(res);
+    else refreshState();
+    setBusy(false);
+  };
+
+  if (isOnVacation) {
+    const tier = vacConfig.tiers.find(t => t.id === g.vacationTier);
+    return (
+      <div className="card" style={{ borderLeft: '3px solid var(--accent)' }}>
+        <div className="card-title">{'\u{1F3D6}\uFE0F'} Vacation Mode Active</div>
+        <div className="text-sm mb-4" style={{ lineHeight: 1.6 }}>
+          Your empire is paused. No progress, no expenses, no decay.
+        </div>
+        <div style={{ textAlign: 'center', margin: '12px 0' }}>
+          <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--accent)' }}>{fmtTime(remaining)}</div>
+          <div className="text-xs text-dim">remaining{tier ? ` (${tier.label})` : ''}</div>
+        </div>
+        {vacConfig.allowEarlyCancel && (
+          <>
+            <button
+              className="btn btn-full btn-sm btn-outline"
+              onClick={handleCancel}
+              disabled={busy}
+              style={{ marginTop: 8 }}
+            >
+              {busy ? 'Cancelling...' : 'Return Early'}
+            </button>
+            <div className="text-xs text-dim" style={{ marginTop: 4, textAlign: 'center' }}>
+              No TC refund if you cancel early
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <div className="card-title">{'\u{1F3D6}\uFE0F'} Vacation Mode</div>
+      <div className="text-xs text-dim mb-4">
+        Pause your empire while you're away. No progress, no expenses, no decay.
+      </div>
+      {!meetsMinDays && (
+        <div className="text-xs" style={{ color: 'var(--red)', marginBottom: 8 }}>
+          Available after Day {vacConfig.minDaysPlayed}
+        </div>
+      )}
+      {onCooldown && (
+        <div className="text-xs" style={{ color: 'var(--yellow, #ffd54f)', marginBottom: 8 }}>
+          Cooldown: {fmtTime(cooldownRemaining)} remaining
+        </div>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {vacConfig.tiers.map(tier => {
+          const canAfford = (g.tireCoins || 0) >= tier.tcCost;
+          const disabled = busy || !meetsMinDays || onCooldown || !canAfford;
+          return (
+            <button
+              key={tier.id}
+              className="btn btn-full btn-sm"
+              style={{
+                background: disabled ? 'var(--card-bg)' : 'linear-gradient(135deg, #4488cc, #2d6da3)',
+                color: disabled ? 'var(--text-dim)' : '#fff',
+                border: disabled ? '1px solid var(--border)' : 'none',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '10px 14px',
+              }}
+              onClick={() => handleStart(tier.id)}
+              disabled={disabled}
+            >
+              <span>{tier.label}</span>
+              <span style={{ fontWeight: 800 }}>{tier.tcCost} TC</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="text-xs text-dim" style={{ marginTop: 8, textAlign: 'center' }}>
+        You have {g.tireCoins || 0} TC
+      </div>
+    </div>
   );
 }

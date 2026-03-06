@@ -1984,8 +1984,8 @@ export function simDay(g, shared = {}) {
     let weeklyTC = 1;
 
     // Reputation bonus: higher-rep players earn more TC (rewards engagement)
-    if (s.reputation >= 75) weeklyTC += 3;
-    else if (s.reputation >= 50) weeklyTC += 2;
+    if (s.reputation >= 75) weeklyTC += 2;
+    else if (s.reputation >= 50) weeklyTC += 1;
     else if (s.reputation >= 25) weeklyTC += 1;
 
     // Apply emission multiplier to drip ONLY

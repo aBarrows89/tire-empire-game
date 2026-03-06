@@ -143,6 +143,10 @@ export const ACTION_SCHEMAS = {
   buyRepBoost:                empty,
   devSetState:                z.object({ cash: optNum, reputation: optNum, day: optNum, tireCoins: optNum, adminKey: optStr }).passthrough(),
 
+  // Vacation
+  startVacation:              z.object({ tierId: str }),
+  cancelVacation:             empty,
+
   // Franchise system
   createFranchiseOffering:    z.object({ brandName: str, description: str, buyIn: z.number(), royaltyPct: z.number(), monthlyFee: z.number(), requiredBrand: optStr, minRep: optNum, maxFranchisees: optNum, perks: z.array(z.string()).optional() }),
   updateFranchiseOffering:    z.object({ active: z.boolean().optional(), buyIn: optNum, royaltyPct: optNum, monthlyFee: optNum, description: optStr }),

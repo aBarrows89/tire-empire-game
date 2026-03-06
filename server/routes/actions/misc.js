@@ -780,6 +780,50 @@ export async function handleMisc(action, params, g, ctx) {
       break;
     }
 
+    case 'startVacation': {
+      const { MONET } = await import('../../../shared/constants/monetization.js');
+      const vacConfig = MONET.vacation;
+      if (!vacConfig?.enabled) return ctx.fail('Vacation mode not available');
+
+      const tier = vacConfig.tiers.find(t => t.id === params.tierId);
+      if (!tier) return ctx.fail('Invalid vacation tier');
+
+      if ((g.day || 0) < (vacConfig.minDaysPlayed || 7)) {
+        return ctx.fail(`Must play at least ${vacConfig.minDaysPlayed} days before vacation`);
+      }
+      if (g.paused) return ctx.fail('Already on vacation');
+      if (g.vacationCooldownUntil && Date.now() < g.vacationCooldownUntil) {
+        return ctx.fail('Vacation cooldown active — try again later');
+      }
+      if ((g.tireCoins || 0) < tier.tcCost) {
+        return ctx.fail(`Need ${tier.tcCost} TC (you have ${g.tireCoins || 0})`);
+      }
+
+      g.tireCoins -= tier.tcCost;
+      g.paused = true;
+      g.vacationUntil = Date.now() + tier.durationMs;
+      g.vacationTier = tier.id;
+      g.vacationStartedAt = Date.now();
+      g.log.push({ msg: `Vacation mode activated for ${tier.label}. Your empire is paused. (-${tier.tcCost} TC)`, cat: 'event' });
+      ctx.trackEvent(ctx.playerId, 'vacation_started', { tier: tier.id, cost: tier.tcCost });
+      break;
+    }
+
+    case 'cancelVacation': {
+      const { MONET: monetVac } = await import('../../../shared/constants/monetization.js');
+      if (!g.paused || !g.vacationUntil) return ctx.fail('Not on vacation');
+      if (!monetVac.vacation?.allowEarlyCancel) return ctx.fail('Early cancellation not allowed');
+
+      g.paused = false;
+      g.vacationCooldownUntil = Date.now() + (monetVac.vacation.cooldownMs || 86400000);
+      g.log.push({ msg: 'Vacation cancelled early. No TC refund. Welcome back!', cat: 'event' });
+      delete g.vacationUntil;
+      delete g.vacationTier;
+      delete g.vacationStartedAt;
+      ctx.trackEvent(ctx.playerId, 'vacation_cancelled', {});
+      break;
+    }
+
     default: return null;
   }
   return g;

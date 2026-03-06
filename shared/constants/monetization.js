@@ -29,10 +29,10 @@ export const MONET = {
   },
   // 16d: Ad strategy — diminishing returns per ad
   adRewards: {
-    schedule: [30, 20, 10, 8, 5],  // total 73/day max
+    schedule: [10, 8, 5, 3, 2],  // total 28/day max (down from 73)
     maxRewardedPerDay: 5,
   },
-  adRewardTC: 30,  // Legacy compat — 1st ad reward
+  adRewardTC: 10,  // Legacy compat — 1st ad reward
   maxRewardedPerDay: 5,
   interstitialCooldownMs: 300_000,
   interstitialMinPanelSwitches: 3,
@@ -79,7 +79,7 @@ export const MONET = {
   // 14b: Emission scaling — TC earn rates scale inversely with player count
   tcEmission: {
     targetPlayerCount: 100,    // "Designed for" player count
-    maxMultiplier: 10,         // Small server boost — keeps TC useful without flooding
+    maxMultiplier: 3,          // Small server boost — capped to prevent TC flooding
     minMultiplier: 1,          // Never reduce below base earn rate
   },
 
@@ -112,6 +112,19 @@ export const MONET = {
     listingCooldownDays: 1,    // 1 listing per day per player
     listingDurationDays: 30,   // Auto-expire after 30 days
     priceRangeLimit: 0.50,     // Listings must be within ±50% of fair value
+  },
+
+  // ── Vacation Mode — TC-paid game pause ──
+  vacation: {
+    enabled: true,
+    tiers: [
+      { id: 'vac_12h', label: '12 Hours', durationMs: 12 * 60 * 60 * 1000, tcCost: 100 },
+      { id: 'vac_24h', label: '24 Hours', durationMs: 24 * 60 * 60 * 1000, tcCost: 350 },
+      { id: 'vac_7d',  label: '7 Days',   durationMs: 7 * 24 * 60 * 60 * 1000, tcCost: 3500 },
+    ],
+    allowEarlyCancel: true,
+    minDaysPlayed: 7,
+    cooldownMs: 24 * 60 * 60 * 1000,
   },
 
   // ── TC In-App Purchases (real money → TireCoins) ──

@@ -25,8 +25,15 @@ import { saveTournament } from '../db/queries.js';
 import { runExchangeTick } from '../engine/exchangeTick.js';
 import { CONTRACT_COMMISSION, P2P_DELIVERY_FEE } from '../../shared/constants/contracts.js';
 import { getBrandTireKey } from '../../shared/helpers/factoryBrand.js';
+import { pool } from '../db/pool.js';
 
 let tickInterval = null;
+
+// ── Separate AI chat loop — runs independently of ticks ──
+let _chatInterval = null;
+let _chatClients = null;
+let _chatShared = null;
+let _chatDay = 0;
 
 // ── AI Phase-Out ──
 // As real players join, AI shops and AI players gradually go out of business.
@@ -607,6 +614,23 @@ export async function runTick(clients) {
   try {
     const game = await getGame();
     if (!game) return;
+
+    // Expire vacations — unpause players whose vacation time has elapsed
+    try {
+      const now = Date.now();
+      const { rowCount } = await pool.query(`
+        UPDATE players
+        SET game_state = game_state || '{"paused": false, "vacationUntil": null}'::jsonb
+        WHERE COALESCE((game_state->>'paused')::boolean, false) = true
+          AND (game_state->>'vacationUntil') IS NOT NULL
+          AND (game_state->>'vacationUntil')::bigint <= $1
+      `, [now]);
+      if (rowCount > 0) {
+        console.log(`[Tick] Unpaused ${rowCount} player(s) — vacation expired`);
+      }
+    } catch (vacErr) {
+      console.error('[Tick] Vacation expiry check error:', vacErr.message);
+    }
 
     let players = await getAllActivePlayers();
     // Support both day-based and legacy week-based game state
@@ -1418,74 +1442,9 @@ export async function runTick(clients) {
       console.error('Contract payment error:', err);
     }
 
-    // Post bot chat messages — try AI generation, fall back to templates
-    try {
-      const chatQueue = getBotChatQueue();
-      const legacyChats = getPendingBotChats(); // fallback template messages
-
-      if (chatQueue.length > 0 || legacyChats.length > 0) {
-        console.log(`[Chat] Queue: ${chatQueue.length} AI, ${legacyChats.length} template`);
-      }
-
-      let botChats = [];
-
-      if (chatQueue.length > 0) {
-        // Pass leaderboard and day into shared for the AI prompt
-        const chatShared = {
-          ...shared,
-          day,
-          leaderboard: await getLeaderboard(5).catch(() => []),
-        };
-        try {
-          const aiMessages = await generateAIBotChats(chatQueue, chatShared);
-          if (aiMessages.length > 0) {
-            // AI succeeded — convert to DB format
-            botChats = aiMessages.map(m => {
-              const msg = {
-                id: uid(),
-                playerId: m.botId,
-                playerName: m.botName,
-                channel: 'global',
-                text: m.text,
-                isBot: true,
-                timestamp: Date.now(),
-              };
-              if (m.replyToId) {
-                msg.replyTo = { id: m.replyToId, playerName: m.replyToName || '', text: '' };
-              }
-              return msg;
-            });
-          } else {
-            // AI returned nothing — use templates
-            botChats = legacyChats;
-          }
-        } catch (aiErr) {
-          console.warn('[Tick] AI chat failed, using templates:', aiErr.message);
-          botChats = legacyChats;
-        }
-      } else {
-        botChats = legacyChats;
-      }
-
-      for (const msg of botChats) {
-        try {
-          if (msg && msg.text && msg.playerId) {
-            await addChatMessage(msg);
-            // Broadcast to all connected WS clients — same as real player chat
-            const payload = JSON.stringify({ type: 'chat', message: msg });
-            for (const client of clients) {
-              if (client.readyState === 1) {
-                try { client.send(payload); } catch {}
-              }
-            }
-          }
-        } catch (singleChatErr) {
-          console.error(`[Tick] Failed to post bot chat from ${msg?.playerName}:`, singleChatErr.message);
-        }
-      }
-    } catch (chatErr) {
-      console.error('[Tick] Bot chat error:', chatErr.message);
-    }
+    // Update shared state for the independent bot chat loop (runs on 5-min interval)
+    _chatShared = { ...shared, day };
+    _chatClients = clients;
 
     // Resolve expired marketplace auctions
     await resolveAuctions(day);
@@ -1678,10 +1637,92 @@ export async function runTick(clients) {
     const elapsed = Date.now() - _tickStart;
     _tickTimings.push(elapsed);
     if (_tickTimings.length > 100) _tickTimings.shift();
+    if (elapsed > currentTickMs * 0.8) {
+      console.warn(`[Tick] Took ${elapsed}ms (${Math.round(elapsed / currentTickMs * 100)}% of ${currentTickMs}ms interval)`);
+    } else if (_tickTimings.length % 100 === 0) {
+      const stats = getTickStats();
+      console.log(`[Tick] Performance: avg=${stats.avgMs}ms p95=${stats.p95Ms}ms last=${stats.lastMs}ms`);
+    }
   }
 }
 
 let currentTickMs = TICK_MS;
+
+// ── Bot Chat Loop (independent from tick loop) ──
+async function runBotChatCycle() {
+  if (!_chatShared || !_chatClients) return;
+  try {
+    const chatQueue = getBotChatQueue();
+    const legacyChats = getPendingBotChats();
+
+    if (chatQueue.length === 0 && legacyChats.length === 0) return;
+    console.log(`[Chat] Queue: ${chatQueue.length} AI, ${legacyChats.length} template`);
+
+    let botChats = [];
+
+    if (chatQueue.length > 0) {
+      const chatShared = {
+        ..._chatShared,
+        leaderboard: await getLeaderboard(5).catch(() => []),
+      };
+      try {
+        const aiMessages = await generateAIBotChats(chatQueue, chatShared);
+        if (aiMessages.length > 0) {
+          botChats = aiMessages.map(m => {
+            const msg = {
+              id: uid(),
+              playerId: m.botId,
+              playerName: m.botName,
+              channel: 'global',
+              text: m.text,
+              isBot: true,
+              timestamp: Date.now(),
+            };
+            if (m.replyToId) {
+              msg.replyTo = { id: m.replyToId, playerName: m.replyToName || '', text: '' };
+            }
+            return msg;
+          });
+        } else {
+          botChats = legacyChats;
+        }
+      } catch (aiErr) {
+        console.warn('[Chat] AI chat failed, using templates:', aiErr.message);
+        botChats = legacyChats;
+      }
+    } else {
+      botChats = legacyChats;
+    }
+
+    for (const msg of botChats) {
+      try {
+        if (msg && msg.text && msg.playerId) {
+          await addChatMessage(msg);
+          const payload = JSON.stringify({ type: 'chat', message: msg });
+          for (const client of _chatClients) {
+            if (client.readyState === 1) {
+              try { client.send(payload); } catch {}
+            }
+          }
+        }
+      } catch (singleChatErr) {
+        console.error(`[Chat] Failed to post bot chat from ${msg?.playerName}:`, singleChatErr.message);
+      }
+    }
+  } catch (chatErr) {
+    console.error('[Chat] Bot chat cycle error:', chatErr.message);
+  }
+}
+
+function startChatLoop() {
+  if (_chatInterval) return;
+  _chatInterval = setInterval(() => runBotChatCycle(), 5 * 60 * 1000);
+  console.log('Bot chat loop started (5-minute interval)');
+}
+
+function stopChatLoop() {
+  if (_chatInterval) { clearInterval(_chatInterval); _chatInterval = null; }
+}
 
 /**
  * Start the tick loop.
@@ -1691,6 +1732,8 @@ export function startTickLoop(clients) {
   if (tickInterval) return;
   console.log(`Starting tick loop (${currentTickMs}ms interval = 1 game day)`);
   tickInterval = setInterval(() => runTick(clients), currentTickMs);
+  _chatClients = clients;
+  startChatLoop();
 }
 
 /**
@@ -1702,6 +1745,7 @@ export function stopTickLoop() {
     tickInterval = null;
     console.log('Tick loop stopped');
   }
+  stopChatLoop();
 }
 
 /** Change tick speed at runtime. */
