@@ -68,6 +68,7 @@ app.use('/api/', apiLimiter);
 app.use('/api/action', actionLimiter);
 
 // ── Routes ──
+app.get('/health', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
 app.get('/api/health', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
 app.use('/api/state', stateRouter);
 app.use('/api/action', actionRouter);
