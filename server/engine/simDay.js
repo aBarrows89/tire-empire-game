@@ -825,7 +825,8 @@ export function simDay(g, shared = {}) {
     const repBoostActive = s.repBoost && s.day < s.repBoost.expiresDay;
     const effectiveRep = s.reputation + (repBoostActive ? (s.repBoost.amount || 5) : 0);
     const demandMult = sDem * (1 + effectiveRep * .01) * (s._tB || 1);
-    const whPenalty = 1 - getWhShortage(s) * .08;
+    // Clamp to 0.1 floor — shortage reduces demand but can never kill it entirely
+    const whPenalty = Math.max(0.1, 1 - getWhShortage(s) * .08);
 
     // 16a: Early game boost: logarithmic decay over 270 days (no cliff)
     const earlyBoostShop = s.day < 270

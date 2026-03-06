@@ -5,8 +5,9 @@ export function getWhStaffReq(g) {
   const totalReq = g.storage.reduce((a, s) => a + (STORAGE[s.type]?.staff || 0), 0);
   if (totalReq === 0) return [];
   const reqs = [];
-  if (totalReq >= 1) reqs.push({ role: "loader", need: Math.ceil(totalReq * .3) || 1 });
-  if (totalReq >= 2) reqs.push({ role: "forklift", need: Math.ceil(totalReq * .2) || 1 });
+  // Cap loader/forklift so multiple large storage units don't create impossible requirements
+  if (totalReq >= 1) reqs.push({ role: "loader", need: Math.min(4, Math.ceil(totalReq * .3) || 1) });
+  if (totalReq >= 2) reqs.push({ role: "forklift", need: Math.min(3, Math.ceil(totalReq * .2) || 1) });
   if (totalReq >= 3) { reqs.push({ role: "receiving", need: 1 }); reqs.push({ role: "shipping", need: 1 }); }
   if (totalReq >= 5) reqs.push({ role: "whMgr", need: 1 });
   if (totalReq >= 6) reqs.push({ role: "inventory", need: 1 });
