@@ -230,22 +230,29 @@ function applyAutoSupplier(g) {
     const toWh = Math.max(0, Math.min(qty, whCap - whInv));
     const overflow = qty - toWh;
     if (toWh > 0) g.warehouseInventory[tire] = (g.warehouseInventory[tire] || 0) + toWh;
+    let toStore = 0;
     if (overflow > 0 && g.locations.length > 0) {
       // Find a location with actual free space, don't overflow past capacity
       const loc = g.locations.find(l => getLocInv(l) < getLocCap(l));
       if (loc) {
         if (!loc.inventory) loc.inventory = {};
         const locFree = getLocCap(loc) - getLocInv(loc);
-        const toStore = Math.min(overflow, locFree);
+        toStore = Math.min(overflow, locFree);
         if (toStore > 0) loc.inventory[tire] = (loc.inventory[tire] || 0) + toStore;
       }
-      // If no loc has space, silently skip — don't force overflow anywhere
     }
-    // If no warehouse space and no loc space, skip storing but still charged — refund
-    if (toWh === 0 && (overflow === qty)) {
-      g.cash += orderCost; // full refund — nowhere to put it
+    const actuallyStored = toWh + toStore;
+    // If nothing could be stored anywhere, refund and skip
+    if (actuallyStored === 0) {
+      g.cash += orderCost;
       spent -= orderCost;
       continue;
+    }
+    // Partial fill: only charge for what was actually stored
+    if (actuallyStored < qty) {
+      const refund = Math.round(orderCost * (1 - actuallyStored / qty));
+      g.cash += refund;
+      spent -= refund;
     }
     rebuildGlobalInv(g);
 
