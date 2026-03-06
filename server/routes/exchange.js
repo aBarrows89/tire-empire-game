@@ -216,6 +216,10 @@ router.post('/order', authMiddleware, async (req, res) => {
     }
     let totalFilled = 0, totalCost = 0;
     for (const fill of fills) { totalFilled += fill.qty; totalCost += fill.price * fill.qty; }
+    // Market orders with no fills = no liquidity
+    if (totalFilled === 0 && type !== 'limit') {
+      return res.status(400).json({ error: `No ${side === 'buy' ? 'sellers' : 'buyers'} available for $${ticker}. Try a limit order instead.` });
+    }
     if (totalFilled > 0) {
       const filledCommission = calculateCommission(totalCost, g.isPremium);
       if (side === 'buy') {

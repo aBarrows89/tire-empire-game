@@ -210,13 +210,30 @@ export default function ExchangePanel() {
 
   const handleOpenAccount = () => doAction(() => openBrokerage(), 'Brokerage account opened!');
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     if (!selectedTicker || !orderForm.qty) return setMsg('Select a stock and enter quantity');
     const qty = parseInt(orderForm.qty);
     if (!qty || qty <= 0) return setMsg('Invalid quantity');
     const params = { ticker: selectedTicker, side: orderForm.side, type: orderForm.type, qty };
     if (orderForm.type === 'limit' && orderForm.limitPrice) params.limitPrice = parseFloat(orderForm.limitPrice);
-    doAction(() => placeOrder(params), 'Order placed!');
+    setLoading(true); setMsg('');
+    try {
+      const res = await placeOrder(params);
+      if (res.error) { setMsg(res.error); }
+      else {
+        const filled = res.filled || 0;
+        const verb = orderForm.side === 'buy' ? 'Bought' : 'Sold';
+        if (filled > 0) {
+          setMsg(`${verb} ${filled} shares of $${selectedTicker}`);
+        } else if (orderForm.type === 'limit') {
+          setMsg('Limit order placed — waiting for fills');
+        } else {
+          setMsg('No shares filled — no matching orders');
+        }
+        await refreshState(); await load();
+      }
+    } catch (e) { setMsg(e.message); }
+    setLoading(false);
   };
 
   const selectStock = async (ticker) => {

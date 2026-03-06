@@ -335,6 +335,23 @@ function FranchisorPanel({ g, refreshState }) {
     }
   };
 
+  const handleDelete = async () => {
+    if (!confirm('Delete your franchise offering permanently? This cannot be undone.')) return;
+    setPending(true);
+    setError(null);
+    try {
+      const res = await postAction('deleteFranchiseOffering', {});
+      if (res?.ok) {
+        setSuccess('Franchise offering deleted.');
+        refreshState();
+      } else {
+        setError(res?.error || 'Failed to delete');
+      }
+    } finally {
+      setPending(false);
+    }
+  };
+
   if (!canFranchise) {
     return (
       <div className="card text-xs text-dim">
@@ -394,12 +411,22 @@ function FranchisorPanel({ g, refreshState }) {
           </div>
           <button
             className={`btn btn-sm ${g.franchiseOffering.active ? 'btn-red' : 'btn-green'}`}
-            style={{ width: '100%' }}
+            style={{ width: '100%', marginBottom: 6 }}
             disabled={pending}
             onClick={handleToggleActive}
           >
             {g.franchiseOffering.active ? 'Pause Offering (stop new applications)' : 'Reactivate Offering'}
           </button>
+          <button
+            className="btn btn-sm btn-outline"
+            style={{ width: '100%', color: '#ef5350', borderColor: '#ef5350' }}
+            disabled={pending}
+            onClick={handleDelete}
+          >
+            Delete Offering Permanently
+          </button>
+          {error && <div className="text-xs text-red" style={{ marginTop: 6 }}>{error}</div>}
+          {success && <div className="text-xs text-green" style={{ marginTop: 6 }}>{success}</div>}
         </div>
       ) : (
         <div className="card">

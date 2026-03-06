@@ -1160,6 +1160,10 @@ export async function updateFranchiseOffering(id, updates) {
   await pool.query(`UPDATE franchise_offerings SET ${sets.join(', ')} WHERE id = $${i}`, vals);
 }
 
+export async function deleteFranchiseOffering(id) {
+  await pool.query('DELETE FROM franchise_offerings WHERE id = $1', [id]);
+}
+
 // ── Franchise Agreements ──
 
 export async function createFranchiseAgreement(agreement) {

@@ -72,6 +72,7 @@ export const createFranchiseOffering = (...args) => impl.createFranchiseOffering
 export const getFranchiseOfferings = (...args) => impl.getFranchiseOfferings?.(...args);
 export const getFranchiseOfferingById = (...args) => impl.getFranchiseOfferingById?.(...args);
 export const updateFranchiseOffering = (...args) => impl.updateFranchiseOffering?.(...args);
+export const deleteFranchiseOffering = (...args) => impl.deleteFranchiseOffering?.(...args);
 export const createFranchiseAgreement = (...args) => impl.createFranchiseAgreement?.(...args);
 export const getFranchiseAgreements = (...args) => impl.getFranchiseAgreements?.(...args);
 export const getFranchiseAgreementById = (...args) => impl.getFranchiseAgreementById?.(...args);

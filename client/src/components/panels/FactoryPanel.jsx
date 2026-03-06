@@ -345,15 +345,14 @@ export default function FactoryPanel() {
               <div className="card-title">Production Queue</div>
               {queue.map((job, i) => {
                 const baseKey = job.tire.replace('brand_', '');
-                const baseName = tireName(job.tire, g);
-                const tireName = factory?.brandName ? `${factory.brandName} ${baseName}` : baseName;
+                const displayName = tireName(job.tire, g);
                 const daysLeft = Math.max(0, (job.completionDay || 0) - (g.day || 0));
                 const totalDays = Math.max(1, (job.completionDay || 0) - (job.startDay || 0));
                 const progress = Math.round(((totalDays - daysLeft) / totalDays) * 100);
                 return (
                   <div key={i} style={{ marginBottom: i < queue.length - 1 ? 8 : 0 }}>
                     <div className="row-between text-sm mb-4">
-                      <span className="font-bold">{tireName}</span>
+                      <span className="font-bold">{displayName}</span>
                       <span className="text-dim">{job.qty} tires - {daysLeft}d left</span>
                     </div>
                     <div className="progress-bar">
@@ -389,8 +388,7 @@ export default function FactoryPanel() {
               <select className="autoprice-select" style={{ width: '100%' }} value={selectedType} onChange={(e) => setSelectedType(e.target.value)}>
                 {allProducible.map(type => {
                   const isExcl = type.startsWith('brand_');
-                  const rawName = tireName(type, g);
-                  const name = factory?.brandName ? `${factory.brandName} ${rawName}` : rawName;
+                  const name = tireName(type, g);
                   const cost = isExcl ? (EXCLUSIVE_TIRES[type]?.baseCost || 80) : getEffectiveProductionCost(factory, type);
                   return <option key={type} value={type}>{name} -- ${cost}/tire{isExcl ? ' (Exclusive)' : ''}</option>;
                 })}
@@ -506,11 +504,11 @@ export default function FactoryPanel() {
                   const brandKey = `brand_${type}`;
                   const stock = (g.warehouseInventory?.[brandKey] || 0) + (g.warehouseInventory?.[type] || 0);
                   const price = factory.wholesalePrices[type];
-                  const tireName = factory?.brandName ? `${factory.brandName} ${t?.n || type}` : (t?.n || type);
+                  const displayName = tireName(type, g);
                   return (
                     <div key={type} className="row-between text-sm mb-4" style={{ padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
                       <div>
-                        <span className="font-bold">{tireName}</span>
+                        <span className="font-bold">{displayName}</span>
                         <span className="text-dim ml-4"> — ${price}/ea</span>
                       </div>
                       <div>

@@ -133,6 +133,7 @@ export const ACTION_SCHEMAS = {
   activatePremium:            empty,
   rewardAdWatch:              empty,
   activateAutoRestock:        empty,
+  setAutoRestock:             z.object({ enabled: z.boolean().optional(), threshold: optNum, maxSpend: optNum }).passthrough(),
   blockPlayer:                z.object({ targetPlayerId: id, targetName: optStr }),
   unblockPlayer:              z.object({ targetPlayerId: id }),
   updateNotifications:        z.object({}).passthrough(), // dynamic keys validated in handler
@@ -152,6 +153,7 @@ export const ACTION_SCHEMAS = {
   updateFranchiseOffering:    z.object({ active: z.boolean().optional(), buyIn: optNum, royaltyPct: optNum, monthlyFee: optNum, description: optStr }),
   buyFranchise:               z.object({ offeringId: str, locationId: str }),
   terminateFranchise:         z.object({ agreementId: str }),
+  deleteFranchiseOffering:    empty,
 };
 
 /** Top-level request body schema */

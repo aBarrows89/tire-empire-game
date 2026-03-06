@@ -303,8 +303,47 @@ export default function SupplierPanel() {
                       Disable
                     </button>
                   </div>
-                  <div className="text-xs text-dim mb-4">
-                    Threshold: {Math.round((g.autoRestock?.threshold || 0.3) * 100)}% | Budget: ${(g.autoRestock?.maxSpend || 50000).toLocaleString()}/cycle
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <div className="text-xs text-dim" style={{ marginBottom: 2 }}>Reorder Threshold</div>
+                      <select
+                        className="autoprice-select"
+                        style={{ width: '100%', fontSize: 12 }}
+                        value={Math.round((g.autoRestock?.threshold || 0.3) * 100)}
+                        onChange={async (e) => {
+                          setBusy('setThreshold');
+                          await postAction('setAutoRestock', { enabled: true, threshold: Number(e.target.value) / 100, maxSpend: g.autoRestock?.maxSpend || 50000 });
+                          refreshState();
+                          setBusy(null);
+                        }}
+                      >
+                        <option value="20">Below 20%</option>
+                        <option value="30">Below 30%</option>
+                        <option value="40">Below 40%</option>
+                        <option value="50">Below 50%</option>
+                        <option value="60">Below 60%</option>
+                      </select>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div className="text-xs text-dim" style={{ marginBottom: 2 }}>Budget per Cycle</div>
+                      <select
+                        className="autoprice-select"
+                        style={{ width: '100%', fontSize: 12 }}
+                        value={g.autoRestock?.maxSpend || 50000}
+                        onChange={async (e) => {
+                          setBusy('setBudget');
+                          await postAction('setAutoRestock', { enabled: true, threshold: g.autoRestock?.threshold || 0.3, maxSpend: Number(e.target.value) });
+                          refreshState();
+                          setBusy(null);
+                        }}
+                      >
+                        <option value="10000">$10K</option>
+                        <option value="25000">$25K</option>
+                        <option value="50000">$50K</option>
+                        <option value="100000">$100K</option>
+                        <option value="200000">$200K</option>
+                      </select>
+                    </div>
                   </div>
 
                   {/* Active auto-orders for this supplier */}

@@ -1,6 +1,6 @@
 import { uid } from '../../../shared/helpers/random.js';
 import {
-  createFranchiseOffering, getFranchiseOfferingById, updateFranchiseOffering,
+  createFranchiseOffering, getFranchiseOfferingById, getFranchiseOfferings, updateFranchiseOffering, deleteFranchiseOffering,
   createFranchiseAgreement, getFranchiseAgreements, getFranchiseAgreementById,
   updateFranchiseAgreement, getPlayer, savePlayerState, withPlayerLock,
 } from '../../db/queries.js';
@@ -58,8 +58,9 @@ export async function handleFranchise(action, params, g, ctx) {
         franchiseeCount: 0,
       };
 
-      ctx.log(`Created franchise offering: ${offering.brandName}`);
-      return { ok: true, offeringId };
+      g.log = g.log || [];
+      g.log.push({ msg: `Created franchise offering: ${offering.brandName}`, cat: 'event' });
+      break;
     }
 
     case 'updateFranchiseOffering': {
@@ -73,7 +74,7 @@ export async function handleFranchise(action, params, g, ctx) {
       if (description !== undefined) updates.description = description;
       await updateFranchiseOffering(g.franchiseOffering.id, updates);
       g.franchiseOffering = { ...g.franchiseOffering, ...updates };
-      return { ok: true };
+      break;
     }
 
     // ── BUY INTO A FRANCHISE ──
@@ -165,8 +166,33 @@ export async function handleFranchise(action, params, g, ctx) {
         console.error('[Franchise] Error paying buy-in to franchisor:', e.message);
       }
 
-      ctx.log(`Joined ${offering.brand_name} franchise for $${offering.buy_in.toLocaleString()}`);
-      return { ok: true, agreementId, brandName: offering.brand_name };
+      g.log = g.log || [];
+      g.log.push({ msg: `Joined ${offering.brand_name} franchise for $${offering.buy_in.toLocaleString()}`, cat: 'event' });
+      break;
+    }
+
+    // ── DELETE FRANCHISE OFFERING ──
+    case 'deleteFranchiseOffering': {
+      // Handle stuck offerings in DB that never got saved to player state (old ctx.log crash)
+      if (!g.franchiseOffering?.id) {
+        const allOfferings = await getFranchiseOfferings(false);
+        const myOfferings = allOfferings.filter(o => o.franchisor_id === g.id);
+        if (myOfferings.length === 0) return ctx.fail('No franchise offering to delete');
+        // Clean up all orphaned offerings
+        for (const o of myOfferings) await deleteFranchiseOffering(o.id);
+        g.log = g.log || [];
+        g.log.push({ msg: `Cleaned up ${myOfferings.length} orphaned franchise offering(s)`, cat: 'event' });
+        g.franchiseOffering = null;
+        break;
+      }
+      // Check for active franchisees first
+      const activeAgreements = await getFranchiseAgreements({ franchisorId: g.id, status: 'active' });
+      if (activeAgreements.length > 0) return ctx.fail(`Cannot delete while ${activeAgreements.length} franchisee(s) are active. They must terminate first.`);
+      await deleteFranchiseOffering(g.franchiseOffering.id);
+      g.log = g.log || [];
+      g.log.push({ msg: `Deleted franchise offering: ${g.franchiseOffering.brandName}`, cat: 'event' });
+      g.franchiseOffering = null;
+      break;
     }
 
     // ── TERMINATE A FRANCHISE AGREEMENT ──
@@ -195,8 +221,9 @@ export async function handleFranchise(action, params, g, ctx) {
         });
       } catch {}
 
-      ctx.log('Franchise agreement terminated');
-      return { ok: true };
+      g.log = g.log || [];
+      g.log.push({ msg: 'Franchise agreement terminated', cat: 'event' });
+      break;
     }
 
     default:

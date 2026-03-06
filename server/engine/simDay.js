@@ -713,10 +713,13 @@ export function simDay(g, shared = {}) {
         // Order tires proportionally based on recent sales history
         const salesHistory = s.salesByType || [];
         // Aggregate last 7 days of sales for a better signal
+        // Map branded tire sales (brand_allSeason) back to base types (allSeason)
         const recentSales = {};
         for (let si = Math.max(0, salesHistory.length - 7); si < salesHistory.length; si++) {
           for (const [t, q] of Object.entries(salesHistory[si] || {})) {
-            if (t !== 'day') recentSales[t] = (recentSales[t] || 0) + (q || 0);
+            if (t === 'day') continue;
+            const baseKey = t.startsWith('brand_') ? t.replace('brand_', '') : t;
+            if (TIRES[baseKey]) recentSales[baseKey] = (recentSales[baseKey] || 0) + (q || 0);
           }
         }
         const tireTypes = Object.keys(TIRES).filter(k => !TIRES[k].used);
@@ -725,10 +728,16 @@ export function simDay(g, shared = {}) {
         // Sort by most sold recently
         tireTypes.sort((a, b) => ((recentSales[b] || 0) - (recentSales[a] || 0)));
 
-        // Only stock types that have actually sold (or top 3 if nothing sold yet)
+        // Always stock at least 4 types for variety, even if only 1 type has sold
         const typesToStock = tireTypes.filter(t => (recentSales[t] || 0) > 0);
-        if (typesToStock.length === 0) typesToStock.push(...tireTypes.slice(0, 3));
+        // Fill to minimum of 4 types with next most popular standard types
+        for (const t of tireTypes) {
+          if (typesToStock.length >= 4) break;
+          if (!typesToStock.includes(t)) typesToStock.push(t);
+        }
 
+        // Cap max share per type at 40% to ensure diversity
+        const MAX_SHARE = 0.40;
         let spent = 0;
         let ordered = 0;
         for (const tire of typesToStock) {
@@ -737,8 +746,8 @@ export function simDay(g, shared = {}) {
           const priceMult = shared?.supplierPrices?.[supIdx]?.[tire] || shared?.supplierPricing?.[tire] || 1.0;
           const unitCost = Math.round(t.bMin * priceMult * (1 - (sup.disc || 0)));
           if (unitCost <= 0) continue;
-          // Allocate space proportionally to sales share, min 5 units
-          const salesShare = (recentSales[tire] || 0) / totalSales;
+          // Allocate space proportionally to sales share, capped at MAX_SHARE, min 5 units
+          const salesShare = Math.min(MAX_SHARE, (recentSales[tire] || 0) / totalSales);
           const targetQty = Math.max(5, Math.round(freeSpace * salesShare));
           const canAfford = Math.floor((budget - spent) / unitCost);
           const qty = Math.min(canAfford, targetQty, freeSpace - ordered);
