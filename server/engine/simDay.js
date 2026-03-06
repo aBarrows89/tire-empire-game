@@ -1118,7 +1118,10 @@ export function simDay(g, shared = {}) {
           let priceMult = shared?.supplierPrices?.[supIdx]?.[tire] || shared?.supplierPricing?.[tire] || 1.0;
           // New player protection: ignore commodity stress for first 90 days
           if ((s.day || 0) < 90 && priceMult > 1.0) priceMult = Math.min(priceMult, 1.10);
-          const unitCost = Math.round(t.bMin * priceMult * (1 - (sup.disc || 0)));
+          // Franchise supply_chain perk: 10% discount on sourcing if any location has it
+          const hasSupplyChainPerk = (s.franchises || []).some(f => f.status === 'active' && (s.locations || []).find(l => l.id === f.locationId)?.franchise?.perks?.includes('supply_chain'));
+          const supplyChainDisc = hasSupplyChainPerk ? 0.10 : 0;
+          const unitCost = Math.round(t.bMin * priceMult * (1 - (sup.disc || 0)) * (1 - supplyChainDisc));
           if (unitCost <= 0) continue;
           // Allocate space proportionally to sales share, capped at MAX_SHARE, min 5 units
           const salesShare = Math.min(MAX_SHARE, (recentSales[tire] || 0) / totalSales);
@@ -1315,7 +1318,9 @@ export function simDay(g, shared = {}) {
     for (const loc of s.locations) {
       if (!loc.inventory) loc.inventory = {};
       loc.dailyStats = { rev: 0, sold: 0, profit: 0, soldByType: {} };
-      let remainingStaffCap = remainingStaffCapGlobal;
+      // Franchise training perk: +5% effective staff capacity at this location
+      const locTrainingBoost = loc.franchise?.perks?.includes('training') ? 1.05 : 1;
+      let remainingStaffCap = Math.floor(remainingStaffCapGlobal * locTrainingBoost);
       const city = (shared.cities || []).find(c => c.id === loc.cityId) || { dem: 50, cost: 1, win: 0 };
       // ── LOYALTY UPDATE ──
       const locLoyalty = loc.loyalty || 0;
@@ -1357,7 +1362,11 @@ export function simDay(g, shared = {}) {
       const monopolyMult = aiShopsInCity === 0 ? 1.5 : aiShopsInCity <= 2 ? 1.2 : 1.0;
       const premiumTrafficMult = s.isPremium ? 1.08 : 1;
       const blitzMult = (s.marketingBlitz && s.day < s.marketingBlitz.expiresDay) ? 1.5 : 1;
-      let locDemand = Math.max(1, Math.floor(city.dem * .25 * demandMult * whPenalty * earlyBoostShop * loyaltyMult * marketingMult * marketShareMult * monopolyMult * holidayMult * premiumTrafficMult * globalDemandMult * blitzMult));
+      // Franchise perks: marketing (+10% traffic), training (+5% staff efficiency)
+      const franchisePerks = loc.franchise?.perks || [];
+      const franchiseTrafficMult = franchisePerks.includes('marketing') ? 1.10 : 1;
+      const franchiseStaffMult = franchisePerks.includes('training') ? 1.05 : 1;
+      let locDemand = Math.max(1, Math.floor(city.dem * .25 * demandMult * whPenalty * earlyBoostShop * loyaltyMult * marketingMult * marketShareMult * monopolyMult * holidayMult * premiumTrafficMult * globalDemandMult * blitzMult * franchiseTrafficMult));
       let locNewSold = 0;
 
       const retailTires = getAllTires(s);
@@ -2013,7 +2022,7 @@ export function simDay(g, shared = {}) {
         }
       }
     }
-    // Apply loyalty boost from franchise brand recognition perk
+    // Apply franchise perks (brand_recognition loyalty boost — others applied inline in sales loop)
     for (const loc of s.locations) {
       if (loc.franchise?.perks?.includes('brand_recognition')) {
         loc.loyalty = Math.min(100, (loc.loyalty || 0) + 0.1);

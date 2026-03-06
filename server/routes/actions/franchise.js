@@ -102,6 +102,22 @@ export async function handleFranchise(action, params, g, ctx) {
       const activeAgreements = await getFranchiseAgreements({ franchisorId: offering.franchisor_id, status: 'active' });
       if (activeAgreements.length >= offering.max_franchisees) return ctx.fail('This franchise has reached its maximum locations');
 
+      // Territory perk enforcement — if any existing franchisee in this city has territory rights, block
+      const offeringPerks = parseJson(offering.perks) || [];
+      if (offeringPerks.includes('territory')) {
+        const locCityId = loc.cityId;
+        for (const existing of activeAgreements) {
+          if (existing.franchisee_id === g.id) continue; // Skip self
+          const existingPlayer = await getPlayer(existing.franchisee_id);
+          if (!existingPlayer) continue;
+          const eg = existingPlayer.game_state;
+          const existingLoc = (eg.locations || []).find(l => l.id === existing.location_id);
+          if (existingLoc && existingLoc.cityId === locCityId) {
+            return ctx.fail(`Territory rights: another franchisee already operates in this city`);
+          }
+        }
+      }
+
       // Deduct buy-in
       g.cash -= offering.buy_in;
 

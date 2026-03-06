@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useGame } from '../../context/GameContext.jsx';
-import { postAction } from '../../api/client.js';
+import { postAction, getWholesaleSuppliers } from '../../api/client.js';
 import { FACTORY } from '@shared/constants/factory.js';
 import { RAW_MATERIALS, RD_PROJECTS, CERTIFICATIONS, FACTORY_DISCOUNT_TIERS_DEFAULT, EXCLUSIVE_TIRES, CFO_ROLE, RUBBER_FARM, SYNTHETIC_LAB, MATERIAL_SUPPLIERS, RUBBER_STORAGE, RUBBER_PER_TIRE, RUBBER_QUALITY } from '@shared/constants/factoryBrand.js';
 import { TIRES } from '@shared/constants/tires.js';
@@ -25,6 +25,9 @@ export default function FactoryPanel() {
   const [buyRubberQty, setBuyRubberQty] = useState(10);
   const [sellRubberType, setSellRubberType] = useState('natural');
   const [sellRubberQty, setSellRubberQty] = useState(10);
+  // Contracts state
+  const [contractSellers, setContractSellers] = useState([]);
+  const [contractForm, setContractForm] = useState({ sellerId: '', tireType: 'allSeason', qty: 500, pricePerUnit: 100, durationDays: 90, batchSize: 50, paymentTerms: 'on_delivery' });
 
   const factory = g.factory || null;
   const hasFactory = !!g.hasFactory;
@@ -124,7 +127,7 @@ export default function FactoryPanel() {
   // Raw material color helper
   const rmColor = (val) => val < 0.9 ? 'text-green' : val > 1.1 ? 'text-red' : 'text-accent';
 
-  const TABS = [['dashboard', 'Dashboard'], ['production', 'Production'], ['wholesale', 'Wholesale'], ['rd', 'R&D'], ['staff', 'Staff'], ['supply', 'Supply Chain']];
+  const TABS = [['dashboard', 'Dashboard'], ['production', 'Production'], ['wholesale', 'Wholesale'], ['contracts', 'Contracts'], ['rd', 'R&D'], ['staff', 'Staff'], ['supply', 'Supply Chain']];
 
   return (
     <>
@@ -837,6 +840,220 @@ export default function FactoryPanel() {
           )}
         </>
       )}
+
+      {/* ═══ CONTRACTS TAB ═══ */}
+      {tab === 'contracts' && (() => {
+        const p2p = g.p2pContracts || [];
+        const commodity = g.commodityContracts || [];
+        const activeP2P = p2p.filter(c => c.status === 'active' || c.status === 'paused');
+        const pendingP2P = p2p.filter(c => c.status === 'proposed' || c.status === 'countered');
+        const historyP2P = p2p.filter(c => ['completed', 'cancelled', 'denied', 'expired'].includes(c.status)).slice(-10);
+        const activeCommodity = commodity.filter(c => c.status === 'active');
+        const isSeller = (c) => c.sellerId === g.id;
+        const allocations = factory?.contractAllocations || {};
+
+        return (
+          <>
+            {/* Pending Proposals */}
+            {pendingP2P.length > 0 && (
+              <div className="card">
+                <div className="card-title">Pending Proposals ({pendingP2P.length})</div>
+                {pendingP2P.map(c => (
+                  <div key={c.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                    <div className="row-between">
+                      <span className="font-bold text-sm">{isSeller(c) ? `From: ${c.buyerName}` : `To: ${c.sellerName}`}</span>
+                      <span className="text-xs" style={{ background: 'rgba(255,193,7,0.15)', color: '#ffca28', padding: '2px 8px', borderRadius: 8 }}>
+                        {c.status === 'countered' ? `Counter #${c.counterCount}` : 'Proposed'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-dim mt-4">
+                      {TIRES[c.terms?.tireType]?.n || c.terms?.tireType} — {c.terms?.qty} units @ ${c.terms?.pricePerUnit}/ea — {c.terms?.durationDays}d
+                    </div>
+                    <div className="text-xs text-dim">Payment: {c.terms?.paymentTerms} — Batch: {c.terms?.batchSize} — Expires day {c.expiresDay}</div>
+                    <div className="row gap-8 mt-4">
+                      {/* Can accept if other party proposed/countered */}
+                      {((isSeller(c) && c.proposedBy === 'buyer') || (!isSeller(c) && c.proposedBy === 'seller')) && (
+                        <button className="btn btn-sm" disabled={busy} style={{ background: 'var(--green)', color: '#fff', fontSize: 11 }}
+                          onClick={() => doAction('acceptContract', { contractId: c.id })}>Accept</button>
+                      )}
+                      <button className="btn btn-sm btn-outline" disabled={busy} style={{ fontSize: 11 }}
+                        onClick={() => doAction('denyContract', { contractId: c.id })}>Deny</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Active P2P Contracts */}
+            <div className="card">
+              <div className="card-title">Active Production Contracts ({activeP2P.length})</div>
+              {activeP2P.length === 0 && <div className="text-xs text-dim">No active contracts. Propose one to a factory distributor below.</div>}
+              {activeP2P.map(c => {
+                const alloc = allocations[c.id];
+                const progress = c.terms?.qty > 0 ? Math.round((c.deliveredQty || 0) / c.terms.qty * 100) : 0;
+                return (
+                  <div key={c.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                    <div className="row-between">
+                      <span className="font-bold text-sm">
+                        {isSeller(c) ? `Buyer: ${c.buyerName}` : `Seller: ${c.sellerName}`}
+                      </span>
+                      <span className="text-xs" style={{ background: c.status === 'paused' ? 'rgba(255,152,0,0.15)' : 'rgba(76,175,80,0.15)', color: c.status === 'paused' ? '#ff9800' : 'var(--green)', padding: '2px 8px', borderRadius: 8 }}>
+                        {c.status}
+                      </span>
+                    </div>
+                    <div className="text-xs text-dim mt-4">
+                      {TIRES[c.terms?.tireType]?.n || c.terms?.tireType} — {c.deliveredQty || 0}/{c.terms?.qty} delivered ({progress}%) — ${c.terms?.pricePerUnit}/ea
+                    </div>
+                    {/* Progress bar */}
+                    <div style={{ height: 4, background: 'var(--bg-card)', borderRadius: 2, marginTop: 4 }}>
+                      <div style={{ height: '100%', width: `${progress}%`, background: 'var(--green)', borderRadius: 2 }} />
+                    </div>
+                    {/* Seller allocation controls */}
+                    {isSeller(c) && alloc && (
+                      <div className="text-xs mt-4" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className="text-dim">Allocation: {alloc.percent}%</span>
+                        <span className="text-dim">Auto-run: {alloc.autoRun ? 'ON' : 'OFF'}</span>
+                        <button className="btn btn-sm btn-outline" disabled={busy} style={{ fontSize: 10, padding: '2px 6px' }}
+                          onClick={() => doAction('toggleContractAutoRun', { contractId: c.id })}>
+                          {alloc.autoRun ? 'Pause Auto' : 'Enable Auto'}
+                        </button>
+                      </div>
+                    )}
+                    <div className="row gap-8 mt-4">
+                      {c.status === 'active' && (
+                        <button className="btn btn-sm btn-outline" disabled={busy} style={{ fontSize: 11 }}
+                          onClick={() => doAction('pauseContract', { contractId: c.id })}>Pause</button>
+                      )}
+                      {c.status === 'paused' && (
+                        <button className="btn btn-sm btn-outline" disabled={busy} style={{ fontSize: 11 }}
+                          onClick={() => doAction('resumeContract', { contractId: c.id })}>Resume</button>
+                      )}
+                      <button className="btn btn-sm" disabled={busy} style={{ fontSize: 11, background: 'rgba(239,83,80,0.15)', color: 'var(--red)', border: '1px solid rgba(239,83,80,0.3)' }}
+                        onClick={() => doAction('cancelContract', { contractId: c.id })}>Cancel (10% fee)</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Active Commodity Contracts */}
+            {activeCommodity.length > 0 && (
+              <div className="card">
+                <div className="card-title">Commodity Supply Contracts ({activeCommodity.length})</div>
+                {activeCommodity.map(c => {
+                  const isCommoditySeller = c.sellerPlayerId === g.id;
+                  return (
+                    <div key={c.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                      <div className="row-between">
+                        <span className="font-bold text-sm">
+                          {isCommoditySeller ? `Buyer: ${c.buyerName}` : `Seller: ${c.sellerName}`}
+                        </span>
+                        <span className="text-xs" style={{ background: 'rgba(76,175,80,0.15)', color: 'var(--green)', padding: '2px 8px', borderRadius: 8 }}>active</span>
+                      </div>
+                      <div className="text-xs text-dim mt-4">
+                        {c.commodity} — {c.qtyPerDay}/day @ ${c.pricePerUnit}/unit ({c.priceType}) — ends day {c.endDay}
+                      </div>
+                      <div className="text-xs text-dim">Delivered: {c.deliveredQty || 0} — Revenue: ${(c.totalRevenue || 0).toLocaleString()}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Propose New Contract */}
+            <div className="card">
+              <div className="card-title">Propose Production Contract</div>
+              <div className="text-xs text-dim mb-8">Find a factory distributor and propose a contract to buy their branded tires.</div>
+              {contractSellers.length === 0 ? (
+                <button className="btn btn-sm" disabled={busy} onClick={async () => {
+                  setBusy(true);
+                  try {
+                    const res = await getWholesaleSuppliers();
+                    setContractSellers((res || []).filter(s => s.id !== g.id));
+                  } catch {}
+                  setBusy(false);
+                }}>Load Factory Distributors</button>
+              ) : (
+                <>
+                  <div className="text-xs mb-4">
+                    <label className="text-dim">Seller</label>
+                    <select value={contractForm.sellerId} onChange={e => setContractForm(f => ({ ...f, sellerId: e.target.value }))}
+                      style={{ width: '100%', padding: 4, marginTop: 2 }}>
+                      <option value="">Select a factory...</option>
+                      {contractSellers.map(s => (
+                        <option key={s.id} value={s.id}>{s.brandName || s.companyName} (Lv{s.factoryLevel})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="row gap-8 mb-4">
+                    <div style={{ flex: 1 }}>
+                      <label className="text-xs text-dim">Tire Type</label>
+                      <select value={contractForm.tireType} onChange={e => setContractForm(f => ({ ...f, tireType: e.target.value }))}
+                        style={{ width: '100%', padding: 4, marginTop: 2 }}>
+                        {Object.entries(TIRES).filter(([k, t]) => !t.used).map(([k, t]) => (
+                          <option key={k} value={k}>{t.n}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label className="text-xs text-dim">Total Qty</label>
+                      <input type="number" value={contractForm.qty} onChange={e => setContractForm(f => ({ ...f, qty: parseInt(e.target.value) || 0 }))}
+                        style={{ width: '100%', padding: 4, marginTop: 2 }} min={100} />
+                    </div>
+                  </div>
+                  <div className="row gap-8 mb-4">
+                    <div style={{ flex: 1 }}>
+                      <label className="text-xs text-dim">$/unit</label>
+                      <input type="number" value={contractForm.pricePerUnit} onChange={e => setContractForm(f => ({ ...f, pricePerUnit: parseInt(e.target.value) || 0 }))}
+                        style={{ width: '100%', padding: 4, marginTop: 2 }} min={1} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label className="text-xs text-dim">Duration (days)</label>
+                      <input type="number" value={contractForm.durationDays} onChange={e => setContractForm(f => ({ ...f, durationDays: parseInt(e.target.value) || 90 }))}
+                        style={{ width: '100%', padding: 4, marginTop: 2 }} min={30} max={365} />
+                    </div>
+                  </div>
+                  <div className="row gap-8 mb-8">
+                    <div style={{ flex: 1 }}>
+                      <label className="text-xs text-dim">Batch Size</label>
+                      <input type="number" value={contractForm.batchSize} onChange={e => setContractForm(f => ({ ...f, batchSize: parseInt(e.target.value) || 50 }))}
+                        style={{ width: '100%', padding: 4, marginTop: 2 }} min={10} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label className="text-xs text-dim">Payment</label>
+                      <select value={contractForm.paymentTerms} onChange={e => setContractForm(f => ({ ...f, paymentTerms: e.target.value }))}
+                        style={{ width: '100%', padding: 4, marginTop: 2 }}>
+                        <option value="on_delivery">On Delivery</option>
+                        <option value="prepaid">Prepaid</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="text-xs text-dim mb-4">
+                    Total value: ${((contractForm.qty || 0) * (contractForm.pricePerUnit || 0)).toLocaleString()} + 2% commission + $2/tire delivery
+                  </div>
+                  <button className="btn btn-sm" disabled={busy || !contractForm.sellerId || !contractForm.qty}
+                    onClick={() => doAction('proposeContract', contractForm)}>
+                    Propose Contract
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Contract History */}
+            {historyP2P.length > 0 && (
+              <div className="card">
+                <div className="card-title">Contract History</div>
+                {historyP2P.map(c => (
+                  <div key={c.id} className="row-between text-xs" style={{ padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
+                    <span>{isSeller(c) ? c.buyerName : c.sellerName} — {TIRES[c.terms?.tireType]?.n || c.terms?.tireType}</span>
+                    <span className="text-dim">{c.status} — {c.deliveredQty || 0}/{c.terms?.qty}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {/* ═══ R&D TAB ═══ */}
       {tab === 'rd' && (
