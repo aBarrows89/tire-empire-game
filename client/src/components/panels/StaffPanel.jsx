@@ -28,21 +28,19 @@ export default function StaffPanel() {
     if (pending) return;
     setPending(role + '_hire');
     setError(null);
-    // Optimistic update — show change instantly
-    applyState({ state: { ...g, staff: { ...g.staff, [role]: (g.staff[role] || 0) + 1 }, cash: g.cash - (PAY[role] || 0) } });
     try {
       const res = await postAction('hireStaff', { role });
       if (res?.error) {
-        // Roll back on error
-        refreshState();
         setError(res.error);
         setTimeout(() => setError(null), 3000);
         return;
       }
       hapticsMedium();
-      if (res?.state) applyState(res); // Apply authoritative state from server
+      // Apply authoritative state from server — no optimistic update to avoid
+      // brief welcome screen flash if state shape is unexpected
+      if (res?.state) applyState(res);
     } catch {
-      refreshState(); // Sync on network error
+      refreshState();
     } finally {
       setPending(null);
     }
@@ -52,12 +50,9 @@ export default function StaffPanel() {
     if (pending) return;
     setPending(role + '_fire');
     setError(null);
-    // Optimistic update
-    applyState({ state: { ...g, staff: { ...g.staff, [role]: Math.max(0, (g.staff[role] || 0) - 1) } } });
     try {
       const res = await postAction('fireStaff', { role });
       if (res?.error) {
-        refreshState();
         setError(res.error);
         setTimeout(() => setError(null), 3000);
         return;
