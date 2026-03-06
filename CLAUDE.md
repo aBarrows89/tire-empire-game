@@ -297,7 +297,7 @@ Vinnie should **not** mention commodity layer mechanics until player has a facto
 ## Environment
 
 - `DATABASE_URL` — Railway Postgres connection string
-- `TICK_MS` — tick interval in ms (default 60000 = 1 real minute = 1 game day)
+- `TICK_MS` — tick interval in ms (default 20000 = 20 seconds = 1 game day)
 - Firebase config in `client/src/services/firebase.js`
 - Railway handles deployment — push to `main` triggers deploy
 
