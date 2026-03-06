@@ -668,6 +668,8 @@ export default function StoragePanel() {
         {Object.entries(STORAGE).map(([type, st]) => {
           if (st.c === 0) return null; // skip van
           const cantAfford = g.cash < st.c;
+          const isWarehouseType = ['smallWH', 'warehouse', 'distCenter'].includes(type);
+          const needsDriverWarning = isWarehouseType && !g.hasWarehouse && (g.staff?.drivers || 0) === 0;
           return (
             <div key={type} className="card" style={{ background: 'var(--surface)' }}>
               <div className="row-between mb-4">
@@ -682,6 +684,11 @@ export default function StoragePanel() {
                 )}
                 {st.staff > 0 ? ` · ${st.staff} staff required` : ''}
               </div>
+              {needsDriverWarning && (
+                <div style={{ fontSize: 11, color: 'var(--yellow, #facc15)', background: 'rgba(250,204,21,0.1)', borderRadius: 5, padding: '5px 8px', marginBottom: 8, lineHeight: 1.4 }}>
+                  ⚠️ Warehouse storage requires <strong>Drivers</strong> to move tires to your shops. Hire drivers in the Staff panel or your stores will run out of inventory.
+                </div>
+              )}
               <button
                 className="btn btn-full btn-sm"
                 disabled={cantAfford || busy === type}
