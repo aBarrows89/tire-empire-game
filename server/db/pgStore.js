@@ -588,7 +588,7 @@ export function trimExchange(econ) {
     const activeIds = new Set(ex._activePlayerIds);
     const before = Object.keys(ex.stocks).length;
     for (const [ticker, s] of Object.entries(ex.stocks)) {
-      if (s.playerId && !activeIds.has(s.playerId) && !s.isNPC) {
+      if (!activeIds.has(s.playerId)) {
         delete ex.stocks[ticker];
         if (ex.orderBooks?.[ticker]) delete ex.orderBooks[ticker];
       }
