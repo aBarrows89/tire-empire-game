@@ -88,6 +88,8 @@ function GameLayout() {
   const shownRef = useRef(new Set());
   const notifShownDayRef = useRef(0);
   const prevPanelRef = useRef(null);
+  // Once we've seen a companyName, never flash back to WelcomeScreen mid-session
+  const confirmedCompanyRef = useRef(null);
 
   // Minimum splash duration
   useEffect(() => {
@@ -152,8 +154,11 @@ function GameLayout() {
     </div>
   );
 
-  // Show welcome screen if no company name set
-  if (!g.companyName) return <WelcomeScreen />;
+  // Show welcome screen only if we've never confirmed a company name this session
+  // Using a ref prevents race conditions (tick/refresh wiping state mid-action)
+  // from flashing back to WelcomeScreen for established players
+  if (g?.companyName) confirmedCompanyRef.current = g.companyName;
+  if (!confirmedCompanyRef.current) return <WelcomeScreen />;
 
   // Check for new achievements — deduplicated via shownRef
   if (g._newAchievements && g._newAchievements.length > 0 && !toastAch) {

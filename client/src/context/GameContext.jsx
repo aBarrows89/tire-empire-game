@@ -9,7 +9,14 @@ const GameContext = createContext();
 function gameReducer(state, action) {
   switch (action.type) {
     case 'SET_STATE': {
-      const g = action.payload;
+      let g = action.payload;
+      // Guard: never regress to a state without companyName if we already have one.
+      // Prevents a bad tick/refresh from flashing WelcomeScreen mid-session.
+      if (!g?.companyName && state.game?.companyName) {
+        console.warn('[GameContext] SET_STATE received state without companyName — keeping existing state.game');
+        g = { ...(g || {}), companyName: state.game.companyName };
+      }
+      if (!g) return state; // null payload — ignore
       // Calendar day = game day + startDay offset (same formula used throughout simDay)
       const calDay = (g.day || 0) + (g.startDay || 1) - 1;
       const newEntries = (g.log || []).map(l => {
