@@ -1580,6 +1580,10 @@ export async function runTick(clients) {
     }
 
     // Update game day — retry once on failure before aborting
+    // Pass active player IDs so trimExchange can purge orphaned stocks
+    if (game.economy) {
+      game.economy._activePlayerIds = players.map(p => p.id);
+    }
     let saveGameOk = false;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {

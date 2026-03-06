@@ -582,6 +582,21 @@ export function trimExchange(econ) {
       }
     }
   }
+  // Purge stocks for players that no longer exist (dead bots, removed players)
+  // Pass activePlayerIds via econ._activePlayerIds before calling trimExchange
+  if (ex.stocks && ex._activePlayerIds) {
+    const activeIds = new Set(ex._activePlayerIds);
+    const before = Object.keys(ex.stocks).length;
+    for (const [ticker, s] of Object.entries(ex.stocks)) {
+      if (s.playerId && !activeIds.has(s.playerId) && !s.isNPC) {
+        delete ex.stocks[ticker];
+        if (ex.orderBooks?.[ticker]) delete ex.orderBooks[ticker];
+      }
+    }
+    delete ex._activePlayerIds;
+    const after = Object.keys(ex.stocks).length;
+    if (before !== after) console.log(`[trimExchange] Purged ${before - after} orphan stocks (${before} → ${after})`);
+  }
   // Transaction logs, market reports, etc.
   if (ex.transactionLog?.length > 20) ex.transactionLog = ex.transactionLog.slice(-20);
   if (ex.ipoHistory?.length > 10) ex.ipoHistory = ex.ipoHistory.slice(-10);
@@ -664,9 +679,9 @@ export async function saveGame(id, day, economy, aiShops, liquidation) {
     const liqStr = JSON.stringify(liquidation || []);
     const econKB = Math.round(econStr.length / 1024);
     const shopsKB = Math.round(shopsStr.length / 1024);
-    if (econKB > 200) console.warn(`[pgStore] saveGame: economy is ${econKB}KB — approaching timeout risk`);
-    if (econKB > 800) {
-      console.error(`[pgStore] saveGame ABORTED: economy ${econKB}KB exceeds 800KB safety limit. Tick will retry next cycle.`);
+    if (econKB > 500) console.warn(`[pgStore] saveGame: economy is ${econKB}KB — approaching timeout risk`);
+    if (econKB > 4000) {
+      console.error(`[pgStore] saveGame ABORTED: economy ${econKB}KB exceeds 4MB safety limit. Tick will retry next cycle.`);
       return;
     }
     await pool.query(
