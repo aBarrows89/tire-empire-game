@@ -596,3 +596,47 @@ router.get('/player-debug/:id', async (req, res) => {
 });
 
 export default router;
+
+// POST /admin/economy/trim-games-row
+// Emergency: strips derived/bloated fields from the games row so SELECT stops timing out.
+router.post('/trim-games-row', async (req, res) => {
+  try {
+    const { pool } = await import('../../db/pool.js');
+    // Use 60s timeout for this one query
+    const client = await pool.connect();
+    try {
+      await client.query('SET statement_timeout = 60000');
+      const { rows } = await client.query("SELECT economy FROM games WHERE id = 'default'");
+      if (!rows[0]) return res.status(404).json({ error: 'No games row' });
+      let economy = rows[0].economy;
+      if (typeof economy === 'string') economy = JSON.parse(economy);
+      const beforeKB = Math.round(JSON.stringify(economy).length / 1024);
+      if (economy?.exchange?.stocks) {
+        for (const s of Object.values(economy.exchange.stocks)) {
+          delete s.revenueHistory; delete s.revenueBySegment;
+          delete s.riskRating; delete s.weeklyGrowth;
+          delete s.profitMargin; delete s.dividendYield;
+          if (s.priceHistory?.length > 30) s.priceHistory = s.priceHistory.slice(-30);
+        }
+      }
+      if (economy?.exchange?.orderBooks) {
+        for (const ob of Object.values(economy.exchange.orderBooks)) {
+          if (ob.bids?.length > 20) ob.bids = ob.bids.slice(-20);
+          if (ob.asks?.length > 20) ob.asks = ob.asks.slice(-20);
+          delete ob.fills;
+        }
+      }
+      if (economy?.tcMarketplace?.tradeHistory?.length > 50) {
+        economy.tcMarketplace.tradeHistory = economy.tcMarketplace.tradeHistory.slice(0, 50);
+      }
+      const afterStr = JSON.stringify(economy);
+      const afterKB = Math.round(afterStr.length / 1024);
+      await client.query("UPDATE games SET economy = $1::jsonb WHERE id = 'default'", [afterStr]);
+      res.json({ ok: true, beforeKB, afterKB, savedKB: beforeKB - afterKB });
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
