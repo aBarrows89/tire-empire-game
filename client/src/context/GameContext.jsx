@@ -137,15 +137,7 @@ export function GameProvider({ children }) {
   // Apply state directly from action response — avoids extra GET /state round trip
   const applyState = useCallback((actionResult) => {
     if (actionResult?.state) {
-      const s = actionResult.state;
-      console.log('[applyState DEBUG] companyName:', s?.companyName, '| cash:', s?.cash, '| day:', s?.day);
-      if (!s?.companyName) {
-        console.warn('[applyState DEBUG] WARNING: state has no companyName! Skipping dispatch to avoid welcome screen flash.');
-        return;
-      }
-      // Dispatch raw game state — SET_STATE expects the game object directly,
-      // same shape as tick and refreshState payloads
-      dispatch({ type: 'SET_STATE', payload: s });
+      dispatch({ type: 'SET_STATE', payload: actionResult.state });
     }
   }, [dispatch]);
 
