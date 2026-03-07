@@ -15,11 +15,13 @@ const GameContext = createContext();
  */
 function migrateFactoryState(g) {
   if (!g || !g.hasFactory || !g.factory) return;
+
+  // Migrate legacy flat factory state → lines array
   if (!g.factory.lines) {
     g.factory.lines = [{
       id: 0,
-      queue: g.factory.productionQueue || [],
-      currentType: g.factory.currentLine || null,
+      queue: Array.isArray(g.factory.productionQueue) ? g.factory.productionQueue : [],
+      currentType: typeof g.factory.currentLine === 'string' ? g.factory.currentLine : null,
       runStreak: 0,
       lastMaintDay: g.day || 0,
       status: 'active',
@@ -29,12 +31,35 @@ function migrateFactoryState(g) {
     delete g.factory.currentLine;
     delete g.factory.switchCooldown;
   }
-  // Safety: ensure every line has primitive-only values that won't crash React
+
+  // Safety: ensure every line exposes only safe primitive values.
+  // A line object must NEVER be rendered directly as a React child.
+  // Each field used in JSX must be a primitive (string / number / boolean / null).
+  if (!Array.isArray(g.factory.lines)) g.factory.lines = [];
   for (const line of g.factory.lines) {
-    if (typeof line.switchCooldown !== 'number') line.switchCooldown = 0;
-    if (typeof line.runStreak !== 'number') line.runStreak = 0;
-    if (typeof line.lastMaintDay !== 'number') line.lastMaintDay = 0;
+    // id – number
+    if (typeof line.id !== 'number') line.id = 0;
+    // status – string used directly in JSX comparisons and renders
     if (typeof line.status !== 'string') line.status = 'active';
+    // currentType – string or null  
+    if (line.currentType !== null && typeof line.currentType !== 'string') line.currentType = null;
+    // runStreak – number rendered directly
+    if (typeof line.runStreak !== 'number') line.runStreak = 0;
+    // lastMaintDay – number
+    if (typeof line.lastMaintDay !== 'number') line.lastMaintDay = 0;
+    // switchCooldown – number
+    if (typeof line.switchCooldown !== 'number') line.switchCooldown = 0;
+    // queue – array; ensure it is never accidentally rendered as an object
+    if (!Array.isArray(line.queue)) line.queue = [];
+  }
+
+  // Guard: factory root must not retain old object-typed production fields
+  // that could leak into log entries or stat displays as renderable objects.
+  if (g.factory.currentLine && typeof g.factory.currentLine !== 'string') {
+    delete g.factory.currentLine;
+  }
+  if (g.factory.productionQueue && !Array.isArray(g.factory.productionQueue)) {
+    delete g.factory.productionQueue;
   }
 }
 
@@ -51,6 +76,34 @@ function gameReducer(state, action) {
       if (!g) return state; // null payload — ignore
       // Migrate legacy factory state to prevent React error #31
       migrateFactoryState(g);
+      // Guard: ensure top-level fields that are rendered as text are primitives.
+      // If a server bug sends an object where a string is expected, coerce it now
+      // rather than letting React throw Minified Error #31 on the client.
+      const _forceString = (obj, key, fallback = '') => {
+        if (obj[key] !== null && obj[key] !== undefined && typeof obj[key] !== 'string') {
+          console.warn('[GameContext] Non-string value at', key, '— coercing:', typeof obj[key]);
+          obj[key] = fallback;
+        }
+      };
+      _forceString(g, 'companyName', 'My Company');
+      _forceString(g, 'name', '');
+      // Factory status fields that are displayed directly in JSX
+      if (g.factory) {
+        _forceString(g.factory, 'brandName', 'My Tires');
+        // Ensure factory.lines[0] status/currentType are safe primitives before render
+        if (Array.isArray(g.factory.lines)) {
+          g.factory.lines.forEach((line, idx) => {
+            if (line && typeof line === 'object') {
+              if (typeof line.status !== 'string') line.status = 'active';
+              if (line.currentType !== null && typeof line.currentType !== 'string') line.currentType = null;
+              if (typeof line.runStreak !== 'number') line.runStreak = 0;
+              if (typeof line.switchCooldown !== 'number') line.switchCooldown = 0;
+              if (typeof line.lastMaintDay !== 'number') line.lastMaintDay = 0;
+              if (!Array.isArray(line.queue)) line.queue = [];
+            }
+          });
+        }
+      }
       // Calendar day = game day + startDay offset (same formula used throughout simDay)
       const calDay = (g.day || 0) + (g.startDay || 1) - 1;
       const newEntries = (g.log || []).map(l => {
