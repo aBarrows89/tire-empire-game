@@ -35,6 +35,7 @@ const SECONDARY_TABS = [
 
 function getUnlockedTabs(g) {
   const inv = getInv(g);
+  const locs = g.locations || [];
   const unlocked = new Set(['dashboard', 'source', 'pricing', 'log', 'profile', 'leaderboard']);
 
   // Storage: as soon as you have any tires
@@ -44,16 +45,16 @@ function getUnlockedTabs(g) {
   if (g.reputation >= 3 || g.cash < 50 || (g.loans || []).length > 0) unlocked.add('bank');
 
   // Shop: once you're getting established
-  if (g.cash >= 20000 || g.reputation >= 15 || g.locations.length > 0) unlocked.add('shop');
+  if (g.cash >= 20000 || g.reputation >= 15 || locs.length > 0) unlocked.add('shop');
 
   // Staff: once you have a shop or enough cash
-  if (g.locations.length > 0 || g.cash >= 50000) unlocked.add('staff');
+  if (locs.length > 0 || g.cash >= 50000) unlocked.add('staff');
 
   // Supplier: once you have rep
   if (g.reputation >= 8 || (g.unlockedSuppliers || []).length > 0) unlocked.add('supplier');
 
   // Marketplace & Trade
-  if (g.locations.length > 0 || g.reputation >= 10 || g.cash >= 50000) {
+  if (locs.length > 0 || g.reputation >= 10 || g.cash >= 50000) {
     unlocked.add('marketplace');
     unlocked.add('trade');
   }
@@ -68,16 +69,16 @@ function getUnlockedTabs(g) {
   if (g.hasEcom || (g.reputation >= 30 && g.cash >= 50000)) unlocked.add('ecommerce');
 
   // Wholesale: show if unlocked or meets requirements
-  if (g.hasWholesale || (g.reputation >= 25 && g.locations.length >= 2)) unlocked.add('wholesale');
+  if (g.hasWholesale || (g.reputation >= 25 && locs.length >= 2)) unlocked.add('wholesale');
 
   // Exchange: show if has brokerage or meets requirements
-  if (g.stockExchange?.hasBrokerage || (g.reputation >= 10 && (g.locations || []).length >= 1)) unlocked.add('exchange');
+  if (g.stockExchange?.hasBrokerage || (g.reputation >= 10 && locs.length >= 1)) unlocked.add('exchange');
 
   // Franchise: visible at rep 50+ (teaser) or if already franchising
   if (g.hasFactory || g.reputation >= 50 || (g.franchises || []).length > 0 || g.franchiseOffering?.active) unlocked.add('franchise');
 
   // Map: available once you have any shop
-  if ((g.locations || []).length > 0) unlocked.add('map');
+  if (locs.length > 0) unlocked.add('map');
 
   return unlocked;
 }
