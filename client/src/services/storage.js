@@ -9,3 +9,7 @@ export function safeSetItem(key, value) {
 export function safeGetItem(key) {
   try { return localStorage.getItem(key); } catch { return null; }
 }
+
+export function safeSessionGetItem(key) {
+  try { return sessionStorage.getItem(key); } catch { return null; }
+}

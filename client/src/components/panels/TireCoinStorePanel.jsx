@@ -5,6 +5,7 @@ import { TC_RUSH, TC_SUPPLIER_ACCESS, TC_INTEL, TC_FINANCIAL, TC_OPERATIONS } fr
 import { postAction } from '../../api/client.js';
 import { hapticsMedium } from '../../api/haptics.js';
 import { TireCoin, ProgressBar, UICard } from '../ui/ui.jsx';
+import { safeGetItem, safeSessionGetItem } from '../../services/storage.js';
 import { initPurchases, purchaseProduct, getProductPricing, isIAPAvailable } from '../../api/purchases.js';
 
 function TCBalance({ g }) {
@@ -155,7 +156,7 @@ export default function TireCoinStorePanel() {
       setBusy('granting');
       try {
         const apiBase = import.meta.env.VITE_API_URL || '';
-        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+        const token = safeGetItem('token') || safeSessionGetItem('token');
         const resp = await fetch(`${apiBase}/api/iap/grant`, {
           method: 'POST',
           headers: {
