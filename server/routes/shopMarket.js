@@ -14,9 +14,6 @@ import { getLocInv } from '../../shared/helpers/inventory.js';
 import { rebuildGlobalInv } from '../../shared/helpers/inventory.js';
 
 const router = Router();
-  };
-  next();
-});
 
 // GET /api/shop-market/listings — all active shop sale listings
 router.get('/listings', async (req, res) => {
