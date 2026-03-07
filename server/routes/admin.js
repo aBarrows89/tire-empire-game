@@ -953,4 +953,103 @@ router.post('/trim-economy', async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════
+// MERGE PLAYERS
+// ═══════════════════════════════════════
+
+router.post('/merge-players', async (req, res) => {
+  try {
+    const { sourceCompany, targetCompany } = req.body;
+    if (!sourceCompany || !targetCompany) {
+      return res.status(400).json({ error: 'sourceCompany and targetCompany required' });
+    }
+
+    // Find both players by company name
+    const all = await getAllActivePlayers();
+    const source = all.find(p => (p.game_state?.companyName || '').toLowerCase() === sourceCompany.toLowerCase());
+    const target = all.find(p => (p.game_state?.companyName || '').toLowerCase() === targetCompany.toLowerCase());
+
+    if (!source) return res.status(404).json({ error: `Source player "${sourceCompany}" not found` });
+    if (!target) return res.status(404).json({ error: `Target player "${targetCompany}" not found` });
+    if (source.id === target.id) return res.status(400).json({ error: 'Source and target are the same player' });
+
+    const sg = source.game_state;
+    const tg = target.game_state;
+
+    const merged = {
+      cash: Math.round(sg.cash || 0),
+      tireCoins: sg.tireCoins || 0,
+      bankBalance: Math.round(sg.bankBalance || 0),
+      reputation: Math.round((sg.reputation || 0) * 10) / 10,
+      warehouseItems: {},
+    };
+
+    // Transfer cash, tireCoins, bankBalance
+    tg.cash = (tg.cash || 0) + (sg.cash || 0);
+    tg.tireCoins = (tg.tireCoins || 0) + (sg.tireCoins || 0);
+    tg.bankBalance = (tg.bankBalance || 0) + (sg.bankBalance || 0);
+
+    // Take the higher reputation
+    tg.reputation = Math.max(tg.reputation || 0, sg.reputation || 0);
+
+    // Merge warehouse inventory
+    const srcWh = sg.warehouseInventory || {};
+    if (!tg.warehouseInventory) tg.warehouseInventory = {};
+    for (const [tire, qty] of Object.entries(srcWh)) {
+      if (qty > 0) {
+        tg.warehouseInventory[tire] = (tg.warehouseInventory[tire] || 0) + qty;
+        merged.warehouseItems[tire] = qty;
+      }
+    }
+
+    // Transfer premium status if source had it
+    if (sg.isPremium && !tg.isPremium) {
+      tg.isPremium = true;
+      tg.premiumSince = sg.premiumSince || tg.day;
+    }
+
+    // Transfer unlocked suppliers
+    if (sg.unlockedSuppliers?.length) {
+      tg.unlockedSuppliers = tg.unlockedSuppliers || [];
+      for (const idx of sg.unlockedSuppliers) {
+        if (!tg.unlockedSuppliers.includes(idx)) {
+          tg.unlockedSuppliers.push(idx);
+        }
+      }
+    }
+
+    // Transfer cosmetics
+    if (sg.cosmetics?.length) {
+      tg.cosmetics = tg.cosmetics || [];
+      for (const c of sg.cosmetics) {
+        if (!tg.cosmetics.includes(c)) tg.cosmetics.push(c);
+      }
+    }
+
+    // Rebuild global inventory on target
+    const { rebuildGlobalInv } = await import('../../shared/helpers/inventory.js');
+    rebuildGlobalInv(tg);
+
+    // Save target and delete source
+    await savePlayerState(target.id, tg);
+    await removePlayer(source.id);
+
+    await auditLog(req, 'mergePlayers', target.id, {
+      sourceId: source.id,
+      sourceCompany,
+      targetCompany,
+      merged,
+    });
+
+    res.json({
+      ok: true,
+      message: `Merged "${sourceCompany}" into "${targetCompany}"`,
+      merged,
+      targetId: target.id,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 export default router;
