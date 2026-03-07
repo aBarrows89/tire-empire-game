@@ -1375,6 +1375,8 @@ export async function runTick(clients) {
           }
 
           // Run simDay on the freshest committed state
+          // Migration: ensure staff object always exists
+          if (!lockedState.staff) lockedState.staff = { techs: 0, sales: 0, managers: 0, drivers: 0, pricingAnalyst: 0 };
           try { applyAutoPrice(lockedState); } catch (e) { console.warn('[Tick] applyAutoPrice error:', e.message); }
           try { applyAutoSource(lockedState); } catch (e) { console.warn('[Tick] applyAutoSource error:', e.message); }
           try {
