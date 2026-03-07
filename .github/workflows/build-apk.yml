@@ -37,6 +37,19 @@ jobs:
         run: npm ci
         working-directory: client
 
+      - name: Check for case-sensitive import violations (Linux CI is case-sensitive)
+        working-directory: client
+        run: |
+          # grep for common uppercase-first asset paths that work on macOS but break Linux
+          # Patterns like: from '../assets/Tire.png', from './Icons/', import '...Splash...'
+          set +e
+          VIOLATIONS=$(grep -rn --include="*.jsx" --include="*.js" --include="*.ts" --include="*.tsx"             -E "from ['"].*\/[A-Z][^'"]*\.(png|jpg|svg|mp3|webp)['"]" src/ 2>/dev/null)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "::warning::Possible case-sensitive asset import violations found:"
+            echo "$VIOLATIONS"
+          fi
+          set -e
+
       - name: Build web assets
         run: npm run build
         working-directory: client
