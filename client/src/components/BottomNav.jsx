@@ -93,12 +93,22 @@ export default function BottomNav() {
   // On some Android phones, closing the overlay fires a delayed click on
   // whatever is underneath (the 300ms tap-delay ghost click).
   const navCooldownRef = useRef(false);
+  const cooldownTimer = useRef(null);
 
-  // Listen for tutorial highlight events
+  const armGhostClickGuard = () => {
+    navCooldownRef.current = true;
+    if (cooldownTimer.current) clearTimeout(cooldownTimer.current);
+    cooldownTimer.current = setTimeout(() => { navCooldownRef.current = false; }, 400);
+  };
+
+  // Listen for tutorial highlight events; clean up ghost-click timer on unmount
   useEffect(() => {
     const handler = (e) => setTutorialTarget(e.detail || null);
     window.addEventListener('tutorialHighlight', handler);
-    return () => window.removeEventListener('tutorialHighlight', handler);
+    return () => {
+      window.removeEventListener('tutorialHighlight', handler);
+      if (cooldownTimer.current) clearTimeout(cooldownTimer.current);
+    };
   }, []);
 
   // Track unread chat messages
@@ -120,16 +130,10 @@ export default function BottomNav() {
   const activeInSecondary = SECONDARY_TABS.some(t => t.id === state.activePanel);
 
   const selectTab = (id, fromOverlay) => {
-    // If the More overlay just closed and a primary tab is receiving a ghost
-    // click (300ms delayed tap on Android), ignore it.
     if (!fromOverlay && navCooldownRef.current) return;
     hapticsLight();
     dispatch({ type: 'SET_PANEL', payload: id });
-    if (fromOverlay) {
-      // Arm ghost-click guard: primary tabs ignore clicks for 400ms
-      navCooldownRef.current = true;
-      setTimeout(() => { navCooldownRef.current = false; }, 400);
-    }
+    if (fromOverlay) armGhostClickGuard();
     setShowMore(false);
   };
 
@@ -137,7 +141,7 @@ export default function BottomNav() {
     <>
       {/* Expandable grid overlay */}
       {showMore && (
-        <div className="more-overlay" onClick={() => { setShowMore(false); navCooldownRef.current = true; setTimeout(() => { navCooldownRef.current = false; }, 400); }}>
+        <div className="more-overlay" onClick={() => { setShowMore(false); armGhostClickGuard(); }}>
           <div className="more-grid" onClick={e => e.stopPropagation()}>
             {SECONDARY_TABS.map(tab => {
               const isUnlocked = unlocked.has(tab.id);
@@ -158,8 +162,7 @@ export default function BottomNav() {
               className="more-grid-btn"
               onClick={() => {
                 hapticsLight();
-                navCooldownRef.current = true;
-                setTimeout(() => { navCooldownRef.current = false; }, 400);
+                armGhostClickGuard();
                 setShowMore(false);
                 setUnreadChat(0);
                 window.dispatchEvent(new CustomEvent('toggleChat'));
