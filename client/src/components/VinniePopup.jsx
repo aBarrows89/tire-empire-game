@@ -22,9 +22,17 @@ export default function VinniePopup() {
   if (!activeMilestone) return null;
 
   // Support function-type messages (dynamic with game state)
-  const message = typeof activeMilestone.message === 'function'
-    ? activeMilestone.message(g)
-    : activeMilestone.message;
+  // Safety: always coerce to string to prevent React error #31 if a
+  // milestone function accidentally returns an object
+  let message;
+  try {
+    const raw = typeof activeMilestone.message === 'function'
+      ? activeMilestone.message(g)
+      : activeMilestone.message;
+    message = (typeof raw === 'string') ? raw : String(raw || '');
+  } catch {
+    message = '';
+  }
 
   const dismiss = async () => {
     await postAction('dismissVinnie', { id: activeMilestone.id });

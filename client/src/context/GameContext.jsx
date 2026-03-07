@@ -6,6 +6,38 @@ import { safeSetItem, safeGetItem } from '../services/storage.js';
 
 const GameContext = createContext();
 
+/**
+ * Client-side factory state migration.
+ * The server migrates factory state from the old format (switchCooldown, currentLine,
+ * productionQueue on factory root) to the new format (lines array) during simDay.
+ * But if a player's state is loaded from cache or API before a tick runs,
+ * it may still be in the old format. This ensures the client always sees the new format.
+ */
+function migrateFactoryState(g) {
+  if (!g || !g.hasFactory || !g.factory) return;
+  if (!g.factory.lines) {
+    g.factory.lines = [{
+      id: 0,
+      queue: g.factory.productionQueue || [],
+      currentType: g.factory.currentLine || null,
+      runStreak: 0,
+      lastMaintDay: g.day || 0,
+      status: 'active',
+      switchCooldown: 0,
+    }];
+    delete g.factory.productionQueue;
+    delete g.factory.currentLine;
+    delete g.factory.switchCooldown;
+  }
+  // Safety: ensure every line has primitive-only values that won't crash React
+  for (const line of g.factory.lines) {
+    if (typeof line.switchCooldown !== 'number') line.switchCooldown = 0;
+    if (typeof line.runStreak !== 'number') line.runStreak = 0;
+    if (typeof line.lastMaintDay !== 'number') line.lastMaintDay = 0;
+    if (typeof line.status !== 'string') line.status = 'active';
+  }
+}
+
 function gameReducer(state, action) {
   switch (action.type) {
     case 'SET_STATE': {
@@ -17,6 +49,8 @@ function gameReducer(state, action) {
         g = { ...(g || {}), companyName: state.game.companyName };
       }
       if (!g) return state; // null payload — ignore
+      // Migrate legacy factory state to prevent React error #31
+      migrateFactoryState(g);
       // Calendar day = game day + startDay offset (same formula used throughout simDay)
       const calDay = (g.day || 0) + (g.startDay || 1) - 1;
       const newEntries = (g.log || []).map(l => {

@@ -257,11 +257,15 @@ export default function VinnieTip() {
   // Rotate tips based on day for variety
   const dayNum = g.day || g.week || 1;
   const tip = tips[dayNum % tips.length];
+  if (!tip) return null;
+
+  // Safety: coerce to string to prevent React error #31
+  const tipText = typeof tip.tip === 'string' ? tip.tip : String(tip.tip || '');
 
   return (
     <div className="vinnie-tip">
       <span className="vinnie-tip-icon">{"\u{1F9D4}"}</span>
-      <span className="vinnie-tip-text">{tip.tip}</span>
+      <span className="vinnie-tip-text">{tipText}</span>
     </div>
   );
 }

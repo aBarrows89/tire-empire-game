@@ -206,7 +206,9 @@ function GameLayout() {
       </div>
       <BottomNav />
       {!g.tutorialDone && <TutorialOverlay />}
-      <VinniePopup />
+      <PanelErrorBoundary panelKey="vinnie-popup">
+        <VinniePopup />
+      </PanelErrorBoundary>
 
       {/* Vinnie Announcement (admin broadcast) */}
       {state.announcement && (
@@ -214,7 +216,7 @@ function GameLayout() {
           <div className="vinnie-popup-card" onClick={e => e.stopPropagation()}>
             <div className="vinnie-popup-emoji">{'\u{1F9D4}'}</div>
             <div className="vinnie-popup-title">Message from Vinnie</div>
-            <div className="vinnie-popup-message">{state.announcement.message}</div>
+            <div className="vinnie-popup-message">{typeof state.announcement.message === 'string' ? state.announcement.message : String(state.announcement.message || '')}</div>
             <div className="vinnie-popup-actions">
               <button className="btn btn-full btn-sm btn-outline" onClick={() => dispatch({ type: 'SET_ANNOUNCEMENT', payload: null })}>Got it</button>
             </div>

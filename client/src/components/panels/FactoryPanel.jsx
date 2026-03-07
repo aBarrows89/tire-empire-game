@@ -299,10 +299,10 @@ export default function FactoryPanel() {
               const avgDefectPct = Math.round(avgDefect * 100);
               const defectColor = avgDefectPct < 5 ? 'text-green' : avgDefectPct <= 10 ? 'text-accent' : 'text-red';
 
-              // Breakdown by type
-              const cosmetic = last30.reduce((s, d) => s + (d.cosmetic || 0), 0);
-              const structural = last30.reduce((s, d) => s + (d.structural || 0), 0);
-              const critical = last30.reduce((s, d) => s + (d.critical || 0), 0);
+              // Breakdown by type (defects are nested under d.defects since multi-line update)
+              const cosmetic = last30.reduce((s, d) => s + (d.defects?.cosmetic || d.cosmetic || 0), 0);
+              const structural = last30.reduce((s, d) => s + (d.defects?.structural || d.structural || 0), 0);
+              const critical = last30.reduce((s, d) => s + (d.defects?.critical || d.critical || 0), 0);
 
               const totalClaims = factory?.totalWarrantyClaims || 0;
               const totalWarrantyCost = factory?.totalWarrantyCost || 0;
