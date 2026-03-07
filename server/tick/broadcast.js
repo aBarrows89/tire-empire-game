@@ -23,7 +23,7 @@ export function broadcast(clients, data, playerStates) {
       // Send personalized state + shared data
       try {
         const playerState = playerStates.get(ws.playerId);
-        sanitizeForClient(playerState);
+        try { sanitizeForClient(playerState); } catch {}
         ws.send(JSON.stringify({
           ...data,
           state: playerState,

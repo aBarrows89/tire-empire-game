@@ -8,20 +8,12 @@ import {
 import { uid } from '../../shared/helpers/random.js';
 import { TIRES } from '../../shared/constants/tires.js';
 import { CITIES } from '../../shared/constants/cities.js';
-import { sanitizeForClient } from '../helpers/sanitizeForClient.js';
 import { shopCost } from '../../shared/constants/shop.js';
 import { getShopValuation, SHOP_BID } from '../../shared/constants/shopSale.js';
 import { getLocInv } from '../../shared/helpers/inventory.js';
 import { rebuildGlobalInv } from '../../shared/helpers/inventory.js';
 
 const router = Router();
-
-// Middleware: sanitize player state in responses
-router.use((req, res, next) => {
-  const origJson = res.json.bind(res);
-  res.json = (body) => {
-    if (body && body.state) sanitizeForClient(body.state);
-    return origJson(body);
   };
   next();
 });

@@ -5,18 +5,7 @@ import { uid } from '../../shared/helpers/random.js';
 import { TIRES } from '../../shared/constants/tires.js';
 import { getStorageCap, getInv, getCap, rebuildGlobalInv } from '../../shared/helpers/inventory.js';
 import { MAP_FLOOR, P2P_DELIVERY_FEE, P2P_COMMISSION } from '../../shared/constants/wholesale.js';
-import { sanitizeForClient } from '../helpers/sanitizeForClient.js';
-
 const router = Router();
-
-// Middleware: sanitize player state in responses
-router.use((req, res, next) => {
-  const origJson = res.json.bind(res);
-  res.json = (body) => {
-    if (body && body.state) sanitizeForClient(body.state);
-    return origJson(body);
-  };
-  next();
 });
 
 /**
