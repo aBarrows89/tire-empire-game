@@ -73,6 +73,33 @@ app.use('/api/action', actionLimiter);
 app.get('/health', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
 
 // ONE-SHOT: trim bloated games row — no auth needed, secret key only. Remove after use.
+// Debug: inspect + patch any player's staff state by firebase UID
+app.get('/api/debug-staff/:secret/:uid', async (req, res) => {
+  if (req.params.secret !== 'stafffix2026') return res.status(403).json({ error: 'nope' });
+  try {
+    const { pool } = await import('./db/pool.js');
+    const client = await pool.connect();
+    try {
+      const { rows } = await client.query(
+        'SELECT id, firebase_uid, game_state FROM players WHERE firebase_uid = $1',
+        [req.params.uid]
+      );
+      if (!rows[0]) return res.json({ error: 'player not found' });
+      const g = rows[0].game_state;
+      const before = { staff: g.staff, companyName: g.companyName, cash: g.cash };
+      // Patch: ensure staff exists
+      if (!g.staff) {
+        g.staff = { techs: 0, sales: 0, managers: 0, drivers: 0, pricingAnalyst: 0 };
+        await client.query(
+          'UPDATE players SET game_state = $1 WHERE firebase_uid = $2',
+          [JSON.stringify(g), req.params.uid]
+        );
+      }
+      res.json({ ok: true, playerId: rows[0].id, before, after: { staff: g.staff }, patched: !before.staff });
+    } finally { client.release(); }
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/emergency-trim/:secret', async (req, res) => {
   if (req.params.secret !== 'trimgames2026') return res.status(403).json({ error: 'nope' });
   try {
