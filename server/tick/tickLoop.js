@@ -614,8 +614,22 @@ export async function runTick(clients) {
   _tickRunning = true;
   const _tickStart = Date.now();
   try {
-    const game = await getGame();
-    if (!game) return;
+    let game = await getGame();
+    if (!game) {
+      // No games row — migration may not have finished yet. Try seeding it.
+      console.warn('[Tick] getGame() returned null — attempting schema migration');
+      try {
+        const { runSchemaMigration } = await import('../db/queries.js');
+        await runSchemaMigration();
+        game = await getGame();
+      } catch (seedErr) {
+        console.error('[Tick] Could not seed games row:', seedErr.message);
+      }
+      if (!game) {
+        console.error('[Tick] Still no games row after migration attempt — skipping tick');
+        return;
+      }
+    }
 
     // Expire vacations — unpause players whose vacation time has elapsed
     try {
