@@ -236,14 +236,22 @@ server.listen(process.env.PORT || PORT, BIND_HOST, () => {
   // Start analytics event flush timer
   startAnalytics();
 
-  // Start the game tick loop
-  startTickLoop(clients);
+  // Run DB schema migration first, THEN start the tick loop.
+  // Migration ensures the games row exists so getGame() never returns null on first tick.
+  // Port is already bound above so the healthcheck passes during migration.
+  runSchemaMigration()
+    .then(() => {
+      console.log('[startup] Schema migration complete — starting tick loop');
+      startTickLoop(clients);
+    })
+    .catch(err => {
+      console.error('[startup] Schema migration error:', err);
+      // Start tick anyway so the server is not completely dead
+      startTickLoop(clients);
+    });
 
   // Start Reddit scanner (21c — polls every 15 min if REDDIT_USER_AGENT set)
   startRedditScanner();
-
-  // Run DB schema migration after port is bound so healthcheck passes immediately
-  runSchemaMigration().catch(err => console.error('[startup] Schema migration error:', err));
 });
 
 async function syncShopListings() {
