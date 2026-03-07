@@ -27,7 +27,9 @@ import { CONTRACT_COMMISSION, P2P_DELIVERY_FEE } from '../../shared/constants/co
 import { getBrandTireKey } from '../../shared/helpers/factoryBrand.js';
 import { pool } from '../db/pool.js';
 
-let tickInterval = null;
+let tickInterval = null;    // holds the current setTimeout handle
+let _tickLoopClients = null;
+let _tickScheduledAt = 0;   // when the next tick was expected to fire (Date.now ms)
 
 // ── Separate AI chat loop — runs independently of ticks ──
 let _chatInterval = null;
@@ -1796,11 +1798,40 @@ function stopChatLoop() {
  * Start the tick loop.
  * @param {Set} clients - WebSocket client set
  */
+/**
+ * Self-correcting tick loop using Date.now() delta-time.
+ *
+ * Why: setInterval drifts under load — if a tick takes longer than the interval
+ * the next one fires immediately (or late), causing missed beats.
+ * Instead we schedule each tick with setTimeout, measure actual elapsed time,
+ * and adjust the next delay to compensate for drift. This keeps the game-day
+ * cadence accurate even when the server lags.
+ */
+function _scheduleTick() {
+  if (!tickInterval) return; // loop was stopped
+  const now = Date.now();
+  // How far did we drift from the intended schedule?
+  const drift = now - _tickScheduledAt;
+  // Aim for the next ideal fire time, shortened by any overrun
+  const nextDelay = Math.max(0, currentTickMs - drift);
+  _tickScheduledAt = now + nextDelay;
+  tickInterval = setTimeout(async () => {
+    await runTick(_tickLoopClients);
+    _scheduleTick(); // re-schedule after tick completes (not before)
+  }, nextDelay);
+}
+
 export function startTickLoop(clients) {
   if (tickInterval) return;
-  console.log(`Starting tick loop (${currentTickMs}ms interval = 1 game day)`);
-  tickInterval = setInterval(() => runTick(clients), currentTickMs);
+  console.log(`Starting tick loop (${currentTickMs}ms target = 1 game day, delta-time corrected)`);
+  _tickLoopClients = clients;
   _chatClients = clients;
+  // Schedule first tick after one full interval
+  _tickScheduledAt = Date.now() + currentTickMs;
+  tickInterval = setTimeout(async () => {
+    await runTick(_tickLoopClients);
+    _scheduleTick();
+  }, currentTickMs);
   startChatLoop();
 }
 
@@ -1809,20 +1840,27 @@ export function startTickLoop(clients) {
  */
 export function stopTickLoop() {
   if (tickInterval) {
-    clearInterval(tickInterval);
+    clearTimeout(tickInterval); // clearTimeout works for both setTimeout and setInterval handles
     tickInterval = null;
     console.log('Tick loop stopped');
   }
   stopChatLoop();
 }
 
-/** Change tick speed at runtime. */
+/** Change tick speed at runtime — restarts the delta-time loop at new cadence. */
 export function setTickSpeed(ms, clients) {
   currentTickMs = ms;
   if (tickInterval) {
-    clearInterval(tickInterval);
-    tickInterval = setInterval(() => runTick(clients), currentTickMs);
-    console.log(`Tick speed changed to ${currentTickMs}ms`);
+    clearTimeout(tickInterval);
+    tickInterval = null;
+    _tickLoopClients = clients || _tickLoopClients;
+    console.log(`Tick speed changed to ${currentTickMs}ms — restarting delta-time loop`);
+    // Reset schedule anchor so we don't overcount drift from the old interval
+    _tickScheduledAt = Date.now() + currentTickMs;
+    tickInterval = setTimeout(async () => {
+      await runTick(_tickLoopClients);
+      _scheduleTick();
+    }, currentTickMs);
   }
 }
 
