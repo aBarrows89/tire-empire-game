@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import AuthGate from './components/AuthGate.jsx';
 import { GameProvider, useGame } from './context/GameContext.jsx';
+import { safeSetItem, safeGetItem } from './services/storage.js';
 import WelcomeScreen from './components/WelcomeScreen.jsx';
 import TutorialOverlay from './components/TutorialOverlay.jsx';
 import Header from './components/Header.jsx';
@@ -89,8 +90,10 @@ function GameLayout() {
   const shownRef = useRef(new Set());
   const notifShownDayRef = useRef(0);
   const prevPanelRef = useRef(null);
-  // Once we've seen a companyName, never flash back to WelcomeScreen mid-session
-  const confirmedCompanyRef = useRef(null);
+  // Once we've seen a companyName, never flash back to WelcomeScreen mid-session.
+  // Persist to localStorage so it survives WebView reloads (some Android devices
+  // reload the WebView after native calls like haptics, causing a fresh mount).
+  const confirmedCompanyRef = useRef(safeGetItem('te_confirmedCompany') || null);
 
   // Open chat overlay when a DM is requested from profile
   useEffect(() => {
@@ -162,8 +165,12 @@ function GameLayout() {
 
   // Show welcome screen only if we've never confirmed a company name this session
   // Using a ref prevents race conditions (tick/refresh wiping state mid-action)
-  // from flashing back to WelcomeScreen for established players
-  if (g?.companyName) confirmedCompanyRef.current = g.companyName;
+  // from flashing back to WelcomeScreen for established players.
+  // Also persist to localStorage so WebView reloads don't flash the welcome screen.
+  if (g?.companyName) {
+    confirmedCompanyRef.current = g.companyName;
+    safeSetItem('te_confirmedCompany', g.companyName);
+  }
   if (!confirmedCompanyRef.current) return <WelcomeScreen />;
 
   // Check for new achievements — deduplicated via shownRef

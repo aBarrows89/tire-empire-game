@@ -37,7 +37,7 @@ export default function StaffPanel() {
         return;
       }
       if (res?.state) applyState(res);
-      hapticsMedium();
+      hapticsMedium().catch(() => {});
     } catch (err) {
       console.error('[Staff] hire error:', err);
       setError('Network error — please try again.');
@@ -60,7 +60,7 @@ export default function StaffPanel() {
         return;
       }
       if (res?.state) applyState(res);
-      hapticsMedium();
+      hapticsMedium().catch(() => {});
     } catch (err) {
       console.error('[Staff] fire error:', err);
       setError('Network error — please try again.');
