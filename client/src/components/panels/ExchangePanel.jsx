@@ -468,7 +468,9 @@ export default function ExchangePanel() {
                   const price = comm.price || base;
                   const chg = base > 0 ? ((price - base) / base * 100) : 0;
                   const isShortage = comm.shortage;
-                  const history = (comm.priceHistory || []).slice(-14).map(h => h?.close ?? h ?? price);
+                  const history = (comm.priceHistory || []).slice(-14).map(h =>
+                    typeof h === 'object' ? (h.price ?? h.close ?? price) : (h ?? price)
+                  );
                   const pos = se.commodityPositions?.[key];
                   const pnl = pos ? (price - pos.avgCost) * pos.qty : 0;
                   const supplyPct = comm.totalDemand > 0 ? Math.min(100, Math.round((comm.worldSupply || 0) / comm.totalDemand * 100)) : 100;
