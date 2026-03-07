@@ -189,7 +189,7 @@ export const ACTION_SCHEMAS = {
   purchaseTC:                 z.object({ tierId: str, receipt: optStr }),
 
   // ── 3PL / Storage Marketplace ──
-  listStorage:                z.object({ capacity: num, pricePerSlot: num }),
+  listStorage:                z.object({ capacity: num, pricePerTire: num.optional(), pricePerSlot: num.optional() }),
   delistStorage:              z.object({ listingId: id }),
   rentStorage:                z.object({ listingId: id, slots: num }),
   cancelLease:                z.object({ leaseId: id }),
