@@ -1,7 +1,6 @@
 import React from 'react';
 import { useGame } from '../../context/GameContext.jsx';
 import { PAY } from '@shared/constants/staff.js';
-import { MARKETPLACE_SPECIALIST } from '@shared/constants/marketplace.js';
 import { fmt } from '@shared/helpers/format.js';
 import { postAction } from '../../api/client.js';
 import { hapticsMedium } from '../../api/haptics.js';
