@@ -11,6 +11,7 @@ import NotificationToast from './components/NotificationToast.jsx';
 import ChatOverlay from './components/ChatOverlay.jsx';
 import PullToRefresh from './components/PullToRefresh.jsx';
 import PanelTransition from './components/PanelTransition.jsx';
+import PanelErrorBoundary from './components/PanelErrorBoundary.jsx';
 import AdBanner from './components/AdBanner.jsx';
 import PremiumModal from './components/PremiumModal.jsx';
 import { useAds } from './hooks/useAds.js';
@@ -196,9 +197,11 @@ function GameLayout() {
       )}
       <div className="main">
         <PullToRefresh onRefresh={refreshState}>
-          <PanelTransition panelKey={state.activePanel}>
-            <Panel />
-          </PanelTransition>
+          <PanelErrorBoundary panelKey={state.activePanel}>
+            <PanelTransition panelKey={state.activePanel}>
+              <Panel />
+            </PanelTransition>
+          </PanelErrorBoundary>
         </PullToRefresh>
       </div>
       <BottomNav />

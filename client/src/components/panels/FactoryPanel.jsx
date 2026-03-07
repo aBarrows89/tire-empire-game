@@ -45,7 +45,7 @@ export default function FactoryPanel() {
   if (!hasFactory) {
     const canAfford = g.cash >= FACTORY.buildCost;
     const hasRep = g.reputation >= FACTORY.minRep;
-    const hasLocs = g.locations.length >= FACTORY.minLocations;
+    const hasLocs = (g.locations || []).length >= FACTORY.minLocations;
     const canBuild = canAfford && hasRep && hasLocs;
 
     return (
@@ -74,7 +74,7 @@ export default function FactoryPanel() {
           <div className="row-between mb-4">
             <span className="text-sm text-dim">Locations</span>
             <span className={`font-bold ${hasLocs ? 'text-green' : 'text-red'}`}>
-              {g.locations.length} / {FACTORY.minLocations}
+              {(g.locations || []).length} / {FACTORY.minLocations}
             </span>
           </div>
           <button

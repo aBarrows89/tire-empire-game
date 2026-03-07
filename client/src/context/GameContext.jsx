@@ -21,6 +21,11 @@ function gameReducer(state, action) {
       const calDay = (g.day || 0) + (g.startDay || 1) - 1;
       const newEntries = (g.log || []).map(l => {
         const entry = typeof l === 'string' ? { msg: l, cat: 'other' } : l;
+        // Safety: ensure msg is always a string (prevents React error #31 if
+        // a non-string object accidentally ends up in the log)
+        if (entry.msg != null && typeof entry.msg !== 'string') {
+          entry.msg = String(entry.msg);
+        }
         // Only stamp entries that don't already have a day (preserves action-log days)
         return entry.day ? entry : { ...entry, day: calDay };
       });
