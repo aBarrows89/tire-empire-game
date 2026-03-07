@@ -6,7 +6,7 @@ import { WebSocketServer } from 'ws';
 import { PORT, CORS_ORIGIN, NODE_ENV, FIREBASE_PROJECT_ID, FIREBASE_API_KEY } from './config.js';
 import { startTickLoop, stopTickLoop, setTickSpeed, getTickSpeed, isTickRunning, getTickStats } from './tick/tickLoop.js';
 import { handleConnection, startHeartbeat } from './ws/handler.js';
-import { getAllActivePlayers, addShopSaleListing, getShopSaleListings } from './db/queries.js';
+import { getAllActivePlayers, addShopSaleListing, getShopSaleListings, runSchemaMigration } from './db/queries.js';
 import { CITIES } from '../shared/constants/cities.js';
 import { TIRES } from '../shared/constants/tires.js';
 import { shopRent } from '../shared/constants/shop.js';
@@ -241,6 +241,9 @@ server.listen(process.env.PORT || PORT, BIND_HOST, () => {
 
   // Start Reddit scanner (21c — polls every 15 min if REDDIT_USER_AGENT set)
   startRedditScanner();
+
+  // Run DB schema migration after port is bound so healthcheck passes immediately
+  runSchemaMigration().catch(err => console.error('[startup] Schema migration error:', err));
 });
 
 async function syncShopListings() {
