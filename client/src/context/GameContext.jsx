@@ -87,6 +87,14 @@ function gameReducer(state, action) {
       };
       _forceString(g, 'companyName', 'My Company');
       _forceString(g, 'name', '');
+      // Guard: coerce known string fields that could be objects in old cached states
+      const STRING_FIELDS = ['companyName', 'name', 'autoSource', 'insurance'];
+      for (const field of STRING_FIELDS) {
+        if (g[field] !== null && g[field] !== undefined && typeof g[field] !== 'string') {
+          console.warn('[GameContext] Coercing non-string field', field, 'type:', typeof g[field]);
+          g[field] = typeof g[field] === 'object' ? null : String(g[field]);
+        }
+      }
       // Factory status fields that are displayed directly in JSX
       if (g.factory) {
         _forceString(g.factory, 'brandName', 'My Tires');
