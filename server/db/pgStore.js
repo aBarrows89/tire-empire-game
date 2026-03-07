@@ -371,7 +371,7 @@ async function ensureSchema() {
   }
 }
 
-await ensureSchema();
+export async function runSchemaMigration() { return ensureSchema(); }
 
 // Helper: ensure JSONB fields are parsed (pg sometimes returns strings)
 function parseJson(val) {
