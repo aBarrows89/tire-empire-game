@@ -69,9 +69,13 @@ function gameReducer(state, action) {
       let g = action.payload;
       // Guard: never regress to a state without companyName if we already have one.
       // Prevents a bad tick/refresh from flashing WelcomeScreen mid-session.
-      if (!g?.companyName && state.game?.companyName) {
-        console.warn('[GameContext] SET_STATE received state without companyName — keeping existing state.game');
-        g = { ...(g || {}), companyName: state.game.companyName };
+      if (!g?.companyName) {
+        const fallback = state.game?.companyName
+          || (() => { try { return sessionStorage.getItem('te_confirmedCompany'); } catch { return null; } })();
+        if (fallback) {
+          console.warn('[GameContext] SET_STATE received state without companyName — restoring from fallback');
+          g = { ...(g || {}), companyName: fallback };
+        }
       }
       if (!g) return state; // null payload — ignore
       // Migrate legacy factory state to prevent React error #31

@@ -89,8 +89,11 @@ function GameLayout() {
   const shownRef = useRef(new Set());
   const notifShownDayRef = useRef(0);
   const prevPanelRef = useRef(null);
-  // Once we've seen a companyName, never flash back to WelcomeScreen mid-session
-  const confirmedCompanyRef = useRef(null);
+  // Once we've seen a companyName, never flash back to WelcomeScreen mid-session.
+  // Back with sessionStorage so it survives component remounts (error boundaries, etc.)
+  const confirmedCompanyRef = useRef(
+    (() => { try { return sessionStorage.getItem('te_confirmedCompany'); } catch { return null; } })()
+  );
 
   // Open chat overlay when a DM is requested from profile
   useEffect(() => {
@@ -160,10 +163,13 @@ function GameLayout() {
     </div>
   );
 
-  // Show welcome screen only if we've never confirmed a company name this session
-  // Using a ref prevents race conditions (tick/refresh wiping state mid-action)
-  // from flashing back to WelcomeScreen for established players
-  if (g?.companyName) confirmedCompanyRef.current = g.companyName;
+  // Show welcome screen only if we've never confirmed a company name this session.
+  // Backed by sessionStorage so it survives component remounts (error boundaries,
+  // auth re-renders, etc.) — prevents the "hire staff → WelcomeScreen" bug.
+  if (g?.companyName) {
+    confirmedCompanyRef.current = g.companyName;
+    try { sessionStorage.setItem('te_confirmedCompany', g.companyName); } catch {}
+  }
   if (!confirmedCompanyRef.current) return <WelcomeScreen />;
 
   // Check for new achievements — deduplicated via shownRef
