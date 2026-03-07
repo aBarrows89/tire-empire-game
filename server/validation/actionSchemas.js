@@ -191,7 +191,7 @@ export const ACTION_SCHEMAS = {
   // ── 3PL / Storage Marketplace ──
   listStorage:                z.object({ capacity: num, pricePerTire: num.optional(), pricePerSlot: num.optional() }),
   delistStorage:              z.object({ listingId: id }),
-  rentStorage:                z.object({ listingId: id, slots: num }),
+  rentStorage:                z.object({ listingId: id, ownerId: id, slots: num }),
   cancelLease:                z.object({ leaseId: id }),
   evictTenant:                z.object({ leaseId: id }),
   tplTransfer:                z.object({ leaseId: id, tire: str, qty: num, direction: str }),
