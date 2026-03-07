@@ -55,7 +55,14 @@ export default function WeeklyLogPanel() {
       ) : (
         <div className="card">
           {filteredLogs.map((entry, i) => {
-            const msg = typeof entry.msg === 'string' ? entry.msg : (entry.msg?.msg || String(entry.msg));
+            // Nuclear guard: ensure msg is always a primitive string before rendering.
+            // Prevents React Error #31 if a non-string object leaks into log entries.
+            let msg;
+            if (typeof entry === 'string') msg = entry;
+            else if (typeof entry?.msg === 'string') msg = entry.msg;
+            else if (entry?.msg != null) msg = String(entry.msg);
+            else msg = '';
+            if (!msg) return null;
             return (
               <div key={i} className="log-entry">
                 <span className="log-week">{entry.day ? formatDateShort(entry.day) : `Day ${entry.week || '?'}`}</span>{' '}

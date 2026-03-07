@@ -4,6 +4,7 @@ import { init } from '../engine/init.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { trackEvent } from '../analytics/tracker.js';
 import { pool } from '../db/pool.js';
+import { sanitizeForClient } from '../helpers/sanitizeForClient.js';
 
 const router = Router();
 
@@ -65,6 +66,7 @@ router.get('/', authMiddleware, async (req, res) => {
       // Non-fatal — player still gets their state, economy data arrives on next tick
       console.warn('GET /api/state: economy attach skipped:', econErr.message);
     }
+    sanitizeForClient(player.game_state);
     res.json(player.game_state);
   } catch (err) {
     console.error('GET /api/state error:', err);

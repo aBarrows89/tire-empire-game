@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getPlayer, savePlayerState, getGame, saveGame } from '../db/queries.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { sanitizeForClient } from '../helpers/sanitizeForClient.js';
 import { uid } from '../../shared/helpers/random.js';
 import {
   initExchange, processIPO, calculateCommission, calculateCapGainsTax,
@@ -22,6 +23,16 @@ async function getExchangeState() {
   const game = await getGame();
   return game?.economy?.exchange || null;
 }
+
+// Middleware: sanitize any player state in responses before sending
+router.use((req, res, next) => {
+  const origJson = res.json.bind(res);
+  res.json = (body) => {
+    if (body && body.state) sanitizeForClient(body.state);
+    return origJson(body);
+  };
+  next();
+});
 
 async function saveExchangeState(exchangeState) {
   const game = await getGame();

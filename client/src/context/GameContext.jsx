@@ -54,15 +54,21 @@ function gameReducer(state, action) {
       // Calendar day = game day + startDay offset (same formula used throughout simDay)
       const calDay = (g.day || 0) + (g.startDay || 1) - 1;
       const newEntries = (g.log || []).map(l => {
-        const entry = typeof l === 'string' ? { msg: l, cat: 'other' } : l;
-        // Safety: ensure msg is always a string (prevents React error #31 if
-        // a non-string object accidentally ends up in the log)
-        if (entry.msg != null && typeof entry.msg !== 'string') {
-          entry.msg = String(entry.msg);
+        // String entries → wrap in { msg, cat }
+        if (typeof l === 'string') return { msg: l, cat: 'other', day: calDay };
+        // Non-object entries → convert to string
+        if (!l || typeof l !== 'object') return { msg: String(l ?? ''), cat: 'other', day: calDay };
+        // Valid log entry must have a msg field. If missing (e.g. a leaked factory
+        // line object with keys like switchCooldown/runStreak), discard it to
+        // prevent React Error #31.
+        if (l.msg === undefined || l.msg === null) {
+          return { msg: '', cat: l.cat || 'other', day: l.day || calDay };
         }
+        // Safety: ensure msg is always a string
+        const msg = typeof l.msg === 'string' ? l.msg : String(l.msg);
         // Only stamp entries that don't already have a day (preserves action-log days)
-        return entry.day ? entry : { ...entry, day: calDay };
-      });
+        return { msg, cat: l.cat || 'other', day: l.day || calDay };
+      }).filter(e => e.msg); // drop empty messages
       // Merge: new tick entries first, then existing history — deduplicate by msg+day
       const existing = state.logHistory || [];
       const merged = [...newEntries, ...existing];

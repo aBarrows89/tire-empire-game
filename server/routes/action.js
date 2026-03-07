@@ -17,6 +17,7 @@ import { handleFactory } from './actions/factory.js';
 import { handleContracts } from './actions/contracts.js';
 import { handleShopMarket } from './actions/shopMarket.js';
 import { handleMisc } from './actions/misc.js';
+import { sanitizeForClient } from '../helpers/sanitizeForClient.js';
 
 const router = Router();
 
@@ -116,6 +117,7 @@ router.post('/', authMiddleware, async (req, res) => {
       });
       await savePlayerState(req.playerId, g, playerVersion);
       trackEvent(req.playerId, 'action_performed', { action });
+      sanitizeForClient(g);
       res.json({ ok: true, state: g });
     }); // end withPlayerLock
   } catch (err) {

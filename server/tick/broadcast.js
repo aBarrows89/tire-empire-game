@@ -1,3 +1,5 @@
+import { sanitizeForClient } from '../helpers/sanitizeForClient.js';
+
 /**
  * Broadcast tick data to all connected WebSocket clients.
  * Section 11: Per-player state delivery via WebSocket.
@@ -20,9 +22,11 @@ export function broadcast(clients, data, playerStates) {
     if (playerStates && ws.playerId && playerStates.has(ws.playerId)) {
       // Send personalized state + shared data
       try {
+        const playerState = playerStates.get(ws.playerId);
+        sanitizeForClient(playerState);
         ws.send(JSON.stringify({
           ...data,
-          state: playerStates.get(ws.playerId),
+          state: playerState,
         }));
       } catch {
         // If personalized send fails, fall back to shared

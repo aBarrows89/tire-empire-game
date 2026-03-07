@@ -6,8 +6,19 @@ import { TIRES } from '../../shared/constants/tires.js';
 import { MAP_FLOOR } from '../../shared/constants/wholesale.js';
 import { P2P_FEES } from '../../shared/constants/marketplace.js';
 import { getLocInv, getLocCap, getStorageCap, rebuildGlobalInv } from '../../shared/helpers/inventory.js';
+import { sanitizeForClient } from '../helpers/sanitizeForClient.js';
 
 const router = Router();
+
+// Middleware: sanitize player state in responses
+router.use((req, res, next) => {
+  const origJson = res.json.bind(res);
+  res.json = (body) => {
+    if (body && body.state) sanitizeForClient(body.state);
+    return origJson(body);
+  };
+  next();
+});
 
 // GET /api/market — shared economy data
 router.get('/', async (req, res) => {
