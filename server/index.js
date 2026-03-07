@@ -219,8 +219,12 @@ wss.on('connection', (ws) => handleConnection(ws, clients));
 startHeartbeat(clients);
 
 // ── Start ──
-server.listen(PORT, () => {
-  console.log(`Tire Empire server running on :${PORT} (${NODE_ENV})`);
+// Railway requires binding to 0.0.0.0 (not localhost) and process.env.PORT
+// Without '0.0.0.0', Railway's health-check probe cannot reach the container.
+const BIND_HOST = '0.0.0.0';
+server.listen(process.env.PORT || PORT, BIND_HOST, () => {
+  const boundPort = process.env.PORT || PORT;
+  console.log(`Tire Empire server running on ${BIND_HOST}:${boundPort} (${NODE_ENV})`);
   console.log(`  REST API: http://localhost:${PORT}/api/health`);
   console.log(`  WebSocket: ws://localhost:${PORT}`);
 
