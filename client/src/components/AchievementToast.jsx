@@ -30,31 +30,34 @@ export default function AchievementToast({ achievements, onDismiss, hasCelebrati
         animation: 'slideDown .35s ease-out',
       }}
     >
-      {achievements.map((ach, i) => (
-        <div
-          key={i}
-          style={{
-            background: 'linear-gradient(135deg, #3a2a00, #5a4000)',
-            border: '1px solid var(--gold)',
-            borderRadius: 10,
-            padding: '12px 14px',
-            marginBottom: i < achievements.length - 1 ? 6 : 0,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-          }}
-        >
-          <span style={{ fontSize: 28 }}>{'\uD83C\uDFC6'}</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--gold)' }}>
-              {ach.name}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
-              +{ach.reward} TireCoins
+      {achievements.map((ach, i) => {
+        if (!ach || typeof ach !== 'object') return null;
+        return (
+          <div
+            key={i}
+            style={{
+              background: 'linear-gradient(135deg, #3a2a00, #5a4000)',
+              border: '1px solid var(--gold)',
+              borderRadius: 10,
+              padding: '12px 14px',
+              marginBottom: i < achievements.length - 1 ? 6 : 0,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+            }}
+          >
+            <span style={{ fontSize: 28 }}>{'\uD83C\uDFC6'}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--gold)' }}>
+                {String(ach.name || 'Achievement')}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+                +{ach.reward || 0} TireCoins
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

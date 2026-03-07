@@ -47,7 +47,11 @@ export default function NotificationToast({ notifications, onDismiss }) {
       }}
     >
       {notifications.map((notif, i) => {
+        // Guard: skip malformed notifications that could crash rendering
+        if (!notif || typeof notif !== 'object' || !notif.title) return null;
         const style = SEVERITY_STYLES[notif.severity] || SEVERITY_STYLES.info;
+        const title = typeof notif.title === 'string' ? notif.title : String(notif.title);
+        const message = typeof notif.message === 'string' ? notif.message : String(notif.message || '');
         return (
           <div
             key={i}
@@ -66,10 +70,10 @@ export default function NotificationToast({ notifications, onDismiss }) {
             <span style={{ fontSize: 24 }}>{notif.icon || '\u{1F514}'}</span>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 700, fontSize: 13, color: style.border }}>
-                {notif.title}
+                {title}
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>
-                {notif.message}
+                {message}
               </div>
             </div>
           </div>
