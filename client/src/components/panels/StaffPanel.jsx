@@ -15,7 +15,7 @@ const ROLES = [
 ];
 
 export default function StaffPanel() {
-  const { state, applyState, refreshState } = useGame();
+  const { state, applyState } = useGame();
   const g = state.game;
   const [pending, setPending] = React.useState(null);
   const [error, setError] = React.useState(null);
@@ -25,32 +25,31 @@ export default function StaffPanel() {
     (a, [k, v]) => a + (PAY[k] || 0) * v, 0
   );
 
-  const hire = async (role) => {
+  const hire = async (role, e) => {
+    if (e) { e.stopPropagation(); e.preventDefault(); }
     if (pending) return;
     setPending(role + '_hire');
     setError(null);
     try {
       const res = await postAction('hireStaff', { role });
-      console.log('[HIRE DEBUG] raw res:', JSON.stringify(res)?.slice(0, 300));
-      console.log('[HIRE DEBUG] res.state?.companyName:', res?.state?.companyName);
-      console.log('[HIRE DEBUG] current g.companyName:', g.companyName);
       if (res?.error) {
         setError(res.error);
         setTimeout(() => setError(null), 3000);
         return;
       }
-      hapticsMedium();
       if (res?.state) applyState(res);
-      else console.warn('[HIRE DEBUG] no res.state — not calling applyState');
+      hapticsMedium();
     } catch (err) {
-      console.error('[HIRE DEBUG] caught error:', err);
-      refreshState();
+      console.error('[Staff] hire error:', err);
+      setError('Network error — please try again.');
+      setTimeout(() => setError(null), 3000);
     } finally {
       setPending(null);
     }
   };
 
-  const fire = async (role) => {
+  const fire = async (role, e) => {
+    if (e) { e.stopPropagation(); e.preventDefault(); }
     if (pending) return;
     setPending(role + '_fire');
     setError(null);
@@ -61,10 +60,12 @@ export default function StaffPanel() {
         setTimeout(() => setError(null), 3000);
         return;
       }
-      hapticsMedium();
       if (res?.state) applyState(res);
-    } catch {
-      refreshState();
+      hapticsMedium();
+    } catch (err) {
+      console.error('[Staff] fire error:', err);
+      setError('Network error — please try again.');
+      setTimeout(() => setError(null), 3000);
     } finally {
       setPending(null);
     }
@@ -101,7 +102,7 @@ export default function StaffPanel() {
                 {count > 0 && (
                   <button
                     className="btn btn-sm btn-outline text-red"
-                    onClick={() => fire(key)}
+                    onClick={(e) => fire(key, e)}
                     disabled={!!pending}
                   >
                     − Fire
@@ -110,7 +111,7 @@ export default function StaffPanel() {
                 {!atMax && (
                   <button
                     className="btn btn-sm btn-green"
-                    onClick={() => hire(key)}
+                    onClick={(e) => hire(key, e)}
                     disabled={!!pending || g.cash < (PAY[key] || 0)}
                   >
                     + Hire

@@ -89,6 +89,10 @@ export default function BottomNav() {
   const g = state.game;
   const seenMsgCount = useRef(0);
   const [unreadChat, setUnreadChat] = useState(0);
+  // Guard: prevent ghost-clicks on primary tabs when More overlay closes.
+  // On some Android phones, closing the overlay fires a delayed click on
+  // whatever is underneath (the 300ms tap-delay ghost click).
+  const navCooldownRef = useRef(false);
 
   // Listen for tutorial highlight events
   useEffect(() => {
@@ -115,9 +119,17 @@ export default function BottomNav() {
   // Check if active panel is in secondary — if so, highlight "More"
   const activeInSecondary = SECONDARY_TABS.some(t => t.id === state.activePanel);
 
-  const selectTab = (id) => {
+  const selectTab = (id, fromOverlay) => {
+    // If the More overlay just closed and a primary tab is receiving a ghost
+    // click (300ms delayed tap on Android), ignore it.
+    if (!fromOverlay && navCooldownRef.current) return;
     hapticsLight();
     dispatch({ type: 'SET_PANEL', payload: id });
+    if (fromOverlay) {
+      // Arm ghost-click guard: primary tabs ignore clicks for 400ms
+      navCooldownRef.current = true;
+      setTimeout(() => { navCooldownRef.current = false; }, 400);
+    }
     setShowMore(false);
   };
 
@@ -125,7 +137,7 @@ export default function BottomNav() {
     <>
       {/* Expandable grid overlay */}
       {showMore && (
-        <div className="more-overlay" onClick={() => setShowMore(false)}>
+        <div className="more-overlay" onClick={() => { setShowMore(false); navCooldownRef.current = true; setTimeout(() => { navCooldownRef.current = false; }, 400); }}>
           <div className="more-grid" onClick={e => e.stopPropagation()}>
             {SECONDARY_TABS.map(tab => {
               const isUnlocked = unlocked.has(tab.id);
@@ -133,7 +145,7 @@ export default function BottomNav() {
                 <button
                   key={tab.id}
                   className={`more-grid-btn${!isUnlocked ? ' locked' : ''}${state.activePanel === tab.id ? ' active' : ''}${tutorialTarget === tab.id ? ' tutorial-pulse' : ''}`}
-                  onClick={() => selectTab(tab.id)}
+                  onClick={() => selectTab(tab.id, true)}
                   data-tutorial-target={tab.id}
                 >
                   <span className="more-grid-icon">{tab.icon}</span>
@@ -146,6 +158,8 @@ export default function BottomNav() {
               className="more-grid-btn"
               onClick={() => {
                 hapticsLight();
+                navCooldownRef.current = true;
+                setTimeout(() => { navCooldownRef.current = false; }, 400);
                 setShowMore(false);
                 setUnreadChat(0);
                 window.dispatchEvent(new CustomEvent('toggleChat'));
@@ -168,7 +182,7 @@ export default function BottomNav() {
           <button
             key={tab.id}
             className={`nav-btn ${state.activePanel === tab.id && !activeInSecondary ? 'active' : ''}${tutorialTarget === tab.id ? ' tutorial-pulse' : ''}`}
-            onClick={() => { selectTab(tab.id); }}
+            onClick={() => { selectTab(tab.id, false); }}
             data-tutorial-target={tab.id}
           >
             <span className="nav-icon">{tab.icon}</span>
