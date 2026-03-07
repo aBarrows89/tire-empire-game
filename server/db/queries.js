@@ -66,7 +66,7 @@ export const getPlayerContracts = (...args) => impl.getPlayerContracts ? impl.ge
 export { getCacheStats, invalidateAllPlayers, invalidateGame, invalidateLeaderboard } from './playerCache.js';
 
 // Re-export error class for catch handling
-export { VersionConflictError, trimExchange } from './pgStore.js';
+export { VersionConflictError, trimExchange, runSchemaMigration } from './pgStore.js';
 
 export const createFranchiseOffering = (...args) => impl.createFranchiseOffering?.(...args);
 export const getFranchiseOfferings = (...args) => impl.getFranchiseOfferings?.(...args);
