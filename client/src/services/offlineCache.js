@@ -4,7 +4,7 @@
  */
 
 const DB_NAME = 'tire-empire';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // bumped to wipe stale cache (bad factory state)
 const STATE_STORE = 'gameState';
 const QUEUE_STORE = 'actionQueue';
 
